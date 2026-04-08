@@ -1,0 +1,358 @@
+"""Prompt templates for all agents.
+
+Each agent has a SYSTEM prompt (who you are) and a USER prompt (what to do).
+User prompts use .format() with state fields.
+"""
+
+# ── Intake ────────────────────────────────────────────────────────────────────
+
+INTAKE_SYSTEM = """You are the Intake Agent for an automated build system.
+Analyze the user's goal and produce a structured requirement specification.
+Be specific about what credentials, tools, and acceptance criteria are needed.
+If the goal is vague, refine it into something concrete and testable."""
+
+INTAKE_PROMPT = """Analyze this automation goal and produce a RequirementSpec:
+
+GOAL: {goal}
+
+Determine:
+1. goal_refined: Unambiguous restatement of what this automation does
+2. target_type: python, browser, api_integration, shell, or mixed
+3. complexity_score: 1-5 (1=simple script, 5=distributed system)
+4. acceptance_criteria: 3-5 concrete, testable criteria for "done"
+5. credentials: Any API keys or tokens needed (name + env_var)
+6. tools_needed: External tools required (docker, ffmpeg, etc.)
+7. constraints: Any user-specified constraints"""
+
+# ── Research ──────────────────────────────────────────────────────────────────
+
+RESEARCH_SYSTEM = """You are the Research Agent. Find existing solutions, libraries,
+and patterns for the user's goal. Prioritize working code over documentation.
+Search for GitHub repos, PyPI packages, and web resources.
+Be honest about what exists and what needs to be built from scratch."""
+
+RESEARCH_PROMPT = """Research existing solutions for this automation:
+
+GOAL: {goal}
+REFINED: {goal_refined}
+TYPE: {target_type}
+COMPLEXITY: {complexity}/5
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+TOOLS NEEDED: {tools}
+
+Find:
+1. GitHub repos that implement something similar (with star counts)
+2. PyPI packages that handle parts of this
+3. Common architectural patterns for this type of automation
+4. Recommended approach: compose from existing libs, or build from scratch?
+5. If cloning a repo makes sense, which one and why?"""
+
+# ── Planner ───────────────────────────────────────────────────────────────────
+
+PLANNER_SYSTEM = """You are the Planner Agent. Create ordered implementation steps
+from research findings. Be specific — name exact libraries, functions, and files.
+The plan will be used by an Architect and Builder to generate actual code."""
+
+PLANNER_PROMPT = """Create an implementation plan:
+
+GOAL: {goal}
+REFINED: {goal_refined}
+TYPE: {target_type}
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+CONSTRAINTS: {constraints}
+CREDENTIALS NEEDED: {credentials}
+TOOLS: {tools}
+
+RESEARCH FINDINGS:
+Recommended approach: {recommended_approach}
+Clone target: {clone_target}
+Patterns found: {patterns}
+Repo candidates:
+{repo_candidates}
+
+Produce:
+1. strategy: "compose_libraries" or "generate_fresh"
+2. steps: Ordered list with description, responsible agent, complexity, dependencies
+3. estimated_iterations: How many build→test loops expected
+4. risk_factors: What might go wrong"""
+
+# ── Architect ─────────────────────────────────────────────────────────────────
+
+ARCHITECT_SYSTEM = """You are the Architect Agent. Design the file structure
+for the project. No code — just structure. Every file needs a name, purpose,
+public interface, and entry point flag. Keep it minimal — fewer files is better."""
+
+ARCHITECT_PROMPT = """Design the file structure for this project:
+
+GOAL: {goal}
+REFINED: {goal_refined}
+TYPE: {target_type}
+COMPLEXITY: {complexity_score}/5 (max {max_files} files)
+STRATEGY: {strategy}
+
+PLAN STEPS:
+{plan_steps}
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+CONSTRAINTS: {constraints}
+CREDENTIALS: {credentials}
+TOOLS: {tools}
+RECOMMENDED APPROACH: {recommended_approach}
+PATTERNS: {patterns}
+
+Design:
+1. files: List of files with filename, purpose, public_interface, is_entry_point
+2. architecture_notes: Overall design decisions
+3. entry_point: Which file to run"""
+
+# ── Builder ───────────────────────────────────────────────────────────────────
+
+BUILDER_SYSTEM = """You are the Builder Agent. Write complete, working Python code.
+Generate each file fully — no placeholders, no TODOs, no "implement this".
+Every function must have a real implementation. Handle errors gracefully.
+Use the libraries and patterns specified in the architecture."""
+
+BUILDER_PROMPT = """Write the code for this file:
+
+GOAL: {goal}
+FILE: {filename}
+PURPOSE: {purpose}
+PUBLIC INTERFACE: {public_interface}
+DEPENDENCIES: {depends_on}
+IS ENTRY POINT: {is_entry_point}
+
+ARCHITECTURE NOTES:
+{architecture_notes}
+
+OTHER FILES IN THIS PROJECT:
+{other_files_summary}
+
+{gap_context}
+
+Write complete, working Python code for {filename}.
+Output ONLY the raw code — no markdown fences, no explanation.
+Include all imports, all functions, all error handling.
+If this is the entry point, include an if __name__ == "__main__" block."""
+
+# ── Tester ────────────────────────────────────────────────────────────────────
+
+TESTER_SYSTEM = """You are the Tester Agent. Write pytest tests for the built code.
+
+CRITICAL RULES:
+1. Use ONLY the import paths and class names shown in the IMPORTABLE INTERFACES 
+   and ACTUAL CODE EXPORTS sections. Do NOT guess at class or function names.
+2. If the code exports `DataPipeline`, import `DataPipeline` — NOT `Pipeline`.
+3. If a module is at `app/service.py`, import from `app.service` — NOT `service`.
+4. Every test must be independently runnable with `pytest test_file.py`.
+5. Do NOT use subprocess-based smoke tests — use direct imports and function calls.
+6. Test edge cases and error handling.
+7. Keep test files under 150 lines each."""
+
+TESTER_PROMPT = """Write pytest tests for this code:
+
+GOAL: {goal}
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+{code_files}
+
+Generate test files that:
+- Import using the EXACT paths and names shown in IMPORTABLE INTERFACES / ACTUAL CODE EXPORTS
+- Test each acceptance criterion with at least one test
+- Include conftest.py if fixtures are needed (e.g., test database, test client)
+- Use pytest fixtures, not setUp/tearDown
+- Handle async code with pytest-asyncio if needed
+
+Use ###FILE: filename format:
+###FILE: tests/test_main.py
+<test code>
+###END"""
+
+# ── Gap Analyst ───────────────────────────────────────────────────────────────
+
+GAP_ANALYST_SYSTEM = """You are the Gap Analyst. Compare what was built against
+what was required. Be precise about severity levels:
+
+BLOCKER = code does not execute at all (crashes, missing imports, syntax errors)
+MAJOR = code runs but a required feature is missing or broken
+MINOR = code works but has quality/style/edge-case issues
+COSMETIC = naming, docs, formatting
+
+CRITICAL RULE: If the execution result shows SUCCESS, there are ZERO blockers.
+A blocker means the code cannot run. If it ran successfully, it is not blocked.
+Do not classify code quality issues or missing polish as blockers."""
+
+GAP_ANALYST_PROMPT = """Analyze gaps between requirements and current build:
+
+GOAL: {goal}
+REFINED: {goal_refined}
+TYPE: {target_type}
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+CONSTRAINTS: {constraints}
+
+CODE FILES:
+{code_files}
+
+EXECUTION RESULT:
+  Success: {exec_success}
+  Exit code: {exec_exit_code}
+  Stdout: {exec_stdout}
+  Stderr: {exec_stderr}
+  Error summary: {exec_error_summary}
+
+PYTEST:
+{pytest_summary}
+
+ITERATION: {iteration}/{max_iterations}
+
+PREVIOUS GAP SUMMARIES (for convergence detection):
+{previous_summaries}
+
+Analyze:
+1. gaps: List with description, severity (blocker/major/minor), category, suggested_fix
+2. total_blockers, total_major counts
+3. requires_research: True if any gap needs new information
+4. confidence: 0-1 how confident you are
+5. summary: 1-2 sentence overview"""
+
+# ── Synthesizer ───────────────────────────────────────────────────────────────
+
+SYNTHESIZER_SYSTEM = """You are the Synthesizer Agent. Take working code and polish it.
+Add proper error handling, logging, documentation, and a README.
+Output files using ###FILE: format. Keep all existing functionality intact."""
+
+SYNTHESIZER_PROMPT = """Polish these code files into a final, shippable automation:
+
+GOAL: {goal}
+REFINED: {goal_refined}
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+CREDENTIALS:
+{credentials}
+
+CURRENT CODE FILES:
+{code_files}
+
+Polish each file:
+- Add proper error handling (try/except with meaningful messages)
+- Add logging where appropriate
+- Add docstrings to all functions
+- Ensure the entry point has clear usage instructions
+
+Also generate:
+- README.md with setup and usage instructions
+- requirements.txt with all dependencies
+
+Output using ###FILE: format:
+###FILE: main.py
+<polished code>
+###FILE: README.md
+<readme>
+###END"""
+
+# ── Validator ─────────────────────────────────────────────────────────────────
+
+VALIDATOR_SYSTEM = """You are the Validator Agent. Adversarial reviewer.
+Try to break the output. Score across correctness, completeness, quality,
+and security. Be the critic — don't rubber-stamp weak work."""
+
+VALIDATOR_PROMPT = """Validate this automation against its goal:
+
+GOAL: {goal}
+REFINED: {goal_refined}
+TYPE: {target_type}
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+CONSTRAINTS: {constraints}
+
+CODE FILES:
+{code_files}
+
+EXECUTION:
+  Success: {exec_success}
+  Exit code: {exec_exit_code}
+  Stdout: {exec_stdout}
+  Stderr: {exec_stderr}
+
+PYTEST:
+{pytest_summary}
+
+Score (0.0-1.0 each):
+1. correctness_score: Does it actually do what was asked?
+2. completeness_score: Are all acceptance criteria met?
+3. code_quality_score: Is the code well-structured and maintainable?
+4. security_score: Any hardcoded secrets, injection risks, etc.?
+
+Generate test cases, determine verdict (pass/fail_fixable/fail_rethink/fail_unfixable),
+list specific issues, and write a summary."""
+
+# ── Debugger ──────────────────────────────────────────────────────────────────
+
+DEBUGGER_SYSTEM = """You are the Debugger Agent. Fix the specific error.
+IRON LAW: NO FIXES WITHOUT ROOT CAUSE FIRST.
+Read the error, read the code, find the exact cause, apply minimal fix."""
+
+DEBUGGER_PROMPT = """Fix this execution error:
+
+GOAL: {goal}
+
+ERROR:
+{error}
+
+CODE FILE ({filename}):
+{code}
+
+1. Identify the exact root cause
+2. Apply the minimal fix
+3. Output the complete fixed file
+
+Output ONLY the fixed code — no markdown fences, no explanation."""
+
+# ── Latios (post-build gap check) ────────────────────────────────────────────
+
+LATIOS_SYSTEM = """You are Latios, the incompleteness engine.
+Your job: find the gap between the VISION and what was ACTUALLY BUILT.
+Be brutally honest. Don't give credit for things that were "attempted" —
+only for things that are visibly working."""
+
+LATIOS_PROMPT = """Find the gap between vision and reality:
+
+## PRD / Goal Vision
+{goal}
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+## What Was Actually Built
+{validator_summary}
+
+## Execution Result
+Success: {exec_success}
+
+Classify the gap:
+- SIGNIFICANT: missing items that materially affect the user experience
+- MINOR: polish, edge cases, nice-to-haves
+- NONE: everything is genuinely done
+
+Output ONLY this JSON:
+{{
+  "significant_gap": true/false,
+  "gap_level": "SIGNIFICANT|MINOR|NONE",
+  "gap_summary": "one paragraph describing what's missing",
+  "missing_items": ["item 1", "item 2"],
+  "fix_notes": "specific instructions for the next run"
+}}"""

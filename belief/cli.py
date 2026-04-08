@@ -1,0 +1,312 @@
+"""Belief Engine CLI — the entry point.
+
+Wires together:
+  - The LangGraph pipeline (graph.py)
+  - Build memory (store completed builds, search for similar priors)
+  - SEED (propose improvements every N builds)
+  - Health daemon (background monitoring)
+
+Usage:
+    python -m belief.cli --goal "build a script that fetches HN top stories"
+    python -m belief.cli --goal "..." --max-cost 5.0
+    python -m belief.cli --goal "..." --max-iterations 5
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import sys
+import time
+import uuid
+from pathlib import Path
+
+from belief.config.models import ModelRouter
+from belief.config.settings import settings
+from belief.graph import build_pipeline
+from belief.models.state import Phase
+
+
+def _configure_logging() -> None:
+    level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "\033[90m%(asctime)s\033[0m \033[36m%(levelname)-8s\033[0m \033[90m%(name)-28s\033[0m %(message)s",
+        datefmt="%H:%M:%S",
+    ))
+    root = logging.getLogger("belief")
+    root.setLevel(level)
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.propagate = False
+    for noisy in ("httpx", "httpcore", "hpack", "h2"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def _get_project_root() -> Path:
+    """Find the project root (where CLAUDE.md lives)."""
+    # Try current directory, then walk up
+    cwd = Path.cwd()
+    for p in [cwd] + list(cwd.parents):
+        if (p / "CLAUDE.md").exists() or (p / "belief").is_dir():
+            return p
+    return cwd
+
+
+async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dict:
+    """Run the full pipeline on a goal. Returns final state dict."""
+    _configure_logging()
+    logger = logging.getLogger("belief.cli")
+
+    if not settings.anthropic_api_key:
+        print("\n  ERROR: ANTHROPIC_API_KEY not set.")
+        print("  Copy .env.template to .env and add your key.\n")
+        sys.exit(1)
+
+    project_root = _get_project_root()
+    run_id = f"belief-{uuid.uuid4().hex[:8]}"
+    logger.info(f"Starting build: {goal[:80]}")
+    logger.info(f"Run ID: {run_id}")
+    logger.info(f"Budget: ${max_cost:.2f} | Max iterations: {max_iterations}")
+
+    # ── Initialize memory ─────────────────────────────────────────────────
+    from belief.memory.store import BuildStore, BuildRecord, SessionState
+
+    db_path = Path(settings.db_path).expanduser()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    build_store = BuildStore(db_path)
+    session = SessionState(project_root / ".belief-engine" / "sessions" / run_id)
+
+    build_count = build_store.count()
+    logger.info(f"Build memory: {build_count} prior build(s)")
+
+    # Search for similar past builds
+    similar = build_store.find_similar(goal, n=3)
+    similar_context = ""
+    if similar:
+        logger.info(f"Found {len(similar)} similar prior build(s):")
+        for s in similar:
+            logger.info(f"  - {s.goal[:60]} (verdict={s.verdict})")
+        similar_context = "\n".join(
+            f"  - {s.goal} (verdict={s.verdict}, files: {', '.join(s.file_summaries.keys())})"
+            for s in similar
+        )
+
+    # ── Initialize SEED ───────────────────────────────────────────────────
+    from belief.evolution import SEED
+
+    seed = SEED(project_root)
+
+    # ── Start health daemon ───────────────────────────────────────────────
+    from belief.daemons.health import HealthDaemon
+
+    health = HealthDaemon(project_root, check_interval=600)
+    health.start()
+
+    # ── Build the pipeline and run ────────────────────────────────────────
+    router = ModelRouter()
+    pipeline = build_pipeline(router)
+
+    initial_state = {
+        "run_id": run_id,
+        "user_goal": goal,
+        "phase": Phase.INTAKE.value,
+        "iteration": 0,
+        "max_iterations": max_iterations,
+        "max_cost_usd": max_cost,
+        "code_files": {},
+        "test_files": {},
+        "errors": [],
+        "warnings": [],
+        "agent_timings": {},
+        "previous_gap_summaries": [],
+        "similar_builds_context": similar_context,
+        "polarity": {
+            "latios_coherence": 0.5,
+            "latias_coherence": 0.5,
+            "world_state": "dormant",
+            "emergence_events": 0,
+            "dissonance_events": 0,
+            "current_remainder": None,
+            "current_covenant": None,
+            "accumulated_remainders": [],
+            "accumulated_covenants": [],
+        },
+    }
+
+    start = time.time()
+    final_state = await pipeline.ainvoke(initial_state)
+    elapsed = time.time() - start
+
+    # ── Store the completed build in memory ───────────────────────────────
+    code_files = final_state.get("code_files", {})
+    validation = final_state.get("validation_result")
+    usage = final_state.get("token_usage")
+
+    verdict_str = ""
+    if validation:
+        v = validation.get("verdict") if isinstance(validation, dict) else getattr(validation, "verdict", "")
+        verdict_str = v.value if hasattr(v, "value") else str(v)
+
+    cost = 0.0
+    if usage:
+        cost = usage.get("total_cost_usd", 0) if isinstance(usage, dict) else getattr(usage, "total_cost_usd", 0)
+
+    if code_files:
+        out_dir = settings.output_path / run_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for fname, content in code_files.items():
+            fpath = out_dir / fname
+            fpath.parent.mkdir(parents=True, exist_ok=True)
+            fpath.write_text(content)
+
+        # Store in build memory
+        spec = final_state.get("requirement_spec")
+        goal_refined = ""
+        if spec:
+            goal_refined = spec.get("goal_refined", "") if isinstance(spec, dict) else getattr(spec, "goal_refined", "")
+
+        file_summaries = {}
+        manifest = final_state.get("file_manifest")
+        if manifest:
+            files_list = manifest.get("files", []) if isinstance(manifest, dict) else getattr(manifest, "files", [])
+            for f in files_list:
+                fname_key = f.get("filename", "") if isinstance(f, dict) else getattr(f, "filename", "")
+                purpose = f.get("purpose", "") if isinstance(f, dict) else getattr(f, "purpose", "")
+                if fname_key:
+                    file_summaries[fname_key] = purpose
+
+        quality_scores = {}
+        if validation:
+            for attr in ("correctness_score", "completeness_score", "code_quality_score", "security_score"):
+                val = validation.get(attr, 0) if isinstance(validation, dict) else getattr(validation, attr, 0)
+                quality_scores[attr] = float(val)
+
+        build_record = BuildRecord(
+            run_id=run_id,
+            goal=goal,
+            goal_refined=goal_refined,
+            file_summaries=file_summaries,
+            quality_scores=quality_scores,
+            output_path=str(out_dir),
+            cost_usd=cost,
+            duration_seconds=elapsed,
+            verdict=verdict_str,
+            tags=_extract_tags(goal),
+        )
+        build_store.store(build_record)
+        logger.info(f"Build stored in memory (total: {build_store.count()})")
+
+        # Store remainders from polarity
+        polarity = final_state.get("polarity", {})
+        remainders = polarity.get("accumulated_remainders", []) if isinstance(polarity, dict) else getattr(polarity, "accumulated_remainders", [])
+        for r in remainders:
+            session.add_remainder(r)
+
+        # ── SEED tick — check if it's time to propose an improvement ──────
+        if seed.tick():
+            all_remainders = session.get_remainders(20)
+            if all_remainders:
+                logger.info("SEED: triggered — proposing improvement from accumulated remainders")
+                try:
+                    from belief.llm import LLMClient
+                    llm = LLMClient(router)
+                    proposal = await seed.propose(all_remainders, llm=llm)
+                    await llm.close()
+                    if proposal:
+                        logger.info(f"SEED proposal: {proposal.title}")
+                        print(f"\n  🌱 SEED Proposal: {proposal.title}")
+                        print(f"     What: {proposal.what}")
+                        print(f"     Target: {proposal.target_file}")
+                        print(f"     Confidence: {proposal.confidence}")
+                        print(f"     Run `belief-approve` to apply.\n")
+                except Exception as e:
+                    logger.debug(f"SEED proposal failed: {e}")
+
+        # ── Print results ─────────────────────────────────────────────────
+        print(f"\n{'═' * 60}")
+        print(f"  BUILD COMPLETE — {elapsed:.1f}s")
+        print(f"{'═' * 60}")
+        print(f"\n  Output: {out_dir}/")
+        print(f"  Files:")
+        for fname in sorted(code_files):
+            size = len(code_files[fname])
+            print(f"    {fname}  ({size} chars)")
+
+        if cost:
+            print(f"\n  Cost: ${cost:.4f}")
+        if verdict_str:
+            print(f"  Verdict: {verdict_str}")
+
+        # Memory stats
+        print(f"  Build memory: {build_store.count()} total builds stored")
+        if similar:
+            print(f"  Similar prior builds: {len(similar)}")
+
+        errors = final_state.get("errors", [])
+        warnings = final_state.get("warnings", [])
+        if errors:
+            print(f"\n  Errors: {len(errors)}")
+            for e in errors[:3]:
+                print(f"    ! {e[:100]}")
+        if warnings:
+            print(f"  Warnings: {len(warnings)}")
+
+        print()
+
+        # ── Telegram notification ──────────────────────────────────────
+        try:
+            from belief.tools.notify import notify_build_complete
+            notify_build_complete(run_id, goal, verdict_str, cost, elapsed, len(code_files))
+        except Exception:
+            pass  # Never block on notification failure
+
+    else:
+        print(f"\n  BUILD FAILED — no code files produced after {elapsed:.1f}s")
+        for e in final_state.get("errors", []):
+            print(f"    ! {e[:150]}")
+        print()
+
+        try:
+            from belief.tools.notify import notify_build_complete
+            notify_build_complete(run_id, goal, "failed", 0, elapsed, 0)
+        except Exception:
+            pass
+
+    # Cleanup
+    health.stop()
+    build_store.close()
+
+    return final_state
+
+
+def _extract_tags(goal: str) -> list[str]:
+    """Extract simple tags from the goal for indexing."""
+    keywords = {"mcp", "api", "server", "script", "bot", "telegram", "discord",
+                "web", "scraper", "monitor", "dashboard", "cli", "flask", "fastapi",
+                "database", "sqlite", "postgres", "redis", "docker", "aws", "gcp"}
+    words = set(goal.lower().split())
+    return sorted(words & keywords)
+
+
+def app():
+    """CLI entry point."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Belief Engine — build from a goal")
+    parser.add_argument("--goal", required=True, help="What to build (natural language)")
+    parser.add_argument("--max-cost", type=float, default=10.0, help="Max USD budget (default: 10)")
+    parser.add_argument("--max-iterations", type=int, default=3, help="Max build loop iterations (default: 3)")
+    args = parser.parse_args()
+
+    result = asyncio.run(run(args.goal, args.max_cost, args.max_iterations))
+    phase = result.get("phase", "unknown")
+    if isinstance(phase, str):
+        success = phase == "complete"
+    else:
+        success = phase == Phase.COMPLETE
+    sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    app()
