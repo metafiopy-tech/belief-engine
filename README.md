@@ -105,26 +105,43 @@ belief/
 
 ## Build Tiers
 
-| Tier | Description | Files | Status |
-|------|-------------|-------|--------|
-| 1 | Single file scripts | 1 | ✅ Passing |
-| 2 | MCP servers, simple APIs | 2-4 | ✅ Passing |
-| 3 | Package-structured apps | 8-15 | ✅ Passing ($0.25-0.55) |
-| 4 | Multi-component systems | 15-30 | ✅ Building (20 files in 56s) |
-| 5 | Distributed microservices | 20-50 | ✅ First build passed ($0.74) |
-| 6 | Multi-language (Python + TypeScript) | Any | ✅ Adapters wired |
-| 7 | Extend existing codebases | Any | ✅ Codebase ingestion + patcher |
+| Tier | Description | Status |
+|------|-------------|--------|
+| 1 | Single file scripts | ✅ |
+| 2 | MCP servers, simple APIs | ✅ |
+| 3 | Package-structured apps | ✅ ($0.40-0.60) |
+| 4 | Multi-component systems | ✅ |
+| 5 | Distributed microservices | ✅ |
+| 6 | Multi-language (Python + TypeScript) | ✅ |
+| 7 | Extend existing codebases | ✅ |
+| 8 | Autonomous deploy + monitor + heal | ✅ |
 
 ## Soil Status
 
-After ~10 builds with metabolization active:
+124+ nutrients, 5 covenants self-learned from ~44 builds:
 
-```python
+```bash
+python3 -c "
 from belief.memory.soil import Soil
 from pathlib import Path
-soil = Soil(Path("~/.belief-engine/soil"))
-print(f"Nutrients: {soil.count()}")
-print(f"By type: {soil.count_by_type()}")
+soil = Soil(Path('~/.belief-engine/soil'))
+print(f'Nutrients: {soil.count()}')
+print(f'By type: {soil.count_by_type()}')
+"
+```
+
+## Deploy
+
+```bash
+# Build + deploy in one command
+python3 -m belief.cli --goal "your goal" --deploy docker_local --deploy-name myapp
+
+# Or deploy a previous build
+python3 -m belief.deploy --list
+python3 -m belief.deploy --target docker_local --name myapp
+
+# Health check
+python3 -m belief.deploy --health http://localhost:8000
 ```
 
 ## License

@@ -209,10 +209,16 @@ async def _run_build(goal: str, max_cost: float) -> dict[str, Any]:
             if hasattr(verdict, "value"):
                 verdict = verdict.value
 
+        # Extract cost from budget tracker if available
+        cost = 0.0
+        budget = final_state.get("build_budget")
+        if budget:
+            cost = budget.get("total_cost", 0.0) if isinstance(budget, dict) else getattr(budget, "total_cost", 0.0)
+
         return {
             "success": success or verdict == "pass",
             "verdict": verdict,
-            "cost": 0.0,  # TODO: extract from state
+            "cost": cost,
             "code_files": code_files,
             "test_files": test_files,
         }

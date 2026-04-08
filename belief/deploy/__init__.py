@@ -91,57 +91,70 @@ async def deploy_to_railway(
         result.error = "Railway CLI not installed. Run: npm install -g @railway/cli"
         return result
 
-    with tempfile.TemporaryDirectory(prefix="belief_deploy_") as tmp:
-        tmp_path = Path(tmp)
+    # Use persistent directory
+    deploy_dir = Path.home() / ".belief-engine" / "deploy" / config.project_name
+    deploy_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write all code files
-        for fname, content in code_files.items():
-            fpath = tmp_path / fname
-            fpath.parent.mkdir(parents=True, exist_ok=True)
-            fpath.write_text(content)
+    # Clean previous deploy
+    for f in deploy_dir.iterdir():
+        if f.is_file():
+            f.unlink()
+        elif f.is_dir():
+            shutil.rmtree(f)
 
-        # Ensure Dockerfile exists
-        if "Dockerfile" not in code_files:
-            dockerfile = _generate_dockerfile(code_files)
-            (tmp_path / "Dockerfile").write_text(dockerfile)
+    # Write all code files
+    for fname, content in code_files.items():
+        fpath = deploy_dir / fname
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        fpath.write_text(content)
 
-        # Ensure railway.toml exists
-        if "railway.toml" not in code_files:
-            toml = _generate_railway_toml(config)
-            (tmp_path / "railway.toml").write_text(toml)
+    # Ensure .env exists
+    if ".env" not in code_files:
+        env_content = code_files.get(".env.example", "PORT=8000\n")
+        (deploy_dir / ".env").write_text(env_content)
 
-        # Deploy
-        result.status = DeployStatus.DEPLOYING
-        env = {**os.environ}
-        if config.railway_token:
-            env["RAILWAY_TOKEN"] = config.railway_token
+    # Ensure Dockerfile exists
+    if "Dockerfile" not in code_files:
+        dockerfile = _generate_dockerfile(code_files)
+        (deploy_dir / "Dockerfile").write_text(dockerfile)
 
-        try:
-            proc = subprocess.run(
-                ["railway", "up", "--detach"],
-                capture_output=True, text=True,
-                timeout=300, cwd=str(tmp_path),
-                env=env,
-            )
-            result.logs = proc.stdout + "\n" + proc.stderr
+    # Ensure railway.toml exists
+    if "railway.toml" not in code_files:
+        toml = _generate_railway_toml(config)
+        (deploy_dir / "railway.toml").write_text(toml)
 
-            if proc.returncode == 0:
-                result.status = DeployStatus.LIVE
-                # Try to extract URL from output
-                url = _extract_railway_url(proc.stdout + proc.stderr)
-                result.url = url or f"https://{config.project_name}.up.railway.app"
-                logger.info(f"Deploy: Railway deployment successful → {result.url}")
-            else:
-                result.status = DeployStatus.FAILED
-                result.error = proc.stderr[-500:] if proc.stderr else "Unknown error"
-                logger.warning(f"Deploy: Railway failed — {result.error[:100]}")
+    # Deploy
+    result.status = DeployStatus.DEPLOYING
+    env = {**os.environ}
+    if config.railway_token:
+        env["RAILWAY_TOKEN"] = config.railway_token
 
-        except subprocess.TimeoutExpired:
+    try:
+        proc = subprocess.run(
+            ["railway", "up", "--detach"],
+            capture_output=True, text=True,
+            timeout=300, cwd=str(deploy_dir),
+            env=env,
+        )
+        result.logs = proc.stdout + "\n" + proc.stderr
+
+        if proc.returncode == 0:
+            result.status = DeployStatus.LIVE
+            # Try to extract URL from output
+            url = _extract_railway_url(proc.stdout + proc.stderr)
+            result.url = url or f"https://{config.project_name}.up.railway.app"
+            logger.info(f"Deploy: Railway deployment successful → {result.url}")
+        else:
             result.status = DeployStatus.FAILED
-            result.error = "Deployment timed out after 300s"
-        except Exception as e:
-            result.status = DeployStatus.FAILED
-            result.error = str(e)
+            result.error = proc.stderr[-500:] if proc.stderr else "Unknown error"
+            logger.warning(f"Deploy: Railway failed — {result.error[:100]}")
+
+    except subprocess.TimeoutExpired:
+        result.status = DeployStatus.FAILED
+        result.error = "Deployment timed out after 300s"
+    except Exception as e:
+        result.status = DeployStatus.FAILED
+        result.error = str(e)
 
     result.duration_seconds = time.time() - t0
     return result
