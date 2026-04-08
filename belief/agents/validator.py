@@ -5,7 +5,10 @@ import logging
 from belief.agents.base import BaseAgent
 from belief.config.models import ModelRole
 from belief.llm import LLMClient
-from belief.models.artifacts import TestCase, ValidationResult, ValidationVerdict
+from belief.models.artifacts import (
+    TestCase, TestTier, TIER_WEIGHTS,
+    ValidationResult, ValidationVerdict,
+)
 from belief.models.state import Phase, UnifiedState
 from belief.prompts import VALIDATOR_SYSTEM, VALIDATOR_PROMPT
 
@@ -55,13 +58,19 @@ class ValidatorAgent(BaseAgent):
                 response_schema=ValidationResult, temperature=0.2,
                 complexity=state.complexity_score,
             )
-            result.tests_passed = sum(1 for t in result.tests if t.passed)
-            result.tests_total = len(result.tests)
+
+            # Classify tests into tiers and compute weighted score
+            _classify_and_score(result)
+
             for attr in ("correctness_score", "completeness_score", "code_quality_score", "security_score"):
                 setattr(result, attr, max(0.0, min(1.0, getattr(result, attr))))
 
             state.validation_result = result
-            logger.info(f"Validator: {result.verdict.value}, {result.tests_passed}/{result.tests_total} tests")
+            logger.info(
+                f"Validator: {result.verdict.value}, "
+                f"{result.tests_passed}/{result.tests_total} tests, "
+                f"weighted={result.weighted_score:.2f}"
+            )
 
         except (ConnectionError, ValueError) as e:
             logger.warning(f"Validator fallback: {e}")
@@ -74,24 +83,84 @@ class ValidatorAgent(BaseAgent):
         return state
 
 
+def _classify_and_score(result: ValidationResult) -> None:
+    """Classify tests into tiers and compute weighted verdict score.
+
+    Tier classification:
+    - Tests with "import", "instantiat", "exist" → P0 SMOKE
+    - Tests with "error", "invalid", "edge", "empty", "boundary" → P2 EDGE_CASE
+    - Tests with ImportError/ModuleNotFoundError in error → ENVIRONMENT (weight 0)
+    - Everything else → P1 FUNCTIONAL
+
+    Weighted score:
+    - Score = sum(weight × pass) / sum(weight) for non-environment tests
+    - All smoke tests passing + score ≥ 0.85 → PASS verdict
+    """
+    for test in result.tests:
+        name_lower = (test.name + " " + test.description).lower()
+        error_lower = test.error.lower()
+
+        # Environment failures — weight 0
+        if any(e in error_lower for e in ("importerror", "modulenotfounderror", "no module named")):
+            test.tier = TestTier.ENVIRONMENT
+        # Smoke tests
+        elif any(k in name_lower for k in ("import", "instantiat", "exist", "smoke", "health", "startup", "p0")):
+            test.tier = TestTier.SMOKE
+        # Edge cases
+        elif any(k in name_lower for k in ("error", "invalid", "edge", "empty", "boundary", "negative", "p2")):
+            test.tier = TestTier.EDGE_CASE
+        # Everything else is functional
+        else:
+            test.tier = TestTier.FUNCTIONAL
+
+    # Compute weighted score (excluding environment tests)
+    weighted_sum = 0.0
+    weight_total = 0.0
+    smoke_pass = True
+
+    for test in result.tests:
+        w = TIER_WEIGHTS[test.tier]
+        if w == 0:
+            continue  # Skip environment tests
+        weight_total += w
+        if test.passed:
+            weighted_sum += w
+        elif test.tier == TestTier.SMOKE:
+            smoke_pass = False
+
+    result.weighted_score = weighted_sum / weight_total if weight_total > 0 else 0.0
+    result.tests_passed = sum(1 for t in result.tests if t.passed)
+    result.tests_total = len(result.tests)
+
+    # Determine verdict based on weighted score
+    if smoke_pass and result.weighted_score >= 0.85:
+        result.verdict = ValidationVerdict.PASS
+    elif result.weighted_score >= 0.5:
+        result.verdict = ValidationVerdict.FAIL_FIXABLE
+    else:
+        result.verdict = ValidationVerdict.FAIL_FIXABLE
+
+
 def _deterministic(state: UnifiedState) -> ValidationResult:
     tests: list[TestCase] = []
     issues: list[str] = []
 
     has_code = bool(state.code_files)
-    tests.append(TestCase(name="code_exists", description="Code files produced", passed=has_code))
+    tests.append(TestCase(name="code_exists", description="Code files produced", passed=has_code, tier=TestTier.SMOKE))
     if not has_code:
         issues.append("No code files")
 
     exec_ok = state.execution_result and state.execution_result.success
-    tests.append(TestCase(name="execution", description="Code executes", passed=bool(exec_ok)))
+    tests.append(TestCase(name="execution", description="Code executes", passed=bool(exec_ok), tier=TestTier.SMOKE))
     if not exec_ok:
         issues.append("Execution failed")
 
     passed = sum(1 for t in tests if t.passed)
+    weighted = passed / max(len(tests), 1)
     return ValidationResult(
         verdict=ValidationVerdict.PASS if passed == len(tests) else ValidationVerdict.FAIL_FIXABLE,
         tests=tests, tests_passed=passed, tests_total=len(tests),
+        weighted_score=weighted,
         correctness_score=1.0 if exec_ok else 0.2,
         completeness_score=passed / max(len(tests), 1),
         code_quality_score=0.5, security_score=0.5,

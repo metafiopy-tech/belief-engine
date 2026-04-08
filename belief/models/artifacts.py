@@ -290,11 +290,28 @@ class TokenUsage(BaseModel):
 # Validation Result (output of validator)
 # ---------------------------------------------------------------------------
 
+class TestTier(str, Enum):
+    SMOKE = "smoke"          # P0 — must all pass
+    FUNCTIONAL = "functional"  # P1 — business logic
+    EDGE_CASE = "edge_case"    # P2 — boundary conditions
+    ENVIRONMENT = "environment"  # import/dep failures — weight 0
+
+
+# Tier weights for verdict scoring
+TIER_WEIGHTS = {
+    TestTier.SMOKE: 3.0,
+    TestTier.FUNCTIONAL: 2.0,
+    TestTier.EDGE_CASE: 1.0,
+    TestTier.ENVIRONMENT: 0.0,
+}
+
+
 class TestCase(BaseModel):
     name: str
     description: str = ""
     passed: bool = False
     error: str = ""
+    tier: TestTier = TestTier.FUNCTIONAL
 
 
 class ValidationResult(BaseModel):
@@ -302,6 +319,7 @@ class ValidationResult(BaseModel):
     tests: list[TestCase] = Field(default_factory=list)
     tests_passed: int = Field(default=0)
     tests_total: int = Field(default=0)
+    weighted_score: float = Field(default=0.0, ge=0.0, le=1.0)
     correctness_score: float = Field(default=0.0, ge=0.0, le=1.0)
     completeness_score: float = Field(default=0.0, ge=0.0, le=1.0)
     code_quality_score: float = Field(default=0.0, ge=0.0, le=1.0)

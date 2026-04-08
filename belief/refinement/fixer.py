@@ -149,3 +149,136 @@ async def generate_fix(
     except Exception as e:
         logger.warning(f"Fixer failed: {e}")
         return {"success": False, "explanation": str(e)}
+
+
+# ── Multi-file fix (architect/editor pattern) ────────────────────────────────
+
+MULTI_FIXER_SYSTEM = """You are a surgical code fixer that can edit MULTIPLE files at once.
+You receive a diagnosis of a test failure and the content of ALL relevant files.
+
+Your job is to produce MINIMAL search/replace edits across one or more files
+that fix the issue ATOMICALLY — all edits succeed together or none apply.
+
+RULES:
+1. Output one or more search/replace blocks, each targeting a specific file
+2. Each old_str must match its file content EXACTLY
+3. Fix ONLY what the diagnosis identifies — no refactoring
+4. If fixing file A requires a corresponding change in file B, include BOTH edits
+5. All results must be valid Python
+
+Respond ONLY with valid JSON:
+{
+    "edits": [
+        {"file": "models.py", "old_str": "...", "new_str": "...", "explanation": "..."},
+        {"file": "crud.py", "old_str": "...", "new_str": "...", "explanation": "..."}
+    ],
+    "summary": "overall explanation"
+}"""
+
+
+class _MultiFixResult(BaseModel):
+    edits: list[dict] = Field(default_factory=list)
+    summary: str = ""
+
+
+async def generate_multi_file_fix(
+    state: RefinementState,
+    diagnosis: str,
+    target_files: list[str],
+    llm=None,
+) -> dict:
+    """Generate coordinated search/replace fixes across multiple files.
+
+    Returns dict with 'edits' (list of per-file fixes), 'success', 'summary'.
+    """
+    file_context = []
+    for f in target_files:
+        content = state.code_files.get(f, "")
+        if content:
+            file_context.append(f"### {f}\n```python\n{content}\n```")
+
+    if not file_context:
+        return {"success": False, "edits": [], "summary": "No files found"}
+
+    previous = "\n".join(f"  - {p}" for p in state.previous_fixes) if state.previous_fixes else "  (none)"
+
+    prompt = f"""## Diagnosis
+{diagnosis}
+
+## Files to fix
+{chr(10).join(file_context)}
+
+## Previous Fixes Already Tried (DO NOT repeat)
+{previous}
+
+Generate search/replace edits across one or more files to fix this atomically."""
+
+    try:
+        from belief.config import ModelRouter
+        from belief.llm import LLMClient
+
+        if llm is None:
+            router = ModelRouter()
+            llm = LLMClient(router)
+
+        result = await llm.generate_structured(
+            role="debugger",
+            system=MULTI_FIXER_SYSTEM,
+            prompt=prompt,
+            response_schema=_MultiFixResult,
+            temperature=0.2,
+            max_tokens=3000,
+        )
+
+        applied_edits = []
+        all_ok = True
+
+        for edit in result.edits:
+            fpath = edit.get("file", "")
+            old_str = edit.get("old_str", "")
+            new_str = edit.get("new_str", "")
+            explanation = edit.get("explanation", "")
+
+            if not fpath or not old_str:
+                continue
+
+            content = state.code_files.get(fpath, "")
+            if old_str not in content:
+                old_stripped = old_str.strip()
+                if old_stripped in content:
+                    old_str = old_stripped
+                else:
+                    logger.warning(f"Multi-fixer: old_str not found in {fpath}")
+                    all_ok = False
+                    continue
+
+            new_content = content.replace(old_str, new_str, 1)
+
+            if fpath.endswith(".py"):
+                try:
+                    ast.parse(new_content)
+                except SyntaxError as e:
+                    logger.warning(f"Multi-fixer: edit invalid in {fpath}: {e}")
+                    all_ok = False
+                    continue
+
+            applied_edits.append({
+                "file": fpath,
+                "old_str": old_str,
+                "new_str": new_str,
+                "new_content": new_content,
+                "explanation": explanation,
+            })
+
+        if applied_edits:
+            logger.info(f"Multi-fixer: {len(applied_edits)} edits across {len(set(e['file'] for e in applied_edits))} files — {result.summary[:60]}")
+
+        return {
+            "success": len(applied_edits) > 0,
+            "edits": applied_edits,
+            "summary": result.summary,
+        }
+
+    except Exception as e:
+        logger.warning(f"Multi-fixer failed: {e}")
+        return {"success": False, "edits": [], "summary": str(e)}
