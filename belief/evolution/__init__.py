@@ -53,18 +53,34 @@ class SEED:
     - Prefer reliability fixes over new features
     """
 
-    TRIGGER_EVERY = 10  # builds between proposals
+    TRIGGER_EVERY = 5  # builds between proposals (lowered from 10 for faster feedback)
 
     def __init__(self, project_root: Path) -> None:
         self.project_root = project_root
-        self._build_count = 0
         self._proposals_file = project_root / ".belief-engine" / "proposals.json"
+        self._counter_file = project_root / ".belief-engine" / "seed_counter.txt"
         self._proposals_file.parent.mkdir(parents=True, exist_ok=True)
+        self._build_count = self._load_counter()
 
     def tick(self) -> bool:
         """Called after every build. Returns True if it's time to propose."""
         self._build_count += 1
+        self._save_counter()
         return self._build_count % self.TRIGGER_EVERY == 0
+
+    def _load_counter(self) -> int:
+        try:
+            if self._counter_file.exists():
+                return int(self._counter_file.read_text().strip())
+        except Exception:
+            pass
+        return 0
+
+    def _save_counter(self) -> None:
+        try:
+            self._counter_file.write_text(str(self._build_count))
+        except Exception:
+            pass
 
     async def propose(self, remainders: list[str], llm=None) -> Optional[ImprovementProposal]:
         """Generate one improvement proposal from accumulated remainders + soil nutrients.

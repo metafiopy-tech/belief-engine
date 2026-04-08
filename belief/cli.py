@@ -206,9 +206,20 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
 
         # ── SEED tick — check if it's time to propose an improvement ──────
         if seed.tick():
-            all_remainders = session.get_remainders(20)
+            # Gather remainders from current session + soil antipatterns
+            all_remainders = session.get_remainders(10)
+            try:
+                from belief.memory.soil import Soil
+                from belief.memory.nutrients import NutrientType
+                soil_path = Path("~/.belief-engine/soil").expanduser()
+                soil = Soil(soil_path)
+                antipatterns = soil.retrieve("build failure", nutrient_type=NutrientType.ANTIPATTERN, n=5)
+                all_remainders.extend([a.content for a in antipatterns])
+            except Exception:
+                pass
+
             if all_remainders:
-                logger.info("SEED: triggered — proposing improvement from accumulated remainders")
+                logger.info(f"SEED: triggered — analyzing {len(all_remainders)} remainders/antipatterns")
                 try:
                     from belief.llm import LLMClient
                     llm = LLMClient(router)
@@ -218,9 +229,11 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
                         logger.info(f"SEED proposal: {proposal.title}")
                         print(f"\n  🌱 SEED Proposal: {proposal.title}")
                         print(f"     What: {proposal.what}")
+                        print(f"     Why: {proposal.why}")
                         print(f"     Target: {proposal.target_file}")
                         print(f"     Confidence: {proposal.confidence}")
-                        print(f"     Run `belief-approve` to apply.\n")
+                        print(f"     Status: propose-only (human approval required)")
+                        print(f"     Review: cat ~/.belief-engine/proposals.json\n")
                 except Exception as e:
                     logger.debug(f"SEED proposal failed: {e}")
 
