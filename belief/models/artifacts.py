@@ -232,9 +232,29 @@ ANTHROPIC_COST_PER_1K: dict[str, dict[str, float]] = {
 _DEFAULT_COST = {"input": 0.003, "output": 0.015}
 
 
-def _cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+def _cost_usd(model: str, prompt_tokens: int, completion_tokens: int,
+              cache_read_tokens: int = 0, cache_create_tokens: int = 0) -> float:
+    """Calculate cost with prompt caching support.
+
+    Cache read tokens cost 10% of standard input price (90% savings).
+    Cache create tokens cost 125% of standard input price (25% premium on first write).
+    Non-cached input tokens cost standard input price.
+    """
     rates = ANTHROPIC_COST_PER_1K.get(model, _DEFAULT_COST)
-    return (prompt_tokens * rates["input"] + completion_tokens * rates["output"]) / 1000.0
+    input_rate = rates["input"]
+    output_rate = rates["output"]
+
+    # Standard input tokens (excluding cached)
+    standard_input = max(0, prompt_tokens - cache_read_tokens - cache_create_tokens)
+
+    cost = (
+        standard_input * input_rate
+        + cache_read_tokens * input_rate * 0.1     # 90% savings
+        + cache_create_tokens * input_rate * 1.25   # 25% premium on first write
+        + completion_tokens * output_rate
+    ) / 1000.0
+
+    return cost
 
 
 class RoleUsage(BaseModel):

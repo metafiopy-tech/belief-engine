@@ -57,6 +57,7 @@ class LLMClient:
                 headers={
                     "x-api-key": settings.anthropic_api_key,
                     "anthropic-version": API_VERSION,
+                    "anthropic-beta": "prompt-caching-2024-07-31",
                     "content-type": "application/json",
                 },
             )
@@ -67,14 +68,20 @@ class LLMClient:
             await self._client.aclose()
 
     def _record_usage(self, role: str, model: str,
-                      prompt_tokens: int, completion_tokens: int) -> None:
-        cost = _cost_usd(model, prompt_tokens, completion_tokens)
+                      prompt_tokens: int, completion_tokens: int,
+                      cache_read_tokens: int = 0, cache_create_tokens: int = 0) -> None:
+        cost = _cost_usd(model, prompt_tokens, completion_tokens,
+                         cache_read_tokens, cache_create_tokens)
         usage = _usage_ctx.get()
         if usage is not None:
             usage.add_call(role, prompt_tokens, completion_tokens, cost)
+        tier = "haiku" if "haiku" in model else "sonnet" if "sonnet" in model else "opus"
+        cache_info = ""
+        if cache_read_tokens > 0:
+            cache_info = f" cache_hit={cache_read_tokens}"
         logger.debug(
-            f"LLM call: role={role} model={model} "
-            f"tokens={prompt_tokens}+{completion_tokens} cost=${cost:.4f}"
+            f"LLM call: role={role} tier={tier} "
+            f"tokens={prompt_tokens}+{completion_tokens}{cache_info} cost=${cost:.4f}"
         )
 
     async def _call(self, model: str, system: str, messages: list[dict],
@@ -155,6 +162,8 @@ class LLMClient:
             role_str, model,
             usage.get("input_tokens", 0),
             usage.get("output_tokens", 0),
+            usage.get("cache_read_input_tokens", 0),
+            usage.get("cache_creation_input_tokens", 0),
         )
 
         return text
@@ -200,6 +209,8 @@ class LLMClient:
             role_str, model,
             usage.get("input_tokens", 0),
             usage.get("output_tokens", 0),
+            usage.get("cache_read_input_tokens", 0),
+            usage.get("cache_creation_input_tokens", 0),
         )
 
         return _parse_structured(raw_text, response_schema)

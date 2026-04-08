@@ -61,38 +61,38 @@ class TesterAgent(BaseAgent):
     def _build_code_context(self, state: UnifiedState) -> str:
         """Build code context that shows the tester exactly what to import.
 
-        Priority order:
-        1. Skeleton registry context (typed interfaces — most accurate)
-        2. AST-extracted signatures from actual code files
-        3. Raw code truncated to 2000 chars (fallback)
-
-        The key insight: tests fail because they import wrong class names.
-        Giving the tester the exact import paths and class names prevents this.
+        Uses the repo map to provide a definitive list of importable symbols.
+        This prevents the tester from importing non-existent modules or classes.
         """
         parts = []
 
-        # 1. Skeleton registry — the typed interface contracts
-        if state.skeleton_registry_context:
-            parts.append(
-                "## IMPORTABLE INTERFACES (use these exact import paths and class names)\n"
-                f"```python\n{state.skeleton_registry_context}\n```"
-            )
+        # 1. Repo map — definitive list of what's importable (Move 4)
+        try:
+            from belief.agents.repo_map import RepoMap
+            repo_map = RepoMap.from_code_files(state.code_files)
+            overview = repo_map.format_overview(max_tokens=2000)
+            if overview:
+                parts.append(
+                    "## PROJECT API MAP (these are the ONLY importable symbols)\n"
+                    f"{overview}"
+                )
+        except Exception:
+            pass
 
-        # 2. Extract signatures from all built code files via AST
+        # 2. Extract import paths from all built code files via AST
         import_map = self._extract_imports_and_exports(state.code_files)
         if import_map:
-            parts.append("## ACTUAL CODE EXPORTS (verified via AST)")
+            parts.append("## IMPORTABLE SYMBOLS (use these exact paths)")
             for fname, exports in sorted(import_map.items()):
                 if exports:
                     module = fname.replace("/", ".").replace(".py", "")
-                    parts.append(f"  {fname} → from {module} import {', '.join(exports)}")
+                    parts.append(f"  from {module} import {', '.join(exports)}")
 
-        # 3. Full code for key files (entry points, routes, services — under 3000 chars)
+        # 3. Full code for key files (entry points, routes — under 3000 chars)
         parts.append("\n## CODE FILES")
         for f, c in sorted(state.code_files.items()):
             if f == "requirements.txt":
                 continue
-            # Show full content for small files, truncated for large ones
             if len(c) <= 3000:
                 parts.append(f"--- {f} ---\n{c}")
             else:

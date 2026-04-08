@@ -82,7 +82,8 @@ class DebuggerAgent(BaseAgent):
             # Use search/replace for files over 2000 chars, full replacement for small files
             if len(code) > 2000:
                 fixed_code = await self._fix_via_search_replace(
-                    llm, state.user_goal, error, target_file, code, state.complexity_score
+                    llm, state.user_goal, error, target_file, code, state.complexity_score,
+                    code_files=state.code_files,
                 )
             else:
                 fixed_code = await self._fix_via_full_replacement(
@@ -105,13 +106,22 @@ class DebuggerAgent(BaseAgent):
         return state
 
     async def _fix_via_search_replace(
-        self, llm, goal: str, error: str, filename: str, code: str, complexity: int
+        self, llm, goal: str, error: str, filename: str, code: str, complexity: int,
+        code_files: dict[str, str] | None = None,
     ) -> str | None:
-        """Fix a file using search/replace blocks — handles large files without truncation.
+        """Fix a file using search/replace blocks — handles large files without truncation."""
+        # Build repo map context so debugger knows what's importable
+        repo_context = ""
+        if code_files:
+            try:
+                from belief.agents.repo_map import RepoMap
+                repo_map = RepoMap.from_code_files(code_files)
+                repo_context = repo_map.format_overview(max_tokens=1000)
+                if repo_context:
+                    repo_context = f"\nAVAILABLE MODULES AND SYMBOLS:\n{repo_context}\n"
+            except Exception:
+                pass
 
-        This is the same approach used by the water cycle fixer, Aider, and Claude Code.
-        The LLM only generates the changed portion, not the entire file.
-        """
         prompt = f"""Fix this execution error using a search/replace edit:
 
 ERROR:
@@ -121,12 +131,13 @@ FILE: {filename}
 ```
 {code}
 ```
-
+{repo_context}
 Instructions:
 1. Identify the ROOT CAUSE of the error
 2. Generate a MINIMAL search/replace edit
 3. The old_str must match the file content EXACTLY
 4. The new_str should fix ONLY the error
+5. Only import from modules listed in AVAILABLE MODULES above
 
 Respond ONLY with valid JSON:
 {{"old_str": "exact text to find", "new_str": "replacement text", "explanation": "what this fixes"}}"""

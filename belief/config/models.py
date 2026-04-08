@@ -31,19 +31,22 @@ class ModelRole(str, Enum):
 
 
 # Default model assignments per role
+# Move 3: Route 6 of 11 agents to Haiku for 3x cost savings
+# Sonnet: research, planner, architect, builder, debugger (need deep reasoning)
+# Haiku: intake, tester, gap_analyst, synthesizer, latios, executor (mechanical tasks)
 _DEFAULTS: dict[str, str] = {
     ModelRole.INTAKE: "claude-haiku-4-5-20251001",
     ModelRole.RESEARCH: "claude-sonnet-4-6",
     ModelRole.PLANNER: "claude-sonnet-4-6",
     ModelRole.ARCHITECT: "claude-sonnet-4-6",
     ModelRole.BUILDER: "claude-sonnet-4-6",
-    ModelRole.TESTER: "claude-sonnet-4-6",
+    ModelRole.TESTER: "claude-haiku-4-5-20251001",
     ModelRole.DEBUGGER: "claude-sonnet-4-6",
-    ModelRole.GAP_ANALYST: "claude-sonnet-4-6",
-    ModelRole.SYNTHESIZER: "claude-sonnet-4-6",
-    ModelRole.VALIDATOR: "claude-sonnet-4-6",
-    ModelRole.LATIOS: "claude-sonnet-4-6",
-    ModelRole.EXECUTOR: "claude-sonnet-4-6",
+    ModelRole.GAP_ANALYST: "claude-haiku-4-5-20251001",
+    ModelRole.SYNTHESIZER: "claude-haiku-4-5-20251001",
+    ModelRole.VALIDATOR: "claude-haiku-4-5-20251001",  # Now deterministic (Move 1), only used as fallback
+    ModelRole.LATIOS: "claude-haiku-4-5-20251001",
+    ModelRole.EXECUTOR: "claude-haiku-4-5-20251001",
 }
 
 # Roles that upgrade to Opus at high complexity
