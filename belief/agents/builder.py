@@ -405,18 +405,22 @@ def _strip_fences(raw: str) -> str:
 # ---------------------------------------------------------------------------
 
 _STDLIB = frozenset({
-    "abc", "argparse", "ast", "asyncio", "base64", "collections", "configparser",
-    "contextlib", "copy", "csv", "dataclasses", "datetime", "decimal", "enum",
-    "functools", "glob", "hashlib", "html", "http", "importlib", "inspect", "io",
-    "itertools", "json", "logging", "math", "multiprocessing", "operator", "os",
-    "pathlib", "pickle", "platform", "pprint", "queue", "random", "re", "shutil",
-    "signal", "socket", "sqlite3", "string", "struct", "subprocess", "sys",
-    "tempfile", "textwrap", "threading", "time", "traceback", "typing",
-    "unicodedata", "unittest", "urllib", "uuid", "venv", "warnings", "xml",
+    "__future__", "abc", "argparse", "ast", "asyncio", "base64", "collections",
+    "configparser", "contextlib", "copy", "csv", "dataclasses", "datetime",
+    "decimal", "enum", "email", "ftplib", "functools", "getpass", "glob",
+    "hashlib", "hmac", "html", "http", "importlib", "inspect", "io",
+    "itertools", "json", "locale", "logging", "math", "mimetypes",
+    "multiprocessing", "numbers", "operator", "os", "pathlib", "pickle",
+    "platform", "pprint", "queue", "random", "re", "secrets", "shutil",
+    "signal", "site", "socket", "sqlite3", "string", "struct", "subprocess",
+    "sys", "tempfile", "textwrap", "threading", "time", "traceback", "typing",
+    "typing_extensions", "unicodedata", "unittest", "urllib", "uuid", "venv",
+    "warnings", "weakref", "xml", "zipfile", "zlib",
     # Test and project-local modules — never real pip packages
     "pytest", "pytest_asyncio", "conftest", "test", "tests", "setup",
     "server", "app", "main", "config", "utils", "helpers", "models", "run",
     "tools", "client", "handler", "worker", "task", "core", "api", "pipeline",
+    "schemas", "crud", "database", "exceptions", "routes", "seed", "src",
 })
 
 _IMPORT_TO_PIP = {
@@ -431,6 +435,10 @@ _IMPORT_TO_PIP = {
     "numpy": "numpy", "pandas": "pandas", "googlemaps": "googlemaps",
     "dns": "dnspython", "tenacity": "tenacity", "cachetools": "cachetools",
     "pydantic_settings": "pydantic-settings",
+    "sqlalchemy": "sqlalchemy", "alembic": "alembic",
+    "jinja2": "jinja2", "markdown": "markdown", "starlette": "starlette",
+    "celery": "celery", "redis": "redis", "motor": "motor",
+    "watchdog": "watchdog", "GitPython": "gitpython", "gitpython": "gitpython",
 }
 
 

@@ -156,6 +156,8 @@ async def deploy_local_docker(
     """Deploy generated code locally via Docker Compose.
 
     Good for testing before pushing to Railway.
+    Writes to a persistent .deploy/ directory inside the build output
+    so Docker can reference the files after the function returns.
     """
     t0 = time.time()
     result = DeployResult(status=DeployStatus.PENDING, target=DeployTarget.DOCKER_LOCAL)
@@ -165,42 +167,62 @@ async def deploy_local_docker(
         result.error = "Docker not installed"
         return result
 
-    with tempfile.TemporaryDirectory(prefix="belief_local_") as tmp:
-        tmp_path = Path(tmp)
+    # Use a persistent directory instead of tempdir
+    deploy_dir = Path.home() / ".belief-engine" / "deploy" / config.project_name
+    deploy_dir.mkdir(parents=True, exist_ok=True)
 
-        for fname, content in code_files.items():
-            fpath = tmp_path / fname
-            fpath.parent.mkdir(parents=True, exist_ok=True)
-            fpath.write_text(content)
+    # Clean previous deploy
+    for f in deploy_dir.iterdir():
+        if f.is_file():
+            f.unlink()
+        elif f.is_dir():
+            shutil.rmtree(f)
 
-        if "Dockerfile" not in code_files:
-            (tmp_path / "Dockerfile").write_text(_generate_dockerfile(code_files))
+    for fname, content in code_files.items():
+        fpath = deploy_dir / fname
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        fpath.write_text(content)
 
-        if "docker-compose.yml" not in code_files:
-            compose = _generate_compose(config)
-            (tmp_path / "docker-compose.yml").write_text(compose)
+    # Ensure .env exists (docker-compose may reference it)
+    if ".env" not in code_files:
+        env_content = code_files.get(".env.example", "PORT=8000\n")
+        (deploy_dir / ".env").write_text(env_content)
 
-        result.status = DeployStatus.BUILDING
-        try:
-            # Build and start
-            proc = subprocess.run(
-                ["docker", "compose", "up", "-d", "--build"],
-                capture_output=True, text=True,
-                timeout=180, cwd=str(tmp_path),
-            )
-            result.logs = proc.stdout + "\n" + proc.stderr
+    if "Dockerfile" not in code_files:
+        (deploy_dir / "Dockerfile").write_text(_generate_dockerfile(code_files))
 
-            if proc.returncode == 0:
-                result.status = DeployStatus.LIVE
-                result.url = "http://localhost:8000"
-                logger.info("Deploy: local Docker deployment successful")
-            else:
-                result.status = DeployStatus.FAILED
-                result.error = proc.stderr[-500:]
+    if "docker-compose.yml" not in code_files:
+        compose = _generate_compose(config)
+        (deploy_dir / "docker-compose.yml").write_text(compose)
 
-        except Exception as e:
+    result.status = DeployStatus.BUILDING
+    try:
+        # Stop any existing container with same project name
+        subprocess.run(
+            ["docker", "compose", "-p", config.project_name, "down", "--remove-orphans"],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(deploy_dir),
+        )
+
+        # Build and start
+        proc = subprocess.run(
+            ["docker", "compose", "-p", config.project_name, "up", "-d", "--build"],
+            capture_output=True, text=True,
+            timeout=180, cwd=str(deploy_dir),
+        )
+        result.logs = proc.stdout + "\n" + proc.stderr
+
+        if proc.returncode == 0:
+            result.status = DeployStatus.LIVE
+            result.url = "http://localhost:8000"
+            logger.info("Deploy: local Docker deployment successful")
+        else:
             result.status = DeployStatus.FAILED
-            result.error = str(e)
+            result.error = proc.stderr[-500:]
+
+    except Exception as e:
+        result.status = DeployStatus.FAILED
+        result.error = str(e)
 
     result.duration_seconds = time.time() - t0
     return result

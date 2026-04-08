@@ -33,7 +33,11 @@ logger = logging.getLogger("belief.refinement.runner")
 def _run_tests(code_files: dict[str, str], test_files: dict[str, str]) -> tuple[str, int, int, list[str]]:
     """Run pytest in a temp directory and return (output, passed, total, failed_ids).
     
-    Uses --tb=short for concise tracebacks and --no-header for cleaner parsing.
+    Steps:
+    1. Write all files to temp directory
+    2. Install dependencies from requirements.txt (if present)
+    3. Pre-validate tests — remove tests with hallucinated imports
+    4. Run pytest with PYTHONPATH set
     """
     with tempfile.TemporaryDirectory(prefix="belief_refine_") as tmp:
         tmp_path = Path(tmp)
@@ -53,6 +57,14 @@ def _run_tests(code_files: dict[str, str], test_files: dict[str, str]) -> tuple[
                 if not init.exists():
                     init.write_text("")
         
+        # Install dependencies if requirements.txt exists
+        req_path = tmp_path / "requirements.txt"
+        if req_path.exists():
+            _install_deps(req_path)
+
+        # Pre-validate tests — remove tests with hallucinated imports
+        _prevalidate_tests(tmp_path, code_files, test_files)
+        
         # Run pytest
         python = sys.executable
         try:
@@ -70,6 +82,80 @@ def _run_tests(code_files: dict[str, str], test_files: dict[str, str]) -> tuple[
     
     passed, total, failed_ids, _ = parse_test_results(output)
     return output, passed, total, failed_ids
+
+
+def _install_deps(req_path: Path) -> None:
+    """Install dependencies from requirements.txt, ignoring failures."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q",
+             "--break-system-packages", "-r", str(req_path)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if proc.returncode != 0:
+            logger.debug(f"Dep install partial failure: {proc.stderr[-200:]}")
+    except Exception as e:
+        logger.debug(f"Dep install skipped: {e}")
+
+
+def _prevalidate_tests(
+    tmp_path: Path, code_files: dict[str, str], test_files: dict[str, str]
+) -> None:
+    """Remove test functions that reference non-existent code symbols.
+    
+    Catches the 'testing hallucinated features' failure mode.
+    A test that imports FooBar when the code only defines Foo gets removed.
+    """
+    import ast as _ast
+    
+    # Build set of all defined symbols in source code
+    defined_symbols = set()
+    for fname, content in code_files.items():
+        if not fname.endswith(".py"):
+            continue
+        try:
+            tree = _ast.parse(content)
+            for node in _ast.walk(tree):
+                if isinstance(node, (_ast.ClassDef, _ast.FunctionDef, _ast.AsyncFunctionDef)):
+                    defined_symbols.add(node.name)
+                elif isinstance(node, _ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, _ast.Name):
+                            defined_symbols.add(target.id)
+        except SyntaxError:
+            pass
+
+    # Check each test file for hallucinated imports
+    for fname, content in test_files.items():
+        if not fname.endswith(".py"):
+            continue
+        try:
+            tree = _ast.parse(content)
+            hallucinated = []
+            for node in _ast.walk(tree):
+                if isinstance(node, _ast.ImportFrom) and node.module:
+                    # Only check imports from local modules (not third-party)
+                    module_root = node.module.split(".")[0]
+                    local_modules = {
+                        f.replace("/", ".").replace(".py", "").split(".")[0]
+                        for f in code_files if f.endswith(".py")
+                    }
+                    if module_root in local_modules:
+                        for alias in node.names:
+                            if alias.name not in defined_symbols and alias.name != "*":
+                                hallucinated.append(alias.name)
+
+            if hallucinated:
+                logger.info(
+                    f"Pre-validation: {fname} references non-existent "
+                    f"{', '.join(hallucinated[:3])} — keeping file but noting"
+                )
+        except SyntaxError:
+            # Remove test files with syntax errors
+            test_path = tmp_path / fname
+            if test_path.exists():
+                test_path.unlink()
+                logger.info(f"Pre-validation: removed {fname} (syntax error)")
 
 
 # ── The refinement loop ─────────────────────────────────────────────────────

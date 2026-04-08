@@ -297,9 +297,33 @@ def app():
     parser.add_argument("--goal", required=True, help="What to build (natural language)")
     parser.add_argument("--max-cost", type=float, default=10.0, help="Max USD budget (default: 10)")
     parser.add_argument("--max-iterations", type=int, default=3, help="Max build loop iterations (default: 3)")
+    parser.add_argument("--deploy", choices=["railway", "docker_local"],
+                        help="Deploy after build (railway or docker_local)")
+    parser.add_argument("--deploy-name", help="Project name for deployment")
     args = parser.parse_args()
 
     result = asyncio.run(run(args.goal, args.max_cost, args.max_iterations))
+
+    # Deploy if requested
+    if args.deploy and result.get("code_files"):
+        code_files = result["code_files"]
+        deploy_name = args.deploy_name or args.goal.split()[-1].lower()[:20].replace(" ", "-")
+
+        async def _do_deploy():
+            from belief.deploy import deploy, DeployConfig, DeployTarget, DeployStatus
+            config = DeployConfig(
+                target=DeployTarget(args.deploy),
+                project_name=deploy_name,
+            )
+            dr = await deploy(code_files, config)
+            if dr.status == DeployStatus.LIVE:
+                print(f"\n  \033[32m✓ DEPLOYED\033[0m → {dr.url} ({dr.duration_seconds:.1f}s)")
+            else:
+                print(f"\n  \033[31m✗ DEPLOY FAILED\033[0m: {dr.error}")
+                print(f"  Run manually: python3 -m belief.deploy --target {args.deploy}")
+
+        asyncio.run(_do_deploy())
+
     phase = result.get("phase", "unknown")
     if isinstance(phase, str):
         success = phase == "complete"

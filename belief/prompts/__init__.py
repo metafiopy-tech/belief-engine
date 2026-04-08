@@ -142,19 +142,23 @@ If this is the entry point, include an if __name__ == "__main__" block."""
 
 # ── Tester ────────────────────────────────────────────────────────────────────
 
-TESTER_SYSTEM = """You are the Tester Agent. Write pytest tests for the built code.
+TESTER_SYSTEM = """You are the Tester Agent. Write pytest tests anchored to the SPECIFICATION, not the implementation.
 
 CRITICAL RULES:
-1. Use ONLY the import paths and class names shown in the IMPORTABLE INTERFACES 
-   and ACTUAL CODE EXPORTS sections. Do NOT guess at class or function names.
-2. If the code exports `DataPipeline`, import `DataPipeline` — NOT `Pipeline`.
-3. If a module is at `app/service.py`, import from `app.service` — NOT `service`.
-4. Every test must be independently runnable with `pytest test_file.py`.
-5. Do NOT use subprocess-based smoke tests — use direct imports and function calls.
-6. Test edge cases and error handling.
-7. Keep test files under 150 lines each."""
+1. Test what was ASKED FOR in the acceptance criteria — not what you see in the code.
+2. Use ONLY the import paths and class names shown in ACTUAL CODE EXPORTS.
+3. Generate tests in THREE TIERS:
+   - P0 SMOKE (3-5 tests): imports work, main classes instantiate, primary workflow runs end-to-end
+   - P1 FUNCTIONAL (3-5 tests): each acceptance criterion has at least one test
+   - P2 EDGE CASES (2-4 tests): error handling, boundary values, invalid inputs
+4. TOTAL: 8-14 tests maximum. Quality over quantity.
+5. Keep test files under 120 lines each.
+6. Do NOT test internal implementation details — test the PUBLIC API.
+7. Mark each test with its tier in a comment: # P0, # P1, or # P2
+8. If the code is a FastAPI app, use TestClient from starlette.testclient.
+9. Do NOT import third-party packages not listed in the code's dependencies."""
 
-TESTER_PROMPT = """Write pytest tests for this code:
+TESTER_PROMPT = """Write pytest tests anchored to these acceptance criteria:
 
 GOAL: {goal}
 
@@ -163,16 +167,35 @@ ACCEPTANCE CRITERIA:
 
 {code_files}
 
-Generate test files that:
-- Import using the EXACT paths and names shown in IMPORTABLE INTERFACES / ACTUAL CODE EXPORTS
-- Test each acceptance criterion with at least one test
-- Include conftest.py if fixtures are needed (e.g., test database, test client)
-- Use pytest fixtures, not setUp/tearDown
-- Handle async code with pytest-asyncio if needed
+Generate TIERED test files:
+
+TIER P0 — SMOKE TESTS (3-5 tests, must ALL pass for a valid build):
+  - All source files can be imported without error
+  - Main classes/functions instantiate correctly
+  - Primary workflow runs end-to-end (e.g., create → read for CRUD)
+
+TIER P1 — FUNCTIONAL TESTS (3-5 tests):
+  - One test per acceptance criterion
+  - Test the public API, not internal methods
+
+TIER P2 — EDGE CASES (2-4 tests):
+  - Invalid inputs return proper errors
+  - Empty/null handling
+  - Boundary conditions
+
+Import using the EXACT paths and names shown in ACTUAL CODE EXPORTS.
+Use pytest fixtures in conftest.py for shared setup (test database, test client).
+TOTAL: 8-14 tests maximum. Do NOT generate more.
 
 Use ###FILE: filename format:
-###FILE: tests/test_main.py
-<test code>
+###FILE: tests/conftest.py
+<shared fixtures>
+###END
+###FILE: tests/test_smoke.py
+<P0 smoke tests>
+###END
+###FILE: tests/test_functional.py
+<P1 functional tests>
 ###END"""
 
 # ── Gap Analyst ───────────────────────────────────────────────────────────────
