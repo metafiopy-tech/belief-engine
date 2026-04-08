@@ -29,7 +29,11 @@ BUILDER_SYSTEM = """You are the Builder Agent. Write complete, working code.
 Generate each file fully — no placeholders, no TODOs, no "implement this".
 Every function must have a real implementation. Handle errors gracefully.
 Use the libraries and patterns specified in the architecture.
-Match the language of the file being generated (Python for .py, TypeScript for .ts/.tsx)."""
+Match the language of the file being generated (Python for .py, TypeScript for .ts/.tsx).
+
+CRITICAL: When using SQLAlchemy 2.x with Mapped/mapped_column type annotations,
+do NOT use `from __future__ import annotations` — it breaks ORM type resolution
+at class definition time. Always use SQLAlchemy 2.x style: `Mapped[str]`, not `str`."""
 
 BUILDER_PROMPT_LEGACY = """Write the code for this file:
 

@@ -47,16 +47,26 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
     if not models_in_file:
         return None
 
+    # Detect if project uses SQLAlchemy (avoid __future__ annotations)
+    deps_lower = {d.lower() for d in skeleton.external_dependencies}
+    uses_sqlalchemy = any(d in deps_lower for d in ("sqlalchemy", "sqlmodel"))
+
     lines = [
         '"""Auto-generated Pydantic models — skeleton (Pass 1)."""',
         "",
-        "from __future__ import annotations",
-        "",
+    ]
+
+    # Only add __future__ if NOT using SQLAlchemy (it breaks Mapped type resolution)
+    if not uses_sqlalchemy:
+        lines.append("from __future__ import annotations")
+        lines.append("")
+
+    lines.extend([
         "from typing import Optional",
         "",
         "from pydantic import BaseModel, Field",
         "",
-    ]
+    ])
 
     # Collect base classes that are in the same file
     local_names = {m.name for m in models_in_file}
@@ -216,6 +226,51 @@ def _generate_protocol_code(skeleton: SkeletonArtifact, file_path: str) -> str |
     return "\n".join(lines)
 
 
+def _generate_database_code(skeleton: SkeletonArtifact, file_path: str) -> str | None:
+    """Generate SQLAlchemy database setup code for database.py files.
+
+    Handles the common pattern: engine + session + Base for SQLAlchemy 2.x.
+    Prevents the recurring __future__ + SQLAlchemy conflict.
+    """
+    base = file_path.split("/")[-1] if "/" in file_path else file_path
+    if base not in ("database.py", "db.py"):
+        return None
+
+    # Check if project uses SQLAlchemy
+    deps_lower = {d.lower() for d in skeleton.external_dependencies}
+    if not any(d in deps_lower for d in ("sqlalchemy", "sqlmodel")):
+        return None
+
+    # Generate SQLAlchemy 2.x database setup
+    # NOTE: Do NOT use `from __future__ import annotations` — it breaks
+    # SQLAlchemy's Mapped type resolution at class definition time.
+    return '''"""Database setup — SQLAlchemy 2.x engine, session, and base."""
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+DATABASE_URL = "sqlite:///./app.db"
+
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+class Base(DeclarativeBase):
+    """Base class for all ORM models."""
+    pass
+
+
+def get_db():
+    """Dependency that yields a database session."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+'''
+
+
 def _generate_config_code(skeleton: SkeletonArtifact, file_path: str) -> str | None:
     """Generate config/settings code."""
     configs_in_file = [c for c in skeleton.config_schemas if c.file_path == file_path]
@@ -327,6 +382,7 @@ def generate_skeleton_file(
         _generate_model_chain_code,
         _generate_abc_code,
         _generate_protocol_code,
+        _generate_database_code,   # Must come before config (database.py is often tagged CONFIG)
         _generate_config_code,
         _generate_exception_code,
     ]

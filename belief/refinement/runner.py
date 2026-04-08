@@ -160,6 +160,32 @@ def _prevalidate_tests(
 
 # ── The refinement loop ─────────────────────────────────────────────────────
 
+def _find_related_files(target_file: str, code_files: dict[str, str]) -> list[str]:
+    """Find files related to the target via imports.
+
+    Returns the target + any files that import from it or that it imports from.
+    Used to scope multi-file fixes.
+    """
+    import re as _re
+
+    related = {target_file}
+    target_module = target_file.replace("/", ".").replace(".py", "")
+    target_base = target_module.split(".")[-1]
+
+    for fname, content in code_files.items():
+        if not fname.endswith(".py") or fname == target_file:
+            continue
+        # Check if this file imports from target
+        if f"from {target_base}" in content or f"import {target_base}" in content:
+            related.add(fname)
+        # Check if target imports from this file
+        target_content = code_files.get(target_file, "")
+        other_base = fname.replace("/", ".").replace(".py", "").split(".")[-1]
+        if f"from {other_base}" in target_content or f"import {other_base}" in target_content:
+            related.add(fname)
+
+    return sorted(related)[:5]  # Cap at 5 files
+
 async def run_refinement_loop(
     code_files: dict[str, str],
     test_files: dict[str, str],
@@ -221,7 +247,35 @@ async def run_refinement_loop(
             target_file = analysis["target_file"]
             
             # ── Step 2: Generate fix ──
+            # Try single-file fix first (cheaper). If it fails, try multi-file.
             fix = await generate_fix(state, diagnosis, target_file, llm)
+            is_multi = False
+
+            if not fix.get("success") and cycle > 0:
+                # Single-file fix failed — try multi-file
+                try:
+                    from belief.refinement.fixer import generate_multi_file_fix
+
+                    # Find related files (dependencies of the target)
+                    related = _find_related_files(target_file, state.code_files)
+                    if len(related) > 1:
+                        multi_fix = await generate_multi_file_fix(
+                            state, diagnosis, related, llm
+                        )
+                        if multi_fix.get("success") and multi_fix.get("edits"):
+                            # Convert multi-file result to single-file format
+                            # by applying the first edit
+                            first_edit = multi_fix["edits"][0]
+                            fix = {
+                                "success": True,
+                                "target_file": first_edit["file"],
+                                "new_content": first_edit["new_content"],
+                                "explanation": multi_fix["summary"],
+                                "_multi_edits": multi_fix["edits"],
+                            }
+                            is_multi = True
+                except Exception as e:
+                    logger.debug(f"Multi-file fix failed: {e}")
             
             if not fix.get("success"):
                 logger.warning(f"Refinement cycle {cycle + 1}: fix generation failed — {fix.get('explanation')}")
@@ -240,8 +294,15 @@ async def run_refinement_loop(
                 continue
             
             # ── Step 3: Apply fix ──
-            pre_fix_content = state.code_files[target_file]
-            state.code_files[target_file] = fix["new_content"]
+            pre_fix_snapshot = dict(state.code_files)
+
+            if is_multi and fix.get("_multi_edits"):
+                # Apply all edits atomically
+                for edit in fix["_multi_edits"]:
+                    state.code_files[edit["file"]] = edit["new_content"]
+                target_file = ", ".join(e["file"] for e in fix["_multi_edits"])
+            else:
+                state.code_files[fix.get("target_file", target_file)] = fix["new_content"]
             
             # ── Step 4: Revalidate ──
             output, passed, total, failed_ids = _run_tests(state.code_files, state.test_files)
@@ -256,12 +317,12 @@ async def run_refinement_loop(
                 curr_failed = set(failed_ids)
                 newly_broken = curr_failed - prev_failed
                 if newly_broken and passed < state.best_pass_count:
-                    # REGRESSION — rollback
+                    # REGRESSION — rollback all changes this cycle
                     logger.warning(
                         f"Refinement cycle {cycle + 1}: REGRESSION — "
                         f"{len(newly_broken)} new failures, rolling back"
                     )
-                    state.code_files[target_file] = pre_fix_content
+                    state.code_files = pre_fix_snapshot
                     
                     record = CycleRecord(
                         cycle=cycle + 1, passed_count=passed, total_count=total,
