@@ -289,6 +289,49 @@ def _increment_iteration(state: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+# ── Covenant Enforcement node (Move 2) ───────────────────────────────────────
+
+async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Structural enforcement of self-learned covenants.
+
+    Runs AST-based validators that auto-fix violations:
+    - Remove __future__ from SQLAlchemy files
+    - Add missing Mapped/mapped_column imports
+    - Remove stdlib from requirements.txt
+    - Add missing stdlib imports
+    - Warn on files over 200 lines
+
+    Zero LLM calls. Deterministic. Fast.
+    """
+    result = dict(state)
+    code_files = state.get("code_files", {})
+
+    if not code_files:
+        return result
+
+    try:
+        from belief.validators import enforce_all
+
+        fixed, enforcement = enforce_all(code_files, auto_fix=True)
+
+        if enforcement.fixes_applied > 0:
+            result["code_files"] = fixed
+            logger.info(
+                f"Covenant enforcer: {enforcement.fixes_applied} fixes "
+                f"across {len(enforcement.files_modified)} files"
+            )
+
+        # Log warnings (e.g., files over 200 lines)
+        warnings = [v for v in enforcement.violations if v.severity == "warning" and not v.auto_fix]
+        for w in warnings:
+            logger.warning(f"Covenant warning: {w.covenant} — {w.message}")
+
+    except Exception as e:
+        logger.debug(f"Covenant enforcement skipped: {e}")
+
+    return result
+
+
 # ── Static Import Fix node (Covenant #3) ─────────────────────────────────────
 
 async def _import_fix_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -488,6 +531,7 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_node("recomposer", recomposer_node)
     graph.add_node("refinement", _refinement_node)
     graph.add_node("import_fix", _import_fix_node)
+    graph.add_node("covenant_enforce", _covenant_enforce_node)
 
     # Entry — recomposer runs first (retrieves nutrients from soil)
     graph.set_entry_point("recomposer")
@@ -495,13 +539,14 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     # Recomposer → intake (nutrients enriched, then normal pipeline)
     graph.add_edge("recomposer", "intake")
 
-    # Happy path — skeleton_pass1 inserted between architect and builder
+    # Happy path — covenant enforcement after builder, before import fix
     graph.add_edge("intake", "research")
     graph.add_edge("research", "planner")
     graph.add_edge("planner", "architect")
     graph.add_edge("architect", "skeleton_pass1")
     graph.add_edge("skeleton_pass1", "builder")
-    graph.add_edge("builder", "import_fix")
+    graph.add_edge("builder", "covenant_enforce")
+    graph.add_edge("covenant_enforce", "import_fix")
     graph.add_edge("import_fix", "tester")
     graph.add_edge("tester", "executor")
     graph.add_edge("executor", "gap_analyst")
