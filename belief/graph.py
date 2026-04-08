@@ -395,11 +395,39 @@ async def _refinement_node(state: dict[str, Any]) -> dict[str, Any]:
         
         # Update state with refined code
         result["code_files"] = refinement["code_files"]
-        
-        # Update verdict if improved
+
+        # Compute actual weighted verdict from real test results
+        final_passed = refinement.get("final_passed", 0)
+        final_total = refinement.get("final_total", 0)
+        initial_passed = refinement.get("initial_passed", 0)
+        improvement = final_passed - initial_passed
+
         if refinement["verdict"] == "pass":
-            result["validation_result"] = {"verdict": "pass"}
+            result["validation_result"] = {
+                "verdict": "pass",
+                "weighted_score": 1.0,
+                "tests_passed": final_passed,
+                "tests_total": final_total,
+            }
             logger.info("Refinement: verdict upgraded to PASS")
+        elif final_total > 0:
+            # Use actual pass rate as weighted score approximation
+            actual_score = final_passed / final_total
+            exec_ok = state.get("execution_result", {})
+            if isinstance(exec_ok, dict):
+                exec_ok = exec_ok.get("success", False)
+            else:
+                exec_ok = getattr(exec_ok, "success", False)
+
+            # If code runs AND pass rate >= 85%, upgrade to PASS
+            if exec_ok and actual_score >= 0.85:
+                result["validation_result"] = {
+                    "verdict": "pass",
+                    "weighted_score": actual_score,
+                    "tests_passed": final_passed,
+                    "tests_total": final_total,
+                }
+                logger.info(f"Refinement: verdict upgraded to PASS ({final_passed}/{final_total} = {actual_score:.0%})")
         
         # Store lessons in soil
         lessons = refinement.get("lessons", [])

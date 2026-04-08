@@ -407,6 +407,9 @@ async def run_refinement_loop(
             "improvement": improvement,
             "best_pass_count": state.best_pass_count,
             "total_tests": initial_total,
+            "final_passed": state.best_pass_count,
+            "final_total": initial_total,
+            "initial_passed": state.initial_pass_count,
         }
     
     finally:

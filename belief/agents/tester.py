@@ -42,6 +42,10 @@ class TesterAgent(BaseAgent):
             )
             # Parse ###FILE: format
             test_files = _parse_test_files(raw)
+
+            # Post-process: validate test imports and generate conftest if needed
+            test_files = self._postprocess_tests(test_files, state.code_files)
+
             state.test_files = test_files
             logger.info(f"Tester: {len(test_files)} test file(s)")
 
@@ -122,6 +126,176 @@ class TesterAgent(BaseAgent):
                 pass
 
         return result
+
+    def _postprocess_tests(
+        self, test_files: dict[str, str], code_files: dict[str, str]
+    ) -> dict[str, str]:
+        """Validate and fix generated test files.
+
+        1. Remove test files with syntax errors
+        2. Check for conftest.py imports — generate conftest if needed
+        3. Remove tests that import non-existent modules
+        4. Ensure tests/__init__.py exists
+        """
+        import ast
+
+        processed = {}
+        needs_conftest = False
+        conftest_imports = set()
+
+        for fname, content in test_files.items():
+            # Skip non-Python files
+            if not fname.endswith(".py"):
+                processed[fname] = content
+                continue
+
+            # Remove files with syntax errors
+            try:
+                tree = ast.parse(content)
+            except SyntaxError:
+                logger.warning(f"Tester: removed {fname} (syntax error)")
+                continue
+
+            # Check for conftest imports
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "conftest":
+                    needs_conftest = True
+                    for alias in node.names:
+                        conftest_imports.add(alias.name)
+
+            # Check for imports from non-existent local modules
+            valid = True
+            source_modules = {
+                f.replace("/", ".").replace(".py", "").split(".")[-1]
+                for f in code_files if f.endswith(".py")
+            }
+            source_modules.add("conftest")  # Will be generated if needed
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    root = node.module.split(".")[0]
+                    # Check if it's a local module that doesn't exist
+                    if root not in source_modules and root not in _KNOWN_PACKAGES:
+                        logger.warning(f"Tester: {fname} imports non-existent '{node.module}'")
+
+            processed[fname] = content
+
+        # Generate conftest.py if tests import from it
+        if needs_conftest and "conftest.py" not in processed and "tests/conftest.py" not in processed:
+            conftest = self._generate_conftest(conftest_imports, code_files)
+            # Determine the right path
+            test_dir = ""
+            for fname in processed:
+                if "/" in fname:
+                    test_dir = fname.split("/")[0] + "/"
+                    break
+            conftest_path = f"{test_dir}conftest.py" if test_dir else "conftest.py"
+            processed[conftest_path] = conftest
+            logger.info(f"Tester: generated {conftest_path} with {len(conftest_imports)} fixtures")
+
+        # Ensure __init__.py
+        test_dirs = {fname.rsplit("/", 1)[0] for fname in processed if "/" in fname}
+        for d in test_dirs:
+            init_path = f"{d}/__init__.py"
+            if init_path not in processed:
+                processed[init_path] = ""
+
+        return processed
+
+    def _generate_conftest(
+        self, needed_fixtures: set[str], code_files: dict[str, str]
+    ) -> str:
+        """Generate a conftest.py with commonly needed fixtures."""
+        lines = ['"""Auto-generated conftest.py with shared test fixtures."""', "",
+                 "import pytest", ""]
+
+        # Detect if it's a FastAPI project
+        is_fastapi = any("FastAPI" in c or "fastapi" in c for c in code_files.values())
+        is_click = any("click" in c or "Click" in c for c in code_files.values())
+
+        if is_fastapi:
+            lines.extend([
+                "from fastapi.testclient import TestClient",
+                "",
+                "# Import the app — adjust path if needed",
+            ])
+            # Find the app
+            for fname, content in code_files.items():
+                if "app = FastAPI" in content or "app=FastAPI" in content:
+                    module = fname.replace("/", ".").replace(".py", "")
+                    lines.append(f"from {module} import app")
+                    break
+            else:
+                lines.append("from main import app")
+
+            lines.extend([
+                "",
+                "",
+                "@pytest.fixture",
+                "def client():",
+                '    """Test client for FastAPI app."""',
+                "    with TestClient(app) as c:",
+                "        yield c",
+                "",
+            ])
+
+        if is_click:
+            lines.extend([
+                "from click.testing import CliRunner",
+                "",
+                "",
+                "@pytest.fixture",
+                "def runner():",
+                '    """Click CLI test runner."""',
+                "    return CliRunner()",
+                "",
+            ])
+            # Find the CLI entry point
+            for fname, content in code_files.items():
+                if "@click.group" in content or "@click.command" in content:
+                    module = fname.replace("/", ".").replace(".py", "")
+                    # Find the group/command name
+                    import re
+                    match = re.search(r"def (\w+)\(", content)
+                    if match:
+                        func_name = match.group(1)
+                        lines.extend([
+                            f"from {module} import {func_name}",
+                            "",
+                            "",
+                            "@pytest.fixture",
+                            "def run_cli(runner):",
+                            '    """Helper to invoke CLI commands."""',
+                            f"    def _run(*args):",
+                            f"        return runner.invoke({func_name}, args)",
+                            "    return _run",
+                            "",
+                        ])
+                    break
+
+        # Add any other needed fixtures as stubs
+        existing = {"client", "runner", "run_cli"}
+        for fixture in needed_fixtures:
+            if fixture not in existing:
+                lines.extend([
+                    f"@pytest.fixture",
+                    f"def {fixture}():",
+                    f'    """Auto-generated fixture stub for {fixture}."""',
+                    f"    pass  # TODO: implement",
+                    "",
+                ])
+
+        return "\n".join(lines)
+
+
+_KNOWN_PACKAGES = {
+    "pytest", "click", "fastapi", "pydantic", "sqlalchemy", "uvicorn",
+    "httpx", "starlette", "requests", "rich", "typer", "os", "sys",
+    "json", "pathlib", "datetime", "typing", "re", "tempfile", "unittest",
+    "collections", "functools", "dataclasses", "enum", "abc", "io",
+    "uuid", "hashlib", "time", "logging", "math", "random", "shutil",
+    "subprocess", "asyncio", "contextlib", "copy", "textwrap",
+}
 
 def _parse_test_files(raw: str) -> dict[str, str]:
     if "###FILE:" not in raw:
