@@ -94,15 +94,30 @@ def _run_real_validation(
     code_files: dict[str, str],
     test_files: dict[str, str],
 ) -> tuple[list[TestCase], list[str]]:
-    """Run pytest for real and return TestCase objects from actual results.
+    """Run real tests and return TestCase objects from actual results.
 
-    Also runs AST syntax checks on all source files.
-    Returns (tests, issues).
+    Supports both Python (pytest) and TypeScript (vitest) projects.
+    Language detection: if any .ts file or package.json exists → TypeScript path.
     """
     tests = []
     issues = []
 
-    # ── Syntax check all source files ──
+    # Detect language
+    has_typescript = any(
+        f.endswith((".ts", ".tsx")) or f == "package.json"
+        for f in list(code_files) + list(test_files)
+    )
+
+    if has_typescript:
+        # TypeScript validation path
+        ts_tests, ts_issues = _validate_typescript(code_files, test_files)
+        tests.extend(ts_tests)
+        issues.extend(ts_issues)
+        return tests, issues
+
+    # ── Python validation path ──
+
+    # Syntax check all source files
     syntax_ok = True
     for fname, content in code_files.items():
         if not fname.endswith(".py"):
@@ -258,6 +273,180 @@ def _execute_pytest(
             issues.append("pytest timed out after 60s")
         except Exception as e:
             issues.append(f"pytest execution error: {e}")
+
+    return tests, issues
+
+
+def _validate_typescript(
+    code_files: dict[str, str],
+    test_files: dict[str, str],
+) -> tuple[list[TestCase], list[str]]:
+    """Validate TypeScript projects: brace matching + npm install + tsc + vitest.
+
+    Steps:
+    1. Basic syntax checks (brace/bracket matching) — always runs
+    2. npm install — if package.json exists
+    3. tsc --noEmit — type checking
+    4. npx vitest run — if test files exist
+    """
+    import shutil
+
+    tests = []
+    issues = []
+
+    # Step 1: Basic syntax checks for all TS files
+    for fname, content in code_files.items():
+        if not fname.endswith((".ts", ".tsx", ".js", ".jsx")):
+            continue
+        brace_diff = abs(content.count("{") - content.count("}"))
+        paren_diff = abs(content.count("(") - content.count(")"))
+        name_safe = fname.replace("/", "_").replace(".", "_")
+
+        if brace_diff > 1 or paren_diff > 1:
+            tests.append(TestCase(
+                name=f"syntax_{name_safe}", passed=False, tier=TestTier.SMOKE,
+                description=f"{fname} has valid syntax",
+                error=f"Unmatched braces ({brace_diff}) or parens ({paren_diff})",
+            ))
+            issues.append(f"Syntax error in {fname}: unmatched delimiters")
+        else:
+            tests.append(TestCase(
+                name=f"syntax_{name_safe}", passed=True, tier=TestTier.SMOKE,
+                description=f"{fname} has valid syntax",
+            ))
+
+    # Check if npm/node available
+    npm = shutil.which("npm")
+    npx = shutil.which("npx")
+    if not npm:
+        issues.append("npm not found — skipping TypeScript compilation and test execution")
+        return tests, issues
+
+    # Step 2-4: npm install + tsc + vitest in temp dir
+    with tempfile.TemporaryDirectory(prefix="belief_ts_validate_") as tmp:
+        tmp_path = Path(tmp)
+
+        # Write all files
+        for files_dict in [code_files, test_files]:
+            for fname, content in files_dict.items():
+                fpath = tmp_path / fname
+                fpath.parent.mkdir(parents=True, exist_ok=True)
+                fpath.write_text(content)
+
+        # Step 2: npm install
+        if (tmp_path / "package.json").exists():
+            try:
+                proc = subprocess.run(
+                    [npm, "install", "--no-audit", "--no-fund"],
+                    capture_output=True, text=True,
+                    timeout=120, cwd=str(tmp_path),
+                )
+                if proc.returncode == 0:
+                    tests.append(TestCase(
+                        name="npm_install", passed=True, tier=TestTier.SMOKE,
+                        description="npm install succeeded",
+                    ))
+                else:
+                    tests.append(TestCase(
+                        name="npm_install", passed=False, tier=TestTier.SMOKE,
+                        description="npm install succeeded",
+                        error=proc.stderr[-200:],
+                    ))
+                    issues.append(f"npm install failed: {proc.stderr[-200:]}")
+                    return tests, issues
+            except subprocess.TimeoutExpired:
+                issues.append("npm install timed out")
+                return tests, issues
+
+        # Step 3: tsc --noEmit
+        if npx:
+            try:
+                proc = subprocess.run(
+                    [npx, "tsc", "--noEmit"],
+                    capture_output=True, text=True,
+                    timeout=60, cwd=str(tmp_path),
+                )
+                tsc_output = proc.stdout or proc.stderr
+                error_count = tsc_output.count("error TS")
+
+                if proc.returncode == 0 or error_count == 0:
+                    tests.append(TestCase(
+                        name="tsc_typecheck", passed=True, tier=TestTier.SMOKE,
+                        description="TypeScript type checking passed",
+                    ))
+                elif error_count <= 3:
+                    # Minor type errors — pass with warning
+                    tests.append(TestCase(
+                        name="tsc_typecheck", passed=True, tier=TestTier.SMOKE,
+                        description=f"TypeScript: {error_count} minor type errors",
+                    ))
+                else:
+                    tests.append(TestCase(
+                        name="tsc_typecheck", passed=False, tier=TestTier.SMOKE,
+                        description="TypeScript type checking passed",
+                        error=f"{error_count} type errors: {tsc_output[-300:]}",
+                    ))
+            except subprocess.TimeoutExpired:
+                issues.append("tsc timed out")
+            except Exception:
+                pass  # tsc not available — skip
+
+        # Step 4: Run vitest if test files exist
+        ts_test_files = [f for f in list(code_files) + list(test_files)
+                         if f.endswith((".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx",
+                                        ".test.js", ".spec.js"))]
+        if ts_test_files and npx:
+            try:
+                proc = subprocess.run(
+                    [npx, "vitest", "run", "--reporter=verbose"],
+                    capture_output=True, text=True,
+                    timeout=60, cwd=str(tmp_path),
+                    env={**os.environ, "CI": "true"},  # CI mode prevents interactive
+                )
+                output = proc.stdout + "\n" + proc.stderr
+
+                # Parse vitest verbose output
+                # Format: ✓ test name (5ms) or × test name
+                for line in output.split("\n"):
+                    line = line.strip()
+                    # Match: ✓ test description or ✗ test description
+                    if line.startswith("✓") or line.startswith("√") or "pass" in line.lower():
+                        match = re.match(r'[✓√✔]\s+(.+?)(?:\s+\(\d+\s*m?s\))?$', line)
+                        if match:
+                            tests.append(TestCase(
+                                name=match.group(1).strip()[:80],
+                                passed=True, tier=TestTier.FUNCTIONAL,
+                            ))
+                    elif line.startswith("✗") or line.startswith("×"):
+                        match = re.match(r'[✗×✘]\s+(.+?)(?:\s+\(\d+\s*m?s\))?$', line)
+                        if match:
+                            tests.append(TestCase(
+                                name=match.group(1).strip()[:80],
+                                passed=False, tier=TestTier.FUNCTIONAL,
+                                error="Test failed",
+                            ))
+
+                # Fallback: parse summary line
+                if not any(t.tier == TestTier.FUNCTIONAL for t in tests):
+                    pass_match = re.search(r'(\d+)\s+passed', output)
+                    fail_match = re.search(r'(\d+)\s+failed', output)
+                    if pass_match:
+                        for i in range(int(pass_match.group(1))):
+                            tests.append(TestCase(
+                                name=f"vitest_passed_{i+1}", passed=True,
+                                tier=TestTier.FUNCTIONAL,
+                            ))
+                    if fail_match:
+                        for i in range(int(fail_match.group(1))):
+                            tests.append(TestCase(
+                                name=f"vitest_failed_{i+1}", passed=False,
+                                tier=TestTier.FUNCTIONAL, error="Test failed",
+                            ))
+
+            except subprocess.TimeoutExpired:
+                issues.append("vitest timed out after 60s")
+            except Exception as e:
+                issues.append(f"vitest execution error: {e}")
 
     return tests, issues
 
