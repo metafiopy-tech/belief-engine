@@ -470,11 +470,38 @@ def seed_requires_approval(proposal_title: str, target_file: str,
                            confidence: str) -> bool:
     """Determine if a SEED proposal requires human approval.
 
-    Currently: ALL proposals require human approval (propose-only mode).
-    Future: HIGH confidence proposals that target non-critical files
-    could be auto-applied with rollback capability.
+    FunSearch-inspired: the codebase is split into a FIXED SCAFFOLD
+    (never auto-modified) and EVOLVABLE PRIORITY FUNCTIONS (safe to modify).
+
+    AUTO-APPLY (no human needed):
+    - HIGH confidence proposals
+    - Targeting evolvable files only (prompts, thresholds, classification)
+    - With syntax validation + snapshot rollback on failure
+
+    REQUIRE APPROVAL:
+    - LOW or MEDIUM confidence proposals
+    - Any proposal targeting critical/scaffold files
     """
-    # Phase 1: Always require human approval
+    # Critical scaffold files — NEVER auto-modify
+    if is_critical_file(target_file):
+        return True
+
+    # Only HIGH confidence proposals can be auto-applied
+    if confidence.upper() != "HIGH":
+        return True
+
+    # Evolvable priority functions — safe for SEED to modify
+    evolvable_patterns = [
+        "prompts/",           # Agent system/user prompts
+        "prompts/__init__",   # Main prompt file
+        "config/models.py",   # Model routing decisions
+    ]
+    is_evolvable = any(p in target_file for p in evolvable_patterns)
+
+    if is_evolvable:
+        return False  # Auto-apply allowed
+
+    # Everything else requires approval
     return True
 
 

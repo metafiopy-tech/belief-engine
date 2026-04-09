@@ -109,6 +109,20 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
             f"{len(context_block)} chars)"
         )
 
+        # Retrieve past reflexions for similar goals
+        try:
+            from belief.memory.reflexion import retrieve_reflexions
+            reflexions = retrieve_reflexions(goal, n=3)
+            if reflexions:
+                reflexion_block = "\n\n## LESSONS FROM PAST FAILURES\n" + "\n".join(
+                    f"- {r.split('Reflection: ')[-1][:200]}" if 'Reflection: ' in r else f"- {r[:200]}"
+                    for r in reflexions
+                )
+                result["nutrient_context"] = context_block + reflexion_block
+                logger.info(f"Recomposer: added {len(reflexions)} reflexions to context")
+        except Exception as e:
+            logger.debug(f"Reflexion retrieval skipped: {e}")
+
     except Exception as e:
         logger.warning(f"Recomposer: failed (non-fatal): {e}")
         result["nutrient_context"] = ""

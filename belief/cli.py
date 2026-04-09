@@ -204,6 +204,32 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
         for r in remainders:
             session.add_remainder(r)
 
+        # ── Reflexion — verbal self-critique on failed builds ──────────
+        if verdict_str and verdict_str != "pass":
+            try:
+                from belief.memory.reflexion import generate_reflexion, store_reflexion
+                from belief.llm import LLMClient
+
+                reflexion_llm = LLMClient(router)
+                validation = final_state.get("validation_result", {})
+                errors = final_state.get("errors", [])
+                reflection = await generate_reflexion(
+                    goal=goal, validation_result=validation,
+                    code_files=code_files, errors=errors, llm=reflexion_llm,
+                )
+                await reflexion_llm.close()
+
+                if reflection:
+                    vr = validation if isinstance(validation, dict) else {}
+                    await store_reflexion(
+                        goal=goal, reflection=reflection, verdict=verdict_str,
+                        tests_passed=vr.get("tests_passed", 0),
+                        tests_total=vr.get("tests_total", 0),
+                    )
+                    logger.info(f"Reflexion stored: {reflection[:80]}...")
+            except Exception as e:
+                logger.debug(f"Reflexion skipped: {e}")
+
         # ── SEED tick — check if it's time to propose an improvement ──────
         if seed.tick():
             # Gather remainders from current session + soil antipatterns
@@ -232,8 +258,27 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
                         print(f"     Why: {proposal.why}")
                         print(f"     Target: {proposal.target_file}")
                         print(f"     Confidence: {proposal.confidence}")
-                        print(f"     Status: propose-only (human approval required)")
-                        print(f"     Review: cat ~/.belief-engine/proposals.json\n")
+
+                        # Check if auto-apply is allowed
+                        from belief.hardening import seed_requires_approval
+                        needs_approval = seed_requires_approval(
+                            proposal.title, proposal.target_file, proposal.confidence
+                        )
+
+                        if needs_approval:
+                            print(f"     Status: propose-only (human approval required)")
+                            print(f"     Review: cat ~/.belief-engine/proposals.json\n")
+                        else:
+                            # Auto-apply: HIGH confidence + evolvable file
+                            from belief.evolution import SelfPatch
+                            patcher = SelfPatch(project_root)
+                            success, msg = patcher.apply(proposal)
+                            if success:
+                                print(f"     Status: AUTO-APPLIED ✓ ({msg})")
+                                logger.info(f"SEED auto-applied: {proposal.title}")
+                            else:
+                                print(f"     Status: auto-apply FAILED, rolled back ({msg})")
+                                logger.warning(f"SEED auto-apply failed: {msg}")
                 except Exception as e:
                     logger.debug(f"SEED proposal failed: {e}")
 
