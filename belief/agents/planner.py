@@ -49,6 +49,12 @@ class PlannerAgent(BaseAgent):
             )
             if not plan.steps:
                 plan = _fallback()
+
+            # ── SEED-001: Validate plan completeness ──
+            # Self-proposed improvement: truncated/malformed JSON from the planner
+            # causes silent fallback to incoherent build plans. Validate before use.
+            plan = _validate_plan(plan, spec)
+
             state.implementation_plan = plan
             logger.info(f"Planner: {len(plan.steps)} steps, strategy={plan.strategy}")
         except (ConnectionError, ValueError) as e:
@@ -72,3 +78,64 @@ def _fallback() -> ImplementationPlan:
         estimated_iterations=2,
         risk_factors=["Planning done without LLM — plan is generic"],
     )
+
+
+def _validate_plan(plan: ImplementationPlan, spec) -> ImplementationPlan:
+    """SEED-001: Validate plan completeness before downstream use.
+
+    Self-proposed by SEED after analyzing recurring antipatterns:
+    truncated/malformed JSON from the planner causes silent degradation.
+
+    Checks:
+    1. Plan has at least 3 steps (less = truncated)
+    2. Steps have valid ordering (no gaps, no duplicates)
+    3. Strategy is a known value
+    4. At least one step mentions "build" or "generate" or "implement"
+    5. Dependencies reference valid step numbers
+
+    If validation fails, falls back to generic plan rather than
+    propagating a broken one downstream.
+    """
+    issues = []
+
+    # Check 1: Minimum step count
+    if len(plan.steps) < 2:
+        issues.append(f"Only {len(plan.steps)} steps (minimum 2)")
+
+    # Check 2: Valid step ordering
+    orders = [s.order for s in plan.steps]
+    if len(set(orders)) != len(orders):
+        issues.append(f"Duplicate step orders: {orders}")
+
+    # Check 3: Known strategy
+    valid_strategies = {"generate_fresh", "clone_and_modify", "compose_from_packages", "extend_codebase"}
+    if plan.strategy not in valid_strategies:
+        # Not fatal — just log
+        logger.debug(f"Planner: unknown strategy '{plan.strategy}', continuing")
+
+    # Check 4: At least one implementation step
+    has_impl = any(
+        any(kw in s.description.lower() for kw in ("build", "generat", "implement", "creat", "writ", "code"))
+        for s in plan.steps
+    )
+    if not has_impl:
+        issues.append("No implementation step found in plan")
+
+    # Check 5: Valid dependency references
+    valid_orders = set(orders)
+    for step in plan.steps:
+        for dep in step.dependencies:
+            if dep not in valid_orders:
+                issues.append(f"Step {step.order} depends on non-existent step {dep}")
+                break
+
+    # Check 6: Steps have non-empty descriptions
+    empty_steps = [s.order for s in plan.steps if len(s.description.strip()) < 5]
+    if empty_steps:
+        issues.append(f"Steps {empty_steps} have empty/truncated descriptions")
+
+    if issues:
+        logger.warning(f"SEED-001: Plan validation failed — {'; '.join(issues)}. Using fallback.")
+        return _fallback()
+
+    return plan

@@ -4,9 +4,27 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "belief-engine"
-version = "2.0.0"
-description = "Incompleteness-driven multi-agent build system. Describe what you want. Belief builds it."
+version = "2.1.0"
+description = "Autonomous AI build system. Describe what you want. Belief builds it, tests it, deploys it, and learns."
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
+authors = [
+    {name = "Fio", email = "metafiopy@gmail.com"},
+]
+keywords = ["ai", "agents", "code-generation", "autonomous", "langgraph", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "anthropic>=0.40.0",
     "langgraph>=0.2.0",
@@ -17,6 +35,11 @@ dependencies = [
     "httpx>=0.27.0",
     "chromadb>=0.5.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/metafiopy-tech/belief-engine"
+Repository = "https://github.com/metafiopy-tech/belief-engine"
+Issues = "https://github.com/metafiopy-tech/belief-engine/issues"
 
 [project.optional-dependencies]
 dev = [
