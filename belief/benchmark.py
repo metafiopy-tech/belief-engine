@@ -239,8 +239,7 @@ CHALLENGES = [
 
 async def run_challenge(challenge: Challenge) -> ChallengeResult:
     """Run a single benchmark challenge."""
-    from belief.cli import run_build
-    from belief.config import ModelRouter
+    from belief.cli import run as cli_run
 
     result = ChallengeResult(
         challenge_id=challenge.id,
@@ -249,10 +248,8 @@ async def run_challenge(challenge: Challenge) -> ChallengeResult:
 
     t0 = time.time()
     try:
-        router = ModelRouter()
-        final_state = await run_build(
+        final_state = await cli_run(
             goal=challenge.goal,
-            router=router,
             max_cost=10.0,
             max_iterations=3,
         )
