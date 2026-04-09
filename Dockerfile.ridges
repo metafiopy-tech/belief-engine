@@ -1,0 +1,26 @@
+# Belief Engine — Ridges-Compatible Docker Image
+# Based on sweagent/swe-agent:latest for Subnet 62 compatibility
+#
+# Build: docker build -t belief-engine-miner .
+# Run:   docker run -e ANTHROPIC_API_KEY=sk-... belief-engine-miner solve --instance /data/instance.json
+# Test:  docker run -e ANTHROPIC_API_KEY=sk-... belief-engine-miner test --dataset /data/swebench.jsonl --limit 5
+
+FROM sweagent/swe-agent:latest
+
+# Install Belief Engine
+WORKDIR /opt/belief-engine
+COPY . /opt/belief-engine/
+
+RUN pip install --no-cache-dir -e . 2>/dev/null || \
+    pip install --no-cache-dir -e . --break-system-packages
+
+# Ensure git is available (for repo cloning)
+RUN apt-get update -qq && apt-get install -y -qq git curl && rm -rf /var/lib/apt/lists/*
+
+# Set environment
+ENV PYTHONUNBUFFERED=1
+ENV BELIEF_LOG_LEVEL=INFO
+
+# Entry point — the miner CLI
+ENTRYPOINT ["python", "-m", "belief.bittensor.miner"]
+CMD ["start"]
