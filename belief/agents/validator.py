@@ -342,7 +342,19 @@ def _security_score(code_files: dict[str, str]) -> float:
 # ── Weighted scoring (unchanged) ─────────────────────────────────────────────
 
 def _classify_and_score(result: ValidationResult) -> None:
-    """Classify tests into tiers and compute weighted verdict score."""
+    """Classify tests into tiers and compute weighted verdict score.
+    
+    Classification priority:
+    1. Already-classified tests (executor, syntax) — keep their tier
+    2. Error-type classification (import errors → ENVIRONMENT)
+    3. P0/P1/P2 comment markers in test descriptions (from tester prompt)
+    4. Structural heuristics based on test name patterns
+    
+    The heuristics prioritize SMOKE classification for basic CRUD operations
+    (create, read, list, get, health) since these test core functionality,
+    not edge cases. Only tests with explicit error/invalid/boundary terms
+    get classified as EDGE_CASE.
+    """
     for test in result.tests:
         # Skip already-classified tests (e.g., executor, syntax)
         if test.tier != TestTier.FUNCTIONAL:
@@ -351,12 +363,39 @@ def _classify_and_score(result: ValidationResult) -> None:
         name_lower = (test.name + " " + test.description).lower()
         error_lower = test.error.lower()
 
+        # Priority 1: Error-type classification
         if any(e in error_lower for e in ("importerror", "modulenotfounderror", "no module named")):
             test.tier = TestTier.ENVIRONMENT
-        elif any(k in name_lower for k in ("import", "instantiat", "exist", "smoke", "health", "startup", "p0", "syntax")):
+            continue
+
+        # Priority 2: Comment markers from tester prompt (# P0, # P1, # P2)
+        desc = test.description.lower()
+        if "p0" in desc or "smoke" in desc:
             test.tier = TestTier.SMOKE
-        elif any(k in name_lower for k in ("error", "invalid", "edge", "empty", "boundary", "negative", "p2")):
+            continue
+        if "p2" in desc or "edge" in desc:
             test.tier = TestTier.EDGE_CASE
+            continue
+
+        # Priority 3: Structural heuristics
+        # SMOKE: basic operations that test core functionality works at all
+        smoke_patterns = (
+            "import", "instantiat", "exist", "smoke", "health", "startup",
+            "create", "read", "list", "get_", "get_all", "root", "index",
+            "home", "status", "ping", "version",
+        )
+        # EDGE_CASE: explicit error handling and boundary tests
+        edge_patterns = (
+            "invalid", "error", "empty", "boundary", "negative", "zero",
+            "nonexistent", "not_found", "duplicate", "missing", "null",
+            "unauthorized", "forbidden", "malformed", "overflow",
+        )
+
+        if any(k in name_lower for k in edge_patterns):
+            test.tier = TestTier.EDGE_CASE
+        elif any(k in name_lower for k in smoke_patterns):
+            test.tier = TestTier.SMOKE
+        # else: stays FUNCTIONAL (default)
 
     # Compute weighted score
     weighted_sum = 0.0

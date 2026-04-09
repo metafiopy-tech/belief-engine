@@ -245,10 +245,25 @@ async def run_refinement_loop(
             analysis = await analyze_failures(state, llm)
             diagnosis = analysis["diagnosis"]
             target_file = analysis["target_file"]
+            bug_location = analysis.get("bug_location", "code")
             
             # ── Step 2: Generate fix ──
+            # If the bug is in a test file, we need to point the fixer at test_files
+            # Temporarily swap test files into code_files for the fixer to access
+            fix_state = state
+            if bug_location == "test" and target_file in state.test_files:
+                # Create a temporary state with test files accessible as code_files
+                fix_state = RefinementState(
+                    code_files=dict(state.test_files),  # Fixer targets test files
+                    test_files=state.test_files,
+                    test_output=state.test_output,
+                    cycle=state.cycle,
+                    previous_fixes=state.previous_fixes,
+                )
+                logger.info(f"Refinement cycle {cycle + 1}: targeting TEST file {target_file}")
+            
             # Try single-file fix first (cheaper). If it fails, try multi-file.
-            fix = await generate_fix(state, diagnosis, target_file, llm)
+            fix = await generate_fix(fix_state, diagnosis, target_file, llm)
             is_multi = False
 
             if not fix.get("success") and cycle > 0:
@@ -294,15 +309,23 @@ async def run_refinement_loop(
                 continue
             
             # ── Step 3: Apply fix ──
-            pre_fix_snapshot = dict(state.code_files)
+            pre_fix_code_snapshot = dict(state.code_files)
+            pre_fix_test_snapshot = dict(state.test_files)
 
             if is_multi and fix.get("_multi_edits"):
                 # Apply all edits atomically
                 for edit in fix["_multi_edits"]:
-                    state.code_files[edit["file"]] = edit["new_content"]
+                    if bug_location == "test" and edit["file"] in state.test_files:
+                        state.test_files[edit["file"]] = edit["new_content"]
+                    else:
+                        state.code_files[edit["file"]] = edit["new_content"]
                 target_file = ", ".join(e["file"] for e in fix["_multi_edits"])
             else:
-                state.code_files[fix.get("target_file", target_file)] = fix["new_content"]
+                actual_target = fix.get("target_file", target_file)
+                if bug_location == "test" and actual_target in state.test_files:
+                    state.test_files[actual_target] = fix["new_content"]
+                else:
+                    state.code_files[actual_target] = fix["new_content"]
             
             # ── Step 4: Revalidate ──
             output, passed, total, failed_ids = _run_tests(state.code_files, state.test_files)
@@ -322,7 +345,8 @@ async def run_refinement_loop(
                         f"Refinement cycle {cycle + 1}: REGRESSION — "
                         f"{len(newly_broken)} new failures, rolling back"
                     )
-                    state.code_files = pre_fix_snapshot
+                    state.code_files = pre_fix_code_snapshot
+                    state.test_files = pre_fix_test_snapshot
                     
                     record = CycleRecord(
                         cycle=cycle + 1, passed_count=passed, total_count=total,

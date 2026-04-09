@@ -57,6 +57,23 @@ _APP_PATTERNS = [
     r"mcp\s*=\s*FastMCP",            # MCP server assignment
 ]
 
+# Patterns that indicate a Click CLI application
+_CLI_PATTERNS = [
+    r"@click\.(command|group)\s*\(",          # @click.command() or @click.group()
+    r"@\w+\.(command|group)\s*\(",            # @cli.command() or @app.group()
+    r"click\.group\s*\(",                     # click.group() call
+    r"click\.command\s*\(",                   # click.command() call
+    r"from\s+click\s+import",                 # Click import
+    r"import\s+click",                        # Click import
+]
+
+
+def _is_click_cli(code: str) -> bool:
+    """Detect if code is a Click CLI application."""
+    cli_matches = sum(1 for p in _CLI_PATTERNS if re.search(p, code))
+    # Require at least 2 matches (import + decorator) to avoid false positives
+    return cli_matches >= 2
+
 
 def _is_server_code(code: str) -> bool:
     """Detect if code is a long-running server that shouldn't be run as a script."""
@@ -172,21 +189,32 @@ class ExecutorAgent(BaseAgent):
             state.phase = Phase.GAP_ANALYSIS
             return state
 
-        # Check if ANY entry point is a server
+        # Check if ANY entry point is a server or a Click CLI
         is_server = any(
             _is_server_code(state.code_files.get(ep, ""))
             for ep in entry_points
         )
+        is_cli = any(
+            _is_click_cli(state.code_files.get(ep, ""))
+            for ep in entry_points
+        )
 
-        if is_server:
+        # Both servers and CLIs use import verification instead of script execution.
+        # Servers block forever if run as scripts. CLIs may work as scripts but
+        # import verification is more reliable — it catches import errors, validates
+        # the Click command tree exists, and doesn't depend on __main__ blocks.
+        use_import_verify = is_server or is_cli
+
+        if use_import_verify:
+            app_type = "server" if is_server else "CLI"
             logger.info(
-                f"Executor: detected server-type program — using import verification "
+                f"Executor: detected {app_type}-type program — using import verification "
                 f"({len(entry_points)} entry point{'s' if len(entry_points) > 1 else ''})"
             )
 
         result = await asyncio.to_thread(
             self._execute_in_sandbox, state.code_files, state.test_files,
-            entry_points, is_server,
+            entry_points, use_import_verify,
         )
         state.execution_result = result
 
@@ -200,7 +228,7 @@ class ExecutorAgent(BaseAgent):
 
     def _execute_in_sandbox(
         self, code_files: dict[str, str], test_files: dict[str, str],
-        entry_points: list[str], is_server: bool = False,
+        entry_points: list[str], use_import_verify: bool = False,
     ) -> ExecutionResult:
         """Write files to a temp dir, verify imports, optionally run."""
         import sys as _sys
@@ -232,7 +260,7 @@ class ExecutorAgent(BaseAgent):
 
             system_python = _sys.executable
 
-            if is_server:
+            if use_import_verify:
                 # M4: Verify each entry point independently — all must pass
                 all_results = []
                 for ep in entry_points:

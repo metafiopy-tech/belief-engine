@@ -150,16 +150,23 @@ CRITICAL RULES:
    Do NOT invent module names, class names, or function names.
    If a symbol doesn't appear in the API map, it DOES NOT EXIST.
 3. Generate tests in THREE TIERS:
-   - P0 SMOKE (3-5 tests): imports work, main classes instantiate, primary workflow runs end-to-end
-   - P1 FUNCTIONAL (3-5 tests): each acceptance criterion has at least one test
-   - P2 EDGE CASES (2-4 tests): error handling, boundary values, invalid inputs
-4. TOTAL: 8-14 tests maximum. Quality over quantity.
-5. Keep test files under 120 lines each.
+   - P0 SMOKE (2-3 tests): imports work, main classes instantiate, primary workflow runs end-to-end
+   - P1 FUNCTIONAL (3-5 tests): each acceptance criterion has ONE test
+   - P2 EDGE CASES (1-3 tests): ONLY error cases explicitly mentioned in the spec
+4. TOTAL: 8-10 tests MAXIMUM. This is a HARD LIMIT. Count your tests as you write them.
+   After writing test 10, STOP IMMEDIATELY. Do NOT write test 11.
+5. Keep test files under 100 lines each.
 6. Do NOT test internal implementation details — test the PUBLIC API.
 7. Mark each test with its tier in a comment: # P0, # P1, or # P2
 8. If the code is a FastAPI app, use TestClient from starlette.testclient.
-9. Do NOT import from 'conftest' — fixtures are auto-generated separately.
-10. Do NOT import third-party packages not listed in the code's dependencies."""
+9. If the code is a Click CLI app, use click.testing.CliRunner.
+10. Do NOT import from 'conftest' — fixtures are auto-generated separately.
+11. Do NOT import third-party packages not listed in the code's dependencies.
+12. Do NOT test features not mentioned in the acceptance criteria.
+13. Do NOT test alternative input formats, Unicode handling, concurrent access,
+    performance, or any behavior the specification does not explicitly require.
+14. Every test MUST map to a specific acceptance criterion. If you can't cite which
+    criterion a test validates, DELETE that test."""
 
 TESTER_PROMPT = """Write pytest tests anchored to these acceptance criteria:
 
@@ -170,35 +177,27 @@ ACCEPTANCE CRITERIA:
 
 {code_files}
 
-Generate TIERED test files:
+Generate TIERED test files with EXACTLY this structure:
 
-TIER P0 — SMOKE TESTS (3-5 tests, must ALL pass for a valid build):
+TIER P0 — SMOKE TESTS (2-3 tests):
   - All source files can be imported without error
-  - Main classes/functions instantiate correctly
   - Primary workflow runs end-to-end (e.g., create → read for CRUD)
 
-TIER P1 — FUNCTIONAL TESTS (3-5 tests):
-  - One test per acceptance criterion
+TIER P1 — FUNCTIONAL TESTS (3-5 tests, one per acceptance criterion):
+  - One test per acceptance criterion listed above
   - Test the public API, not internal methods
 
-TIER P2 — EDGE CASES (2-4 tests):
+TIER P2 — EDGE CASES (1-2 tests, ONLY if spec mentions error handling):
   - Invalid inputs return proper errors
-  - Empty/null handling
-  - Boundary conditions
+  - ONLY test error cases the specification explicitly requires
 
-Import using the EXACT paths and names shown in ACTUAL CODE EXPORTS.
-Use pytest fixtures in conftest.py for shared setup (test database, test client).
-TOTAL: 8-14 tests maximum. Do NOT generate more.
+HARD LIMIT: 8-10 tests total. Count as you go. Stop at 10.
+For Click CLI apps: use click.testing.CliRunner, NOT subprocess.
+For FastAPI apps: use fastapi.testclient.TestClient.
 
 Use ###FILE: filename format:
-###FILE: tests/conftest.py
-<shared fixtures>
-###END
-###FILE: tests/test_smoke.py
-<P0 smoke tests>
-###END
-###FILE: tests/test_functional.py
-<P1 functional tests>
+###FILE: tests/test_main.py
+<all tests in one file, 8-10 tests maximum>
 ###END"""
 
 # ── Gap Analyst ───────────────────────────────────────────────────────────────

@@ -299,13 +299,29 @@ class TesterAgent(BaseAgent):
                 "    return CliRunner()",
                 "",
             ])
-            # Find the CLI entry point
+            # Find the CLI entry point — the function decorated with @click.group/@click.command
             for fname, content in code_files.items():
                 if "@click.group" in content or "@click.command" in content:
                     module = fname.replace("/", ".").replace(".py", "")
-                    # Find the group/command name
+                    # Find the function name that follows a Click decorator
                     import re
-                    match = re.search(r"def (\w+)\(", content)
+                    # Match: @click.group() or @click.command() followed by def func_name(
+                    match = re.search(
+                        r'@click\.(?:group|command)\s*\([^)]*\)\s*\n\s*def\s+(\w+)\s*\(',
+                        content,
+                    )
+                    if not match:
+                        # Fallback: @cli.command or @app.command pattern
+                        match = re.search(
+                            r'@\w+\.(?:group|command)\s*\([^)]*\)\s*\n\s*def\s+(\w+)\s*\(',
+                            content,
+                        )
+                    if not match:
+                        # Last resort: look for common CLI names
+                        for name in ("cli", "main", "app"):
+                            if f"def {name}(" in content:
+                                match = re.search(rf'def\s+({name})\s*\(', content)
+                                break
                     if match:
                         func_name = match.group(1)
                         lines.extend([
@@ -318,6 +334,12 @@ class TesterAgent(BaseAgent):
                             f"    def _run(*args):",
                             f"        return runner.invoke({func_name}, args)",
                             "    return _run",
+                            "",
+                            "",
+                            "@pytest.fixture",
+                            f"def cli_app():",
+                            f'    """The Click app object for direct invocation."""',
+                            f"    return {func_name}",
                             "",
                         ])
                     break
