@@ -364,46 +364,153 @@ def _extract_tags(goal: str) -> list[str]:
     return sorted(words & keywords)
 
 
+async def _run_benchmark_cmd(args):
+    """Run benchmark from CLI."""
+    _configure_logging()
+    from belief.benchmark import run_benchmark
+
+    tiers = args.tiers if not args.ids else None
+    results = await run_benchmark(tiers=tiers, challenge_ids=args.ids)
+
+    passed = sum(1 for r in results if r.verdict == "pass")
+    total = len(results)
+    avg_score = sum(r.weighted_score for r in results) / max(total, 1)
+
+    print(f"\n  Pass rate: {passed}/{total} ({passed/max(total,1):.0%})")
+    print(f"  Avg score: {avg_score:.2f}")
+    for r in results:
+        marker = "✓" if r.verdict == "pass" else "✗"
+        print(f"  {marker} {r.challenge_id}: {r.tests_passed}/{r.tests_total} tests, score={r.weighted_score:.2f}")
+
+
+async def _run_sica_cmd(args):
+    """Run SICA self-improvement from CLI."""
+    _configure_logging()
+    logger = logging.getLogger("belief.cli")
+
+    from belief.evolution.sica import SelfImprovementCycle
+    project_root = _get_project_root()
+    cycle = SelfImprovementCycle(project_root)
+
+    for i in range(args.iterations):
+        print(f"\n  SICA iteration {i+1}/{args.iterations}")
+        result = await cycle.run_one_iteration(benchmark_tiers=args.tiers)
+
+        if result.accepted:
+            print(f"  ✓ ACCEPTED: {result.proposal_title}")
+            print(f"    {result.pre_score:.0%} → {result.post_score:.0%} (+{result.improvement:.0%})")
+        elif result.rolled_back:
+            print(f"  ✗ ROLLED BACK: {result.proposal_title}")
+            print(f"    {result.pre_score:.0%} → {result.post_score:.0%} ({result.improvement:.0%})")
+        elif result.error:
+            print(f"  ⚠ ERROR: {result.error}")
+
+    # Summary
+    archive = cycle.archive
+    print(f"\n  SICA Summary: {len(archive.iterations)} iterations, "
+          f"accept rate={archive.accept_rate:.0%}, best={archive.best_score:.0%}")
+
+
 def app():
     """CLI entry point."""
     import argparse
     parser = argparse.ArgumentParser(description="Belief Engine — build from a goal")
-    parser.add_argument("--goal", required=True, help="What to build (natural language)")
-    parser.add_argument("--max-cost", type=float, default=10.0, help="Max USD budget (default: 10)")
-    parser.add_argument("--max-iterations", type=int, default=3, help="Max build loop iterations (default: 3)")
-    parser.add_argument("--deploy", choices=["railway", "docker_local"],
-                        help="Deploy after build (railway or docker_local)")
-    parser.add_argument("--deploy-name", help="Project name for deployment")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Default: build
+    build_parser = subparsers.add_parser("build", help="Build from a goal")
+    build_parser.add_argument("--goal", required=True, help="What to build (natural language)")
+    build_parser.add_argument("--max-cost", type=float, default=10.0, help="Max USD budget")
+    build_parser.add_argument("--max-iterations", type=int, default=3, help="Max build loop iterations")
+    build_parser.add_argument("--deploy", choices=["railway", "docker_local"],
+                              help="Deploy after build")
+    build_parser.add_argument("--deploy-name", help="Project name for deployment")
+
+    # Benchmark
+    bench_parser = subparsers.add_parser("benchmark", help="Run benchmark challenges")
+    bench_parser.add_argument("--tiers", type=int, nargs="+", default=[1, 2, 3, 4, 5],
+                              help="Tiers to run (default: 1-5)")
+    bench_parser.add_argument("--ids", nargs="+", help="Specific challenge IDs")
+
+    # SICA self-improvement
+    sica_parser = subparsers.add_parser("sica", help="Run self-improvement cycle")
+    sica_parser.add_argument("--iterations", type=int, default=1,
+                             help="Number of improvement iterations (default: 1)")
+    sica_parser.add_argument("--tiers", type=int, nargs="+", default=[1, 2, 3],
+                             help="Benchmark tiers for validation (default: 1-3)")
+
+    # Bittensor miner
+    mine_parser = subparsers.add_parser("mine", help="Run as Bittensor subnet miner")
+    mine_parser.add_argument("--netuid", type=int, default=62, help="Subnet ID (default: 62)")
+    mine_parser.add_argument("--wallet-name", default="miner", help="Wallet name")
+    mine_parser.add_argument("--hotkey", default="default", help="Hotkey name")
+    mine_parser.add_argument("--network", default="finney", help="Network (finney/test/local)")
+    mine_parser.add_argument("--port", type=int, default=8091, help="Axon port")
+    mine_parser.add_argument("--max-cost", type=float, default=0.50,
+                             help="Max USD per challenge")
+
+    # Backward compat: --goal without subcommand
+    parser.add_argument("--goal", help="What to build (shortcut for: build --goal)")
+    parser.add_argument("--max-cost", type=float, default=10.0)
+    parser.add_argument("--max-iterations", type=int, default=3)
+    parser.add_argument("--deploy", choices=["railway", "docker_local"])
+    parser.add_argument("--deploy-name")
+
     args = parser.parse_args()
 
-    result = asyncio.run(run(args.goal, args.max_cost, args.max_iterations))
+    # Route to correct handler
+    if args.command == "benchmark":
+        asyncio.run(_run_benchmark_cmd(args))
+        sys.exit(0)
+    elif args.command == "sica":
+        asyncio.run(_run_sica_cmd(args))
+        sys.exit(0)
+    elif args.command == "mine":
+        from belief.bittensor.miner import BeliefMiner
+        miner = BeliefMiner(
+            netuid=args.netuid,
+            wallet_name=args.wallet_name,
+            hotkey=args.hotkey,
+            network=args.network,
+            axon_port=args.port,
+            max_cost_per_challenge=args.max_cost,
+        )
+        miner.start()
+        sys.exit(0)
+    elif args.command == "build" or args.goal:
+        goal = getattr(args, "goal", None)
+        if not goal:
+            parser.error("--goal is required")
+        result = asyncio.run(run(goal, args.max_cost, args.max_iterations))
 
-    # Deploy if requested
-    if args.deploy and result.get("code_files"):
-        code_files = result["code_files"]
-        deploy_name = args.deploy_name or args.goal.split()[-1].lower()[:20].replace(" ", "-")
+        # Deploy if requested
+        if args.deploy and result.get("code_files"):
+            code_files = result["code_files"]
+            deploy_name = args.deploy_name or goal.split()[-1].lower()[:20].replace(" ", "-")
 
-        async def _do_deploy():
-            from belief.deploy import deploy, DeployConfig, DeployTarget, DeployStatus
-            config = DeployConfig(
-                target=DeployTarget(args.deploy),
-                project_name=deploy_name,
-            )
-            dr = await deploy(code_files, config)
-            if dr.status == DeployStatus.LIVE:
-                print(f"\n  \033[32m✓ DEPLOYED\033[0m → {dr.url} ({dr.duration_seconds:.1f}s)")
-            else:
-                print(f"\n  \033[31m✗ DEPLOY FAILED\033[0m: {dr.error}")
-                print(f"  Run manually: python3 -m belief.deploy --target {args.deploy}")
+            async def _do_deploy():
+                from belief.deploy import deploy, DeployConfig, DeployTarget, DeployStatus
+                config = DeployConfig(
+                    target=DeployTarget(args.deploy),
+                    project_name=deploy_name,
+                )
+                dr = await deploy(code_files, config)
+                if dr.status == DeployStatus.LIVE:
+                    print(f"\n  \033[32m✓ DEPLOYED\033[0m → {dr.url} ({dr.duration_seconds:.1f}s)")
+                else:
+                    print(f"\n  \033[31m✗ DEPLOY FAILED\033[0m: {dr.error}")
 
-        asyncio.run(_do_deploy())
+            asyncio.run(_do_deploy())
 
-    phase = result.get("phase", "unknown")
-    if isinstance(phase, str):
-        success = phase == "complete"
+        phase = result.get("phase", "unknown")
+        if isinstance(phase, str):
+            success = phase == "complete"
+        else:
+            success = phase == Phase.COMPLETE
+        sys.exit(0 if success else 1)
     else:
-        success = phase == Phase.COMPLETE
-    sys.exit(0 if success else 1)
+        parser.print_help()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
