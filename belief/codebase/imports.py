@@ -97,6 +97,22 @@ def verify_imports(code_files: dict[str, str]) -> list[ImportIssue]:
     return issues
 
 
+# Symbols that must NEVER be auto-renamed — they are infrastructure names
+# used by SQLAlchemy, FastAPI, and other frameworks. Renaming these destroys
+# skeleton-generated database.py, models.py, etc.
+_NEVER_RENAME_SYMBOLS = frozenset({
+    "Base", "engine", "SessionLocal", "get_db", "init_db",
+    "DeclarativeBase", "Session", "app", "router",
+    "metadata", "create_engine", "sessionmaker",
+})
+
+# Files that should never be modified by the import fixer — they are
+# generated deterministically by the skeleton builder.
+_SKELETON_FILE_NAMES = frozenset({
+    "database.py", "db.py",
+})
+
+
 def auto_fix_imports(
     code_files: dict[str, str], issues: list[ImportIssue]
 ) -> dict[str, str]:
@@ -106,12 +122,27 @@ def auto_fix_imports(
     - Wrong case: "pipeline" → "Pipeline" (case mismatch)
     - Wrong name: "Pipeline" → "DataPipeline" (similar name in target)
 
+    Never touches:
+    - Symbols in _NEVER_RENAME_SYMBOLS (infrastructure names like Base, engine)
+    - Files in _SKELETON_FILE_NAMES (database.py, db.py)
+
     Returns modified code_files dict.
     """
     fixed = dict(code_files)
 
     for issue in issues:
         if not issue.suggestion:
+            continue
+
+        # Never rename infrastructure symbols — this destroys database.py
+        if issue.symbol in _NEVER_RENAME_SYMBOLS:
+            logger.debug(f"Import fix: skipping protected symbol '{issue.symbol}'")
+            continue
+
+        # Never modify skeleton database files
+        source_basename = issue.source_file.rsplit("/", 1)[-1] if "/" in issue.source_file else issue.source_file
+        if source_basename in _SKELETON_FILE_NAMES:
+            logger.debug(f"Import fix: skipping skeleton file '{issue.source_file}'")
             continue
 
         source_code = fixed.get(issue.source_file, "")
@@ -252,14 +283,29 @@ def _is_external_module(module: str, code_files: dict[str, str]) -> bool:
 
 
 def _find_closest(name: str, available: set[str]) -> str:
-    """Find the closest matching symbol name (case-insensitive, prefix match)."""
+    """Find the closest matching symbol name (case-insensitive, prefix match).
+
+    Never suggests renaming protected infrastructure symbols.
+    """
+    # Never suggest renames involving protected symbols
+    if name in _NEVER_RENAME_SYMBOLS:
+        return ""
+
     # Exact case-insensitive match
     for sym in available:
         if sym.lower() == name.lower():
+            if sym in _NEVER_RENAME_SYMBOLS:
+                continue
             return sym
 
-    # Prefix/suffix match
+    # Prefix/suffix match — but require minimum length to avoid
+    # short names like "Base" matching "BaseModel", "Database", etc.
+    if len(name) < 4:
+        return ""  # Too short for fuzzy matching
+
     for sym in available:
+        if sym in _NEVER_RENAME_SYMBOLS:
+            continue
         if name.lower() in sym.lower() or sym.lower() in name.lower():
             return sym
 

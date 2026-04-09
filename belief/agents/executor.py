@@ -323,34 +323,19 @@ class ExecutorAgent(BaseAgent):
             logger.debug(f"Security scan skipped: {e}")
 
         # Step 0.5: Static import verification (Covenant #3)
-        # Trace every `from X import Y` to confirm Y is defined in X
+        # NOTE: The _import_fix_node in the pipeline already ran auto_fix_imports.
+        # Here we only VERIFY — we do NOT auto-fix again (double-fix corrupts
+        # skeleton files like database.py). Remaining issues are logged as warnings,
+        # not treated as fatal — let the actual import attempt catch real errors.
         try:
-            from belief.codebase.imports import verify_imports, auto_fix_imports
+            from belief.codebase.imports import verify_imports
             import_issues = verify_imports(code_files)
             if import_issues:
-                # Try auto-fixing import issues before failing
-                fixed_files = auto_fix_imports(code_files, import_issues)
-                if fixed_files != code_files:
-                    # Re-verify after fixes
-                    remaining = verify_imports(fixed_files)
-                    fixed_count = len(import_issues) - len(remaining)
-                    if fixed_count > 0:
-                        logger.info(f"Import verifier: auto-fixed {fixed_count} import issues")
-                        code_files.update(fixed_files)
-                        import_issues = remaining
-
-                if import_issues:
-                    issue = import_issues[0]
-                    suggestion = f" (did you mean '{issue.suggestion}'?)" if issue.suggestion else ""
-                    available = f" Available: {', '.join(issue.available_symbols[:5])}" if issue.available_symbols else ""
-                    return ExecutionResult(
-                        exit_code=1, success=False,
-                        error_summary=(
-                            f"Import error in {issue.source_file}: "
-                            f"cannot import '{issue.symbol}' from '{issue.target_module}'"
-                            f"{suggestion}{available}"
-                        ),
-                        install_success=True,
+                for issue in import_issues[:3]:
+                    logger.warning(
+                        f"Import warning: {issue.source_file}: "
+                        f"'{issue.symbol}' from '{issue.target_module}' "
+                        f"({issue.issue_type})"
                     )
         except Exception as e:
             logger.debug(f"Import verification skipped: {e}")

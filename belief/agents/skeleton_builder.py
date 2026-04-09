@@ -99,18 +99,29 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
 
         # Fields
         for f in model.fields:
-            if f.description:
-                if f.default is not None:
+            # Sanitize description to prevent quote escaping issues
+            desc = f.description.replace('"', "'") if f.description else ""
+            # Sanitize default to prevent syntax issues
+            default = f.default
+            if isinstance(default, str):
+                # If default looks like a Python literal, keep as-is
+                # Otherwise wrap in quotes
+                if default not in ("None", "True", "False", "[]", "{}", "()") and \
+                   not default.startswith(("'", '"', "[", "{", "(")) and \
+                   not default.replace(".", "").replace("-", "").isdigit():
+                    default = f'"{default}"'
+            if desc:
+                if default is not None:
                     lines.append(
-                        f'    {f.name}: {f.type_annotation} = Field(default={f.default}, description="{f.description}")'
+                        f'    {f.name}: {f.type_annotation} = Field(default={default}, description="{desc}")'
                     )
                 else:
                     lines.append(
-                        f'    {f.name}: {f.type_annotation} = Field(description="{f.description}")'
+                        f'    {f.name}: {f.type_annotation} = Field(description="{desc}")'
                     )
             else:
-                if f.default is not None:
-                    lines.append(f"    {f.name}: {f.type_annotation} = {f.default}")
+                if default is not None:
+                    lines.append(f"    {f.name}: {f.type_annotation} = {default}")
                 else:
                     lines.append(f"    {f.name}: {f.type_annotation}")
 

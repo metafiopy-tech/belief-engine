@@ -89,18 +89,25 @@ class DebuggerAgent(BaseAgent):
                 # Fallback: single-file fix on the error file
                 target_file = _find_error_file(error, state.code_files)
                 if target_file:
-                    code = state.code_files.get(target_file, "")
-                    if code:
-                        fixed_code = await self._fix_via_search_replace(
-                            llm, state.user_goal, error, target_file, code,
-                            state.complexity_score, code_files=state.code_files,
-                        )
-                        if fixed_code and fixed_code != code:
-                            state.code_files[target_file] = fixed_code
-                            logger.info(f"Debugger: single-file fix on {target_file}")
+                    # Never edit skeleton files — they are deterministically correct
+                    skeleton_files = set()
+                    if hasattr(state, 'skeleton_files') and state.skeleton_files:
+                        skeleton_files = set(state.skeleton_files.keys())
+                    if target_file in skeleton_files:
+                        logger.info(f"Debugger: skipping skeleton file {target_file} (immutable)")
+                    else:
+                        code = state.code_files.get(target_file, "")
+                        if code:
+                            fixed_code = await self._fix_via_search_replace(
+                                llm, state.user_goal, error, target_file, code,
+                                state.complexity_score, code_files=state.code_files,
+                            )
+                            if fixed_code and fixed_code != code:
+                                state.code_files[target_file] = fixed_code
+                                logger.info(f"Debugger: single-file fix on {target_file}")
             else:
                 # ── Phase 2: Editor applies fixes (uses debugger role = may be Haiku) ──
-                # Protect skeleton files from destructive edits
+                # Build the set of skeleton files — these are IMMUTABLE
                 skeleton_files = set()
                 if hasattr(state, 'skeleton_files') and state.skeleton_files:
                     skeleton_files = set(state.skeleton_files.keys())
@@ -114,11 +121,17 @@ class DebuggerAgent(BaseAgent):
                     if not code or not instruction:
                         continue
 
-                    # Protect database.py skeleton — verify it still exports key symbols
+                    # HARD BLOCK: skeleton files are immutable — never edit them.
+                    # The skeleton builder generates database.py, models.py, etc.
+                    # deterministically. LLM edits always make them worse.
+                    if fname in skeleton_files:
+                        logger.info(f"Debugger: skipping skeleton file {fname} (immutable)")
+                        continue
+
+                    # Secondary guard: protect database files even if not tracked as skeleton
                     if fname in ("database.py", "db.py") and "get_db" in code and "engine" in code:
-                        # Database skeleton is correct — don't let editor replace it
-                        # Only allow additive edits
-                        instruction = f"ADDITIVE ONLY — do not remove get_db, engine, Base, SessionLocal, init_db. {instruction}"
+                        logger.info(f"Debugger: skipping database file {fname} (protected)")
+                        continue
 
                     fixed_code = await self._editor_apply(
                         llm, fname, code, instruction, state.complexity_score

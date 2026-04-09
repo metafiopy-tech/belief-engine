@@ -182,17 +182,22 @@ class TesterAgent(BaseAgent):
                         conftest_imports.add(alias.name)
 
             # Check for pytest fixture usage (implicit via function parameters)
-            # Tests like `def test_health(client):` need a conftest with a `client` fixture
-            _KNOWN_FIXTURES = {"client", "runner", "run_cli", "db", "session", "app", "tmp_path", "tmpdir"}
+            # ANY test function parameter that isn't a pytest builtin is a custom
+            # fixture that needs a conftest.py. Previous approach used a whitelist
+            # which missed db_session, test_client, api_client, sample_data, etc.
+            _PYTEST_BUILTINS = {
+                "self", "request", "tmp_path", "tmpdir", "monkeypatch",
+                "capsys", "capfd", "caplog", "pytestconfig", "cache",
+                "record_property", "record_testsuite_property", "recwarn",
+                "tmp_path_factory", "tmpdir_factory",
+            }
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     if node.name.startswith("test_"):
                         for arg in node.args.args:
-                            if arg.arg in _KNOWN_FIXTURES:
-                                # tmp_path and tmpdir are built-in pytest fixtures
-                                if arg.arg not in ("tmp_path", "tmpdir"):
-                                    needs_conftest = True
-                                    conftest_imports.add(arg.arg)
+                            if arg.arg not in _PYTEST_BUILTINS:
+                                needs_conftest = True
+                                conftest_imports.add(arg.arg)
 
             # Check for imports from non-existent local modules
             valid = True
@@ -308,15 +313,103 @@ class TesterAgent(BaseAgent):
                         ])
                     break
 
-        # Add any other needed fixtures as stubs
+        # Add any other needed fixtures — generate smart stubs based on name patterns
         existing = {"client", "runner", "run_cli"}
-        for fixture in needed_fixtures:
-            if fixture not in existing:
+        for fixture in sorted(needed_fixtures):
+            if fixture in existing:
+                continue
+            existing.add(fixture)
+
+            # Smart fixture generation based on naming patterns
+            fixture_lower = fixture.lower()
+
+            if "db" in fixture_lower or "session" in fixture_lower:
+                # Database session fixture
+                if is_fastapi:
+                    lines.extend([
+                        f"@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """Database session for testing."""',
+                        f"    from database import SessionLocal, init_db, engine, Base",
+                        f"    Base.metadata.create_all(bind=engine)",
+                        f"    db = SessionLocal()",
+                        f"    try:",
+                        f"        yield db",
+                        f"    finally:",
+                        f"        db.close()",
+                        f"        Base.metadata.drop_all(bind=engine)",
+                        "",
+                    ])
+                else:
+                    lines.extend([
+                        f"@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """Database session stub."""',
+                        f"    yield None  # TODO: implement with real DB session",
+                        "",
+                    ])
+            elif "client" in fixture_lower or "api" in fixture_lower:
+                # API/test client variant
+                if is_fastapi:
+                    lines.extend([
+                        f"@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """Test client for the API."""',
+                        f"    with TestClient(app) as c:",
+                        f"        yield c",
+                        "",
+                    ])
+                else:
+                    lines.extend([
+                        f"@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """Test client stub."""',
+                        f"    yield None  # TODO: implement",
+                        "",
+                    ])
+            elif "app" in fixture_lower:
+                # App instance fixture
+                if is_fastapi:
+                    lines.extend([
+                        f"@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """FastAPI app instance."""',
+                        f"    return app",
+                        "",
+                    ])
+                else:
+                    lines.extend([
+                        f"@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """App instance stub."""',
+                        f"    yield None  # TODO: implement",
+                        "",
+                    ])
+            elif "cli" in fixture_lower or "invoke" in fixture_lower:
+                # CLI runner variant
+                if is_click:
+                    lines.extend([
+                        f"@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """CLI runner fixture."""',
+                        f"    return CliRunner()",
+                        "",
+                    ])
+                else:
+                    lines.extend([
+                        f"@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """CLI fixture stub."""',
+                        f"    yield None  # TODO: implement",
+                        "",
+                    ])
+            else:
+                # Generic stub — at least yield something non-None
                 lines.extend([
                     f"@pytest.fixture",
                     f"def {fixture}():",
-                    f'    """Auto-generated fixture stub for {fixture}."""',
-                    f"    pass  # TODO: implement",
+                    f'    """Auto-generated fixture for {fixture}."""',
+                    f"    yield {{}}  # TODO: implement with real test data",
                     "",
                 ])
 
@@ -347,7 +440,7 @@ def _parse_test_files(raw: str) -> dict[str, str]:
         content = re.sub(r"###END\s*$", "", part[nl + 1:])
         content = re.sub(r"^```[a-zA-Z]*\n?", "", content)
         content = re.sub(r"\n?```\s*$", "", content)
-        if os.path.basename(fname).startswith("test_"):
+        if os.path.basename(fname).startswith("test_") or "conftest" in fname or fname.endswith("__init__.py"):
             files[fname] = content
     return files
 
