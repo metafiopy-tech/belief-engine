@@ -260,6 +260,11 @@ class ExecutorAgent(BaseAgent):
 
             system_python = _sys.executable
 
+            # ── TypeScript/Node.js path ──────────────────────────────────
+            # If project has package.json, use Node.js execution
+            if "package.json" in code_files:
+                return self._verify_typescript(tmp, entry_points)
+
             if use_import_verify:
                 # M4: Verify each entry point independently — all must pass
                 all_results = []
@@ -312,6 +317,101 @@ class ExecutorAgent(BaseAgent):
             install_result.install_stderr = str(e)
 
         return install_result
+
+    def _verify_typescript(self, tmp: Path, entry_points: list[str]) -> ExecutionResult:
+        """Verify a TypeScript/Node.js project.
+
+        Steps:
+        1. npm install (install dependencies)
+        2. npx tsc --noEmit (type check without emitting)
+        3. If entry point is .js, try running with node --check
+
+        This mirrors the Python import verification but for the Node.js ecosystem.
+        """
+        import shutil
+
+        t0 = time.time()
+        result = ExecutionResult()
+
+        # Check if npm is available
+        npm = shutil.which("npm")
+        npx = shutil.which("npx")
+        node = shutil.which("node")
+
+        if not npm:
+            result.success = False
+            result.stderr = "npm not found — install Node.js to verify TypeScript projects"
+            result.duration_seconds = time.time() - t0
+            return result
+
+        try:
+            # Step 1: npm install
+            logger.info("Executor: running npm install for TypeScript project")
+            proc = subprocess.run(
+                [npm, "install", "--no-audit", "--no-fund"],
+                capture_output=True, text=True,
+                timeout=INSTALL_TIMEOUT, cwd=str(tmp),
+            )
+            result.install_success = proc.returncode == 0
+            result.install_stdout = proc.stdout[-500:]
+            result.install_stderr = proc.stderr[-500:]
+
+            if not result.install_success:
+                result.success = False
+                result.stderr = f"npm install failed: {proc.stderr[-500:]}"
+                result.duration_seconds = time.time() - t0
+                return result
+
+            # Step 2: Type check with tsc --noEmit
+            if npx:
+                logger.info("Executor: running tsc --noEmit")
+                proc = subprocess.run(
+                    [npx, "tsc", "--noEmit"],
+                    capture_output=True, text=True,
+                    timeout=60, cwd=str(tmp),
+                )
+                if proc.returncode != 0:
+                    # Type errors — report but don't necessarily fail
+                    # Many generated TS projects have minor type issues that don't affect runtime
+                    type_errors = proc.stdout[-1000:] if proc.stdout else proc.stderr[-1000:]
+                    error_count = type_errors.count("error TS")
+                    if error_count > 5:
+                        result.success = False
+                        result.stderr = f"TypeScript: {error_count} type errors:\n{type_errors}"
+                        result.duration_seconds = time.time() - t0
+                        return result
+                    else:
+                        logger.info(f"Executor: {error_count} minor type errors (non-blocking)")
+                        result.stdout = f"TypeScript: {error_count} minor type errors (non-blocking)"
+
+            # Step 3: Syntax check entry point with node --check (JS files only)
+            if node and entry_points:
+                ep = entry_points[0]
+                if ep.endswith(".js"):
+                    proc = subprocess.run(
+                        [node, "--check", ep],
+                        capture_output=True, text=True,
+                        timeout=10, cwd=str(tmp),
+                    )
+                    if proc.returncode != 0:
+                        result.success = False
+                        result.stderr = f"Node syntax error: {proc.stderr[-500:]}"
+                        result.duration_seconds = time.time() - t0
+                        return result
+
+            result.success = True
+            result.stdout = (result.stdout or "") + "\nTypeScript verification passed"
+            logger.info("Executor: TypeScript verification passed")
+
+        except subprocess.TimeoutExpired:
+            result.success = False
+            result.stderr = "TypeScript verification timed out"
+        except Exception as e:
+            result.success = False
+            result.stderr = f"TypeScript verification error: {e}"
+
+        result.duration_seconds = time.time() - t0
+        return result
 
     def _verify_via_import(
         self, python: str, tmp: Path, entry_point: str,

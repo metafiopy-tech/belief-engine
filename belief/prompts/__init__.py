@@ -113,10 +113,23 @@ Design:
 
 # ── Builder ───────────────────────────────────────────────────────────────────
 
-BUILDER_SYSTEM = """You are the Builder Agent. Write complete, working Python code.
+BUILDER_SYSTEM = """You are the Builder Agent. Write complete, working code.
 Generate each file fully — no placeholders, no TODOs, no "implement this".
 Every function must have a real implementation. Handle errors gracefully.
-Use the libraries and patterns specified in the architecture."""
+Use the libraries and patterns specified in the architecture.
+
+LANGUAGE DETECTION:
+- If the filename ends in .py → write Python
+- If the filename ends in .ts or .tsx → write TypeScript with ESM discipline
+- If the filename is package.json or tsconfig.json → write valid JSON
+
+TYPESCRIPT ESM RULES (when writing .ts files):
+1. Relative imports MUST include .js extension: import { foo } from './utils.js'
+2. NEVER use __dirname — use import.meta.dirname
+3. NEVER use require() — use import
+4. Use Zod for runtime validation at API boundaries
+5. All async functions must have explicit return types
+6. Use strict TypeScript — no 'any' types"""
 
 BUILDER_PROMPT = """Write the code for this file:
 
@@ -135,10 +148,11 @@ OTHER FILES IN THIS PROJECT:
 
 {gap_context}
 
-Write complete, working Python code for {filename}.
+Write complete, working code for {filename}.
 Output ONLY the raw code — no markdown fences, no explanation.
 Include all imports, all functions, all error handling.
-If this is the entry point, include an if __name__ == "__main__" block."""
+If this is a Python entry point, include an if __name__ == "__main__" block.
+If this is a TypeScript entry point, include the server listen call at module scope."""
 
 # ── Tester ────────────────────────────────────────────────────────────────────
 

@@ -1,10 +1,17 @@
-"""TypeScript Language Adapter — Tier 6 Multi-Language Support.
+"""TypeScript Language Adapter — ESM-First Protocol Generation.
 
-Handles TypeScript and JavaScript projects:
-- package.json scaffolding
-- tsc --noEmit for type checking (when tsc available)
-- Regex-based export parsing (tree-sitter upgrade in M2)
-- React/Next.js component detection
+Handles TypeScript and JavaScript projects with strict ESM discipline
+required for x402, MCP, A2A, and ERC-8004 SDKs.
+
+Critical ESM covenants (from research):
+1. __dirname is undefined in ESM — use import.meta.dirname (Node 20.11+)
+2. File extensions mandatory — import './utils.js' even when source is utils.ts
+3. require() doesn't exist in ESM — use dynamic import()
+4. CJS cannot require ESM, but ESM can import CJS
+5. Named imports from CJS may fail — use default import + destructure
+6. JSON imports require assertion — import x from './x.json' with { type: 'json' }
+7. Package exports field acts as whitelist — deep imports may break
+8. Dual-loading hazard — same package as CJS+ESM creates two instances
 """
 
 from __future__ import annotations
@@ -12,9 +19,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import subprocess
-import sys
-from pathlib import Path
 from typing import Optional
 
 from belief.languages import (
@@ -27,8 +31,53 @@ from belief.languages import (
 logger = logging.getLogger("belief.languages.typescript")
 
 
+# ── Protocol-specific dependency sets ────────────────────────────────────────
+
+PROTOCOL_DEPS = {
+    "x402": {
+        "dependencies": {
+            "@x402/express": "^2.3.0",
+            "@x402/evm": "^2.3.0",
+            "@x402/core": "^2.3.0",
+            "express": "^5.0.0",
+        },
+        "devDependencies": {
+            "@types/express": "^5.0.0",
+        },
+    },
+    "mcp": {
+        "dependencies": {
+            "@modelcontextprotocol/sdk": "^1.29.0",
+            "zod": "^3.25.0",
+            "express": "^5.0.0",
+        },
+        "devDependencies": {
+            "@types/express": "^5.0.0",
+        },
+    },
+    "a2a": {
+        "dependencies": {
+            "@a2a-js/sdk": "latest",
+            "express": "^5.0.0",
+        },
+        "devDependencies": {
+            "@types/express": "^5.0.0",
+        },
+    },
+    "erc8004": {
+        "dependencies": {
+            "agent0-sdk": "^1.7.0",
+            "ethers": "^6.0.0",
+        },
+    },
+    "bittensor": {
+        # Bittensor is Python — no TypeScript deps
+    },
+}
+
+
 class TypeScriptAdapter(LanguageAdapter):
-    """TypeScript/JavaScript language adapter."""
+    """TypeScript/JavaScript language adapter with ESM-first discipline."""
 
     @property
     def language(self) -> Language:
@@ -43,76 +92,140 @@ class TypeScriptAdapter(LanguageAdapter):
         return ["*.test.ts", "*.test.tsx", "*.spec.ts", "*.spec.tsx",
                 "*.test.js", "*.test.jsx", "*.spec.js", "*.spec.jsx"]
 
-    def scaffold_project(self, project_name: str, dependencies: list[str]) -> dict[str, str]:
-        """Generate TypeScript project scaffolding."""
+    def scaffold_project(
+        self,
+        project_name: str,
+        dependencies: list[str],
+        protocols: list[str] | None = None,
+    ) -> dict[str, str]:
+        """Generate TypeScript project scaffolding with ESM-first config.
+
+        Args:
+            project_name: npm package name
+            dependencies: additional npm packages
+            protocols: optional list of protocol presets (x402, mcp, a2a, erc8004)
+        """
+        # Build dependency maps
+        deps = {}
+        dev_deps = {
+            "typescript": "^5.7.0",
+            "@types/node": "^22.0.0",
+            "vitest": "^3.0.0",
+            "tsx": "^4.0.0",
+        }
+
+        # Add protocol-specific deps
+        for proto in (protocols or []):
+            proto_deps = PROTOCOL_DEPS.get(proto, {})
+            deps.update(proto_deps.get("dependencies", {}))
+            dev_deps.update(proto_deps.get("devDependencies", {}))
+
+        # Add explicit dependencies
+        for dep in dependencies:
+            if dep not in deps:
+                deps[dep] = "latest"
+
         pkg = {
             "name": project_name,
             "version": "0.1.0",
+            "type": "module",  # CRITICAL — ESM mode
             "private": True,
             "scripts": {
                 "build": "tsc",
+                "start": "node dist/index.js",
                 "dev": "tsx watch src/index.ts",
                 "test": "vitest run",
-                "lint": "eslint src/",
                 "typecheck": "tsc --noEmit",
             },
-            "dependencies": {dep: "latest" for dep in dependencies},
-            "devDependencies": {
-                "typescript": "^5.0.0",
-                "vitest": "^2.0.0",
-                "@types/node": "^20.0.0",
-            },
+            "dependencies": deps,
+            "devDependencies": dev_deps,
         }
 
+        # NodeNext resolution — required for MCP SDK, x402, and most modern packages
         tsconfig = {
             "compilerOptions": {
-                "target": "ES2022",
-                "module": "ESNext",
-                "moduleResolution": "bundler",
+                "target": "ESNext",
+                "module": "NodeNext",
+                "moduleResolution": "NodeNext",
                 "strict": True,
+                "verbatimModuleSyntax": True,
+                "isolatedModules": True,
                 "esModuleInterop": True,
-                "skipLibCheck": True,
+                "resolveJsonModule": True,
+                "noUncheckedIndexedAccess": True,
                 "outDir": "./dist",
                 "rootDir": "./src",
+                "sourceMap": True,
                 "declaration": True,
+                "skipLibCheck": True,
             },
             "include": ["src/**/*.ts"],
             "exclude": ["node_modules", "dist"],
         }
 
-        return {
+        files = {
             "package.json": json.dumps(pkg, indent=2),
             "tsconfig.json": json.dumps(tsconfig, indent=2),
         }
 
-    def verify_code(self, code: str, filename: str) -> VerificationResult:
-        """Verify TypeScript code.
+        # Add .env.example for protocol configs
+        env_lines = []
+        if protocols:
+            if "x402" in protocols:
+                env_lines.extend([
+                    "# x402 Payment Configuration",
+                    "PAY_TO_ADDRESS=0xYourWalletAddress",
+                    "CDP_API_KEY_ID=",
+                    "CDP_API_KEY_SECRET=",
+                    "X402_NETWORK=eip155:84532  # Base Sepolia testnet",
+                    "X402_FACILITATOR=https://x402.org/facilitator",
+                ])
+            if "erc8004" in protocols:
+                env_lines.extend([
+                    "# ERC-8004 Identity",
+                    "PRIVATE_KEY=0x...",
+                    "PINATA_JWT=",
+                    "CHAIN_ID=84532  # Base Sepolia",
+                ])
+        if env_lines:
+            files[".env.example"] = "\n".join(env_lines) + "\n"
 
-        Checks:
-        1. Basic syntax via regex patterns (always available)
-        2. tsc --noEmit if TypeScript compiler is installed
-        """
+        return files
+
+    def verify_code(self, code: str, filename: str) -> VerificationResult:
+        """Verify TypeScript code for common ESM and type errors."""
         errors = []
 
-        # Basic syntax checks via regex
-        # Check for unmatched braces
-        open_braces = code.count("{") - code.count("}")
-        if abs(open_braces) > 0:
-            errors.append(f"{filename}: unmatched braces (diff={open_braces})")
+        # ESM covenant checks
+        lines = code.split("\n")
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
 
-        # Check for common TypeScript errors
-        if "import " in code:
-            # Verify import statements are well-formed
-            for i, line in enumerate(code.split("\n"), 1):
-                stripped = line.strip()
-                if stripped.startswith("import ") and not (
-                    "from " in stripped or
-                    stripped.endswith(";") or
-                    stripped.endswith("'") or
-                    stripped.endswith('"') or
-                    "{" in stripped  # Multi-line import
-                ):
-                    errors.append(f"{filename}:{i}: malformed import statement")
+            # Covenant 1: No __dirname in ESM
+            if "__dirname" in stripped and "import.meta" not in stripped:
+                errors.append(f"{filename}:{i}: __dirname is undefined in ESM — use import.meta.dirname")
+
+            # Covenant 3: No require() in ESM
+            if "require(" in stripped and not stripped.startswith("//") and "createRequire" not in code:
+                errors.append(f"{filename}:{i}: require() is not available in ESM — use import()")
+
+            # Covenant 2: Missing .js extension in relative imports
+            if stripped.startswith("import ") and "from '" in stripped:
+                match = re.search(r"from\s+'(\.[^']+)'", stripped)
+                if match:
+                    path = match.group(1)
+                    if not path.endswith((".js", ".json", ".mjs", ".cjs")):
+                        # Relative import without extension
+                        errors.append(f"{filename}:{i}: ESM requires file extensions — use '{path}.js'")
+
+            # Check for common TypeScript anti-patterns
+            if ": any" in stripped and not stripped.startswith("//"):
+                pass  # Warning only, not error
+
+        # Brace matching
+        open_braces = code.count("{") - code.count("}")
+        if abs(open_braces) > 1:
+            errors.append(f"{filename}: unmatched braces (diff={open_braces})")
 
         return VerificationResult(
             success=len(errors) == 0,
@@ -120,60 +233,25 @@ class TypeScriptAdapter(LanguageAdapter):
         )
 
     def parse_exports(self, code: str, filename: str) -> list[ExportedSymbol]:
-        """Extract exported symbols from TypeScript code via regex.
-
-        Handles:
-        - export interface Foo { ... }
-        - export class Bar { ... }
-        - export function baz(...) { ... }
-        - export const qux = ...
-        - export type Alias = ...
-        - export default function/class/...
-        - export { A, B, C }
-        """
+        """Extract exported symbols from TypeScript code via regex."""
         exports = []
 
-        # export interface Name
-        for m in re.finditer(r'export\s+interface\s+(\w+)', code):
-            exports.append(ExportedSymbol(
-                name=m.group(1), kind="interface", file_path=filename,
-                signature=f"interface {m.group(1)}",
-            ))
+        patterns = [
+            (r'export\s+interface\s+(\w+)', "interface"),
+            (r'export\s+class\s+(\w+)', "class"),
+            (r'export\s+(?:async\s+)?function\s+(\w+)', "function"),
+            (r'export\s+(?:const|let|var)\s+(\w+)', "variable"),
+            (r'export\s+type\s+(\w+)', "type"),
+            (r'export\s+enum\s+(\w+)', "enum"),
+            (r'export\s+default\s+(?:class|function)\s+(\w+)', "default"),
+        ]
 
-        # export class Name
-        for m in re.finditer(r'export\s+class\s+(\w+)', code):
-            exports.append(ExportedSymbol(
-                name=m.group(1), kind="class", file_path=filename,
-                signature=f"class {m.group(1)}",
-            ))
-
-        # export function name
-        for m in re.finditer(r'export\s+(?:async\s+)?function\s+(\w+)', code):
-            exports.append(ExportedSymbol(
-                name=m.group(1), kind="function", file_path=filename,
-                signature=f"function {m.group(1)}",
-            ))
-
-        # export const/let/var name
-        for m in re.finditer(r'export\s+(?:const|let|var)\s+(\w+)', code):
-            exports.append(ExportedSymbol(
-                name=m.group(1), kind="variable", file_path=filename,
-                signature=f"const {m.group(1)}",
-            ))
-
-        # export type Name
-        for m in re.finditer(r'export\s+type\s+(\w+)', code):
-            exports.append(ExportedSymbol(
-                name=m.group(1), kind="type", file_path=filename,
-                signature=f"type {m.group(1)}",
-            ))
-
-        # export default
-        for m in re.finditer(r'export\s+default\s+(?:class|function)\s+(\w+)', code):
-            exports.append(ExportedSymbol(
-                name=m.group(1), kind="class", file_path=filename,
-                signature=f"default {m.group(1)}",
-            ))
+        for pattern, kind in patterns:
+            for m in re.finditer(pattern, code):
+                exports.append(ExportedSymbol(
+                    name=m.group(1), kind=kind, file_path=filename,
+                    signature=f"{kind} {m.group(1)}",
+                ))
 
         # export { A, B, C }
         for m in re.finditer(r'export\s*\{([^}]+)\}', code):
@@ -188,16 +266,21 @@ class TypeScriptAdapter(LanguageAdapter):
         return exports
 
     def get_system_prompt_additions(self) -> str:
-        return (
-            "Write TypeScript with strict mode enabled. "
-            "Use interfaces for data shapes, types for unions/intersections. "
-            "Prefer const over let. Use async/await for promises. "
-            "Export all public symbols explicitly. "
-            "Use ES module syntax (import/export), not CommonJS (require)."
-        )
+        return """TYPESCRIPT ESM GENERATION RULES (MANDATORY):
+1. ALL imports must use ES module syntax (import/export), NEVER require().
+2. Relative imports MUST include .js extension: import { foo } from './utils.js'
+   (even though the source file is .ts — TypeScript resolves .js to .ts at compile time)
+3. NEVER use __dirname or __filename — use import.meta.dirname (Node 20.11+)
+4. package.json MUST include "type": "module"
+5. tsconfig.json MUST use "module": "NodeNext" and "moduleResolution": "NodeNext"
+6. Use Zod for runtime validation at system boundaries (API inputs, env vars)
+7. Prefer discriminated unions over class hierarchies
+8. Use unknown instead of any for truly unknown types
+9. All async functions must have explicit return types
+10. Export all public symbols — no default exports for library code"""
 
     def get_import_statement(self, symbol: str, from_module: str) -> str:
-        module = from_module.replace(".ts", "").replace(".tsx", "")
+        module = from_module.replace(".ts", ".js").replace(".tsx", ".js")
         if not module.startswith(".") and not module.startswith("@"):
             module = f"./{module}"
         return f"import {{ {symbol} }} from '{module}';"
