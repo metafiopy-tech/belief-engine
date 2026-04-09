@@ -166,43 +166,6 @@ class ExceptionSpec(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# API Contract (Move 5: Contract-first generation)
-# ---------------------------------------------------------------------------
-
-class EndpointContract(BaseModel):
-    """A single API endpoint contract — the source of truth for both code and tests."""
-    method: str = Field(description="HTTP method: GET, POST, PUT, DELETE, PATCH")
-    path: str = Field(description="URL path, e.g. '/bookmarks/{id}'")
-    description: str = Field(default="", description="What this endpoint does")
-    request_model: Optional[str] = Field(default=None, description="Pydantic model name for request body")
-    response_model: Optional[str] = Field(default=None, description="Pydantic model name for response")
-    status_code: int = Field(default=200, description="Expected success status code")
-    error_codes: list[int] = Field(default_factory=list, description="Expected error status codes, e.g. [404, 422]")
-
-
-class CLIContract(BaseModel):
-    """A single CLI command contract."""
-    name: str = Field(description="Command name, e.g. 'add'")
-    description: str = Field(default="", description="What this command does")
-    arguments: list[str] = Field(default_factory=list, description="Required arguments")
-    options: list[str] = Field(default_factory=list, description="Optional flags, e.g. ['--verbose', '--output FILE']")
-    exit_codes: list[int] = Field(default_factory=lambda: [0], description="Expected exit codes")
-
-
-class APIContract(BaseModel):
-    """The complete API/CLI contract — source of truth for code and test generation.
-
-    Move 5: Both the builder and tester reference this contract.
-    - Builder generates code that implements every endpoint/command.
-    - Tester generates tests that verify every endpoint/command.
-    - The oracle problem dissolves because both reference the same spec.
-    """
-    endpoints: list[EndpointContract] = Field(default_factory=list, description="REST API endpoints")
-    cli_commands: list[CLIContract] = Field(default_factory=list, description="CLI commands")
-    base_url: str = Field(default="http://localhost:8000", description="Base URL for API testing")
-
-
-# ---------------------------------------------------------------------------
 # File Tree Entry
 # ---------------------------------------------------------------------------
 
@@ -270,12 +233,6 @@ class SkeletonArtifact(BaseModel):
         description="Custom exception hierarchy"
     )
 
-    # API/CLI Contract (Move 5: source of truth for code AND tests)
-    api_contract: Optional[APIContract] = Field(
-        default=None,
-        description="API endpoints or CLI commands — the contract both builder and tester reference"
-    )
-
     # Metadata
     entry_point: Optional[str] = Field(
         default=None,
@@ -303,43 +260,3 @@ class SkeletonArtifact(BaseModel):
     def dependents_of(self, file_path: str) -> list[DependencyEdge]:
         """Get all files that depend on `file_path`."""
         return [e for e in self.dependency_edges if e.target == file_path]
-
-    def format_contract(self) -> str:
-        """Format the API/CLI contract as a readable spec for builder and tester.
-
-        This is the single source of truth that both agents reference.
-        """
-        if not self.api_contract:
-            return ""
-
-        lines = ["## API CONTRACT (source of truth for code AND tests)"]
-
-        if self.api_contract.endpoints:
-            lines.append("\n### Endpoints:")
-            for ep in self.api_contract.endpoints:
-                req = f" ← {ep.request_model}" if ep.request_model else ""
-                resp = f" → {ep.response_model}" if ep.response_model else ""
-                lines.append(f"  {ep.method} {ep.path}{req}{resp} [{ep.status_code}]")
-                if ep.description:
-                    lines.append(f"    {ep.description}")
-                if ep.error_codes:
-                    lines.append(f"    Errors: {ep.error_codes}")
-
-        if self.api_contract.cli_commands:
-            lines.append("\n### CLI Commands:")
-            for cmd in self.api_contract.cli_commands:
-                args = " ".join(cmd.arguments)
-                opts = " ".join(cmd.options)
-                lines.append(f"  {cmd.name} {args} {opts}".strip())
-                if cmd.description:
-                    lines.append(f"    {cmd.description}")
-
-        # Also list model contracts
-        if self.model_chains:
-            lines.append("\n### Data Models:")
-            for chain in self.model_chains:
-                for model in chain.models:
-                    fields = ", ".join(f"{f.name}: {f.type_annotation}" for f in model.fields)
-                    lines.append(f"  {model.name}({model.base_class}): {fields}")
-
-        return "\n".join(lines)

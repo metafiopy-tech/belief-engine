@@ -272,6 +272,22 @@ class BuilderAgent(BaseAgent):
             except Exception as e:
                 logger.debug(f"Builder: repo map failed ({e})")
 
+        # ── Move 5: Inject API contract so builder knows what to implement ──
+        contract_context = ""
+        skeleton = state.skeleton_artifact
+        if skeleton:
+            from belief.models.skeleton import SkeletonArtifact as SA
+            if isinstance(skeleton, dict):
+                try:
+                    skeleton = SA.model_validate(skeleton)
+                except Exception:
+                    skeleton = None
+            if skeleton and hasattr(skeleton, 'format_contract'):
+                contract = skeleton.format_contract()
+                if contract:
+                    contract_context = f"\n{contract}\n"
+                    repo_map_context = repo_map_context + contract_context if repo_map_context else contract_context
+
         # Choose prompt based on skeleton mode
         if has_skeleton:
             prompt = self._build_skeleton_prompt(

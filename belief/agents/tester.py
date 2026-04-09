@@ -27,14 +27,28 @@ class TesterAgent(BaseAgent):
 
         llm = LLMClient(self.router)
         try:
-            # Build code context — prioritize actual imports and signatures
-            # over raw code to help the tester generate accurate imports
+            # Build code context with repo map
             code_context = self._build_code_context(state)
+
+            # Inject API contract if available (Move 5)
+            contract_context = ""
+            skeleton = state.skeleton_artifact
+            if skeleton:
+                from belief.models.skeleton import SkeletonArtifact
+                if isinstance(skeleton, dict):
+                    try:
+                        skeleton = SkeletonArtifact.model_validate(skeleton)
+                    except Exception:
+                        skeleton = None
+                if skeleton and hasattr(skeleton, 'format_contract'):
+                    contract = skeleton.format_contract()
+                    if contract:
+                        contract_context = f"\n{contract}\n"
 
             prompt = TESTER_PROMPT.format(
                 goal=spec.goal,
                 acceptance_criteria="\n".join(f"  {i}. {c}" for i, c in enumerate(spec.acceptance_criteria, 1)),
-                code_files=code_context,
+                code_files=code_context + contract_context,
             )
             raw = await llm.generate_text(
                 role=self.role, system=TESTER_SYSTEM, prompt=prompt,

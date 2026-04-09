@@ -65,36 +65,66 @@ class DebuggerAgent(BaseAgent):
             state.phase = Phase.EXECUTING
             return state
 
-        # ── Fallback: LLM-assisted debugging via search/replace ──
-        target_file = _find_error_file(error, state.code_files)
-        if not target_file:
-            state.warnings.append("Debugger: could not identify error file")
-            state.phase = Phase.EXECUTING
-            return state
-
-        code = state.code_files.get(target_file, "")
-        if not code:
-            state.phase = Phase.EXECUTING
-            return state
+        # ── Move 6: Architect/Editor split for multi-file debugging ──
+        # Phase 1 (Architect — Sonnet): Analyze root cause across ALL files
+        # Phase 2 (Editor — Haiku): Apply targeted search/replace edits
 
         llm = LLMClient(self.router)
         try:
-            # Use search/replace for files over 2000 chars, full replacement for small files
-            if len(code) > 2000:
-                fixed_code = await self._fix_via_search_replace(
-                    llm, state.user_goal, error, target_file, code, state.complexity_score,
-                    code_files=state.code_files,
-                )
-            else:
-                fixed_code = await self._fix_via_full_replacement(
-                    llm, state.user_goal, error, target_file, code, state.complexity_score
-                )
+            # Build repo map for context
+            repo_context = ""
+            try:
+                from belief.agents.repo_map import RepoMap
+                repo_map = RepoMap.from_code_files(state.code_files)
+                repo_context = repo_map.format_overview(max_tokens=1500)
+            except Exception:
+                pass
 
-            if fixed_code and fixed_code != code:
-                state.code_files[target_file] = fixed_code
-                logger.info(f"Debugger: LLM fix on {target_file} ({len(fixed_code)} chars)")
+            # ── Phase 1: Architect diagnoses across all files (Sonnet) ──
+            diagnosis = await self._architect_diagnose(
+                llm, error, state.code_files, repo_context, state.complexity_score
+            )
+
+            if not diagnosis or not diagnosis.get("files_to_fix"):
+                # Fallback: single-file fix on the error file
+                target_file = _find_error_file(error, state.code_files)
+                if target_file:
+                    code = state.code_files.get(target_file, "")
+                    if code:
+                        fixed_code = await self._fix_via_search_replace(
+                            llm, state.user_goal, error, target_file, code,
+                            state.complexity_score, code_files=state.code_files,
+                        )
+                        if fixed_code and fixed_code != code:
+                            state.code_files[target_file] = fixed_code
+                            logger.info(f"Debugger: single-file fix on {target_file}")
             else:
-                logger.warning(f"Debugger: could not fix {target_file}")
+                # ── Phase 2: Editor applies fixes (uses debugger role = may be Haiku) ──
+                fixes_applied = 0
+                for fix_spec in diagnosis["files_to_fix"][:3]:  # Max 3 files per cycle
+                    fname = fix_spec.get("file", "")
+                    instruction = fix_spec.get("instruction", "")
+                    code = state.code_files.get(fname, "")
+
+                    if not code or not instruction:
+                        continue
+
+                    fixed_code = await self._editor_apply(
+                        llm, fname, code, instruction, state.complexity_score
+                    )
+
+                    if fixed_code and fixed_code != code:
+                        state.code_files[fname] = fixed_code
+                        fixes_applied += 1
+                        logger.info(f"Debugger: editor fix on {fname}")
+
+                if fixes_applied > 0:
+                    logger.info(
+                        f"Debugger: architect/editor — {fixes_applied} files fixed, "
+                        f"root cause: {diagnosis.get('root_cause', 'unknown')[:80]}"
+                    )
+                else:
+                    logger.warning("Debugger: architect diagnosed but editor couldn't apply fixes")
 
         except Exception as e:
             logger.warning(f"Debugger failed: {e}")
@@ -104,6 +134,140 @@ class DebuggerAgent(BaseAgent):
 
         state.phase = Phase.EXECUTING
         return state
+
+    async def _architect_diagnose(
+        self, llm, error: str, code_files: dict[str, str],
+        repo_context: str, complexity: int,
+    ) -> dict | None:
+        """Phase 1: Architect analyzes root cause across all files (Sonnet).
+
+        Returns a diagnosis dict:
+        {
+            "root_cause": "description of the root cause",
+            "files_to_fix": [
+                {"file": "models.py", "instruction": "Add missing Mapped import"},
+                {"file": "main.py", "instruction": "Fix import path from models to database"}
+            ]
+        }
+        """
+        # Show the first 200 lines of each file involved
+        file_context = []
+        for fname, content in sorted(code_files.items()):
+            if not fname.endswith(".py"):
+                continue
+            lines = content.split("\n")[:150]
+            truncated = "\n".join(lines)
+            file_context.append(f"### {fname}\n```python\n{truncated}\n```")
+
+        # Cap total context
+        context_str = "\n\n".join(file_context)
+        if len(context_str) > 12000:
+            context_str = context_str[:12000] + "\n... (truncated)"
+
+        from pydantic import BaseModel, Field
+
+        class _FileFix(BaseModel):
+            file: str = ""
+            instruction: str = ""
+
+        class _Diagnosis(BaseModel):
+            root_cause: str = ""
+            files_to_fix: list[_FileFix] = Field(default_factory=list)
+
+        try:
+            result = await llm.generate_structured(
+                role=self.role,  # Uses debugger role (Sonnet)
+                system=(
+                    "You are the Architect Debugger. Analyze this error and identify "
+                    "the ROOT CAUSE across ALL project files. Determine which files "
+                    "need changes and give a specific instruction for each file.\n\n"
+                    "RULES:\n"
+                    "1. Trace the error to its TRUE origin — often the error is in file A "
+                    "   but the fix is in file B (e.g., missing export, wrong import path)\n"
+                    "2. List ALL files that need changes, not just the one that threw\n"
+                    "3. Each instruction must be specific: 'Add import X from Y', "
+                    "   'Change class Base to DeclarativeBase', etc.\n"
+                    "4. Max 3 files per fix cycle"
+                ),
+                prompt=(
+                    f"## Error\n{error[-2000:]}\n\n"
+                    f"## Available Modules\n{repo_context}\n\n"
+                    f"## Project Files\n{context_str}\n\n"
+                    f"Diagnose the root cause and list files to fix."
+                ),
+                response_schema=_Diagnosis,
+                temperature=0.1,
+                max_tokens=1000,
+                complexity=complexity,
+            )
+            return {
+                "root_cause": result.root_cause,
+                "files_to_fix": [{"file": f.file, "instruction": f.instruction} for f in result.files_to_fix],
+            }
+        except Exception as e:
+            logger.debug(f"Architect diagnosis failed: {e}")
+            return None
+
+    async def _editor_apply(
+        self, llm, filename: str, code: str, instruction: str, complexity: int,
+    ) -> str | None:
+        """Phase 2: Editor applies a specific fix to one file (Haiku-eligible).
+
+        Takes a specific instruction from the architect and applies it via
+        search/replace edit.
+        """
+        from pydantic import BaseModel
+
+        class _EditResult(BaseModel):
+            old_str: str = ""
+            new_str: str = ""
+            explanation: str = ""
+
+        try:
+            result = await llm.generate_structured(
+                role="gap_analyst",  # Uses Haiku (cheaper for mechanical edits)
+                system=(
+                    "You are the Editor. Apply the given instruction as a MINIMAL "
+                    "search/replace edit. Match the old_str EXACTLY. Change only what "
+                    "the instruction says."
+                ),
+                prompt=(
+                    f"INSTRUCTION: {instruction}\n\n"
+                    f"FILE: {filename}\n```python\n{code}\n```\n\n"
+                    f"Respond with JSON: {{\"old_str\": \"...\", \"new_str\": \"...\", \"explanation\": \"...\"}}"
+                ),
+                response_schema=_EditResult,
+                temperature=0.1,
+                max_tokens=1500,
+                complexity=1,  # Always low complexity for editor
+            )
+
+            if not result.old_str or not result.new_str:
+                return None
+
+            if result.old_str not in code:
+                stripped = result.old_str.strip()
+                if stripped in code:
+                    result.old_str = stripped
+                else:
+                    return None
+
+            new_code = code.replace(result.old_str, result.new_str, 1)
+
+            # Validate
+            if filename.endswith(".py"):
+                try:
+                    import ast
+                    ast.parse(new_code)
+                except SyntaxError:
+                    return None
+
+            logger.info(f"Debugger: editor — {result.explanation[:60]}")
+            return new_code
+
+        except Exception as e:
+            logger.debug(f"Editor apply failed on {filename}: {e}")
+            return None
 
     async def _fix_via_search_replace(
         self, llm, goal: str, error: str, filename: str, code: str, complexity: int,

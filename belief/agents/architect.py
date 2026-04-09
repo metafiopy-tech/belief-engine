@@ -52,6 +52,9 @@ CRITICAL RULES:
 5. All method signatures must have full type annotations.
 6. External dependencies must be listed explicitly (pip package names).
 7. Keep it practical — generate only the files that are actually needed.
+8. For API projects, include an api_contract with all endpoints.
+   For CLI projects, include cli_commands in the api_contract.
+   The contract is the source of truth for BOTH code generation AND test generation.
 
 SKELETON FILE ROLES (Pass 1 — generated deterministically):
 - model: Pydantic models, dataclasses
@@ -141,7 +144,14 @@ Output a complete SkeletonArtifact as JSON. Follow this EXACT schema:
   "config_schemas": [],
   "exception_specs": [],
   "external_dependencies": ["fastapi", "httpx", "pydantic"],
-  "entry_point": "main.py"
+  "entry_point": "main.py",
+  "api_contract": {{
+    "endpoints": [
+      {{"method": "POST", "path": "/leads", "request_model": "RawLead", "response_model": "EnrichedLead", "status_code": 201, "description": "Create a new lead"}},
+      {{"method": "GET", "path": "/leads/{{id}}", "response_model": "EnrichedLead", "status_code": 200, "error_codes": [404], "description": "Get lead by ID"}}
+    ],
+    "cli_commands": []
+  }}
 }}
 ```
 
