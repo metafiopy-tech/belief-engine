@@ -106,7 +106,23 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
 
     # ── Build the pipeline and run ────────────────────────────────────────
     router = ModelRouter()
-    pipeline = build_pipeline(router)
+
+    # Detect multi-service goals and use the appropriate pipeline
+    _multi_keywords = ["two services", "three services", "multi-service", "microservice",
+                       "service a and service b", "docker-compose", "multiple services",
+                       "on port 8001", "on port 8002"]
+    is_multi_service = any(kw in goal.lower() for kw in _multi_keywords)
+
+    if is_multi_service:
+        try:
+            from belief.graph_multi import build_multi_pipeline
+            pipeline = build_multi_pipeline(router)
+            logger.info("CLI: multi-service goal detected — using graph_multi pipeline")
+        except Exception as e:
+            logger.debug(f"Multi-service pipeline failed to load: {e}")
+            pipeline = build_pipeline(router)
+    else:
+        pipeline = build_pipeline(router)
 
     initial_state = {
         "run_id": run_id,
