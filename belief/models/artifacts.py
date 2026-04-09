@@ -223,38 +223,70 @@ class ExecutionResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 ANTHROPIC_COST_PER_1K: dict[str, dict[str, float]] = {
-    "claude-opus-4-6": {"input": 0.005, "output": 0.025},
-    "claude-sonnet-4-6": {"input": 0.003, "output": 0.015},
-    "claude-haiku-4-5-20251001": {"input": 0.00025, "output": 0.00125},
-    "claude-haiku-4-5": {"input": 0.00025, "output": 0.00125},
+    # Prices per 1,000 tokens (as of 2026)
+    # Source: https://platform.claude.com/docs/en/about-claude/pricing
+    #
+    # Model           | Input/1K  | Output/1K | Cache Write/1K | Cache Read/1K
+    # Sonnet 4        | $0.003    | $0.015    | $0.00375       | $0.0003
+    # Haiku 3.5/4.5   | $0.0008   | $0.004    | $0.001         | $0.00008
+    # Opus 4          | $0.015    | $0.075    | $0.01875       | $0.0015
+
+    "claude-sonnet-4-6": {
+        "input": 0.003, "output": 0.015,
+        "cache_write": 0.00375, "cache_read": 0.0003,
+    },
+    "claude-sonnet-4-20250514": {
+        "input": 0.003, "output": 0.015,
+        "cache_write": 0.00375, "cache_read": 0.0003,
+    },
+    "claude-haiku-4-5-20251001": {
+        "input": 0.0008, "output": 0.004,
+        "cache_write": 0.001, "cache_read": 0.00008,
+    },
+    "claude-haiku-4-5": {
+        "input": 0.0008, "output": 0.004,
+        "cache_write": 0.001, "cache_read": 0.00008,
+    },
+    "claude-opus-4-6": {
+        "input": 0.015, "output": 0.075,
+        "cache_write": 0.01875, "cache_read": 0.0015,
+    },
 }
 
-_DEFAULT_COST = {"input": 0.003, "output": 0.015}
+_DEFAULT_COST = {
+    "input": 0.003, "output": 0.015,
+    "cache_write": 0.00375, "cache_read": 0.0003,
+}
 
 
 def _cost_usd(model: str, prompt_tokens: int, completion_tokens: int,
               cache_read_tokens: int = 0, cache_create_tokens: int = 0) -> float:
-    """Calculate cost with prompt caching support.
+    """Calculate cost from token counts and model-specific pricing.
 
-    Cache read tokens cost 10% of standard input price (90% savings).
-    Cache create tokens cost 125% of standard input price (25% premium on first write).
-    Non-cached input tokens cost standard input price.
+    The Anthropic API does NOT return cost — only token counts.
+    We calculate cost client-side using the pricing table above.
+
+    Cache pricing varies by model tier:
+    - Cache read: 10% of input price (90% savings)
+    - Cache write: 125% of input price (25% premium on first write)
     """
     rates = ANTHROPIC_COST_PER_1K.get(model, _DEFAULT_COST)
     input_rate = rates["input"]
     output_rate = rates["output"]
+    cache_read_rate = rates.get("cache_read", input_rate * 0.1)
+    cache_write_rate = rates.get("cache_write", input_rate * 1.25)
 
-    # Standard input tokens (excluding cached)
+    # Standard input = total input minus cached tokens
     standard_input = max(0, prompt_tokens - cache_read_tokens - cache_create_tokens)
 
     cost = (
         standard_input * input_rate
-        + cache_read_tokens * input_rate * 0.1     # 90% savings
-        + cache_create_tokens * input_rate * 1.25   # 25% premium on first write
+        + cache_read_tokens * cache_read_rate
+        + cache_create_tokens * cache_write_rate
         + completion_tokens * output_rate
     ) / 1000.0
 
-    return cost
+    return round(cost, 6)
 
 
 class RoleUsage(BaseModel):
