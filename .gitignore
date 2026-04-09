@@ -37,6 +37,9 @@ soil/
 # OS
 .DS_Store
 Thumbs.db
+# macOS Finder duplicate files (e.g., "file 2.py", "LICENSE 3")
+*\ [0-9]*
+*\ [0-9]
 
 # Test artifacts
 .pytest_cache/
