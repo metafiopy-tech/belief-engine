@@ -422,6 +422,80 @@ async def _run_sica_cmd(args):
           f"accept rate={archive.accept_rate:.0%}, best={archive.best_score:.0%}")
 
 
+async def _run_fix_cmd(args):
+    """Run brownfield issue fixing from CLI."""
+    _configure_logging()
+    logger = logging.getLogger("belief.cli")
+
+    repo = args.repo
+    repo_path = None
+
+    # Handle GitHub URLs — clone to temp directory
+    if repo.startswith("http://") or repo.startswith("https://") or repo.startswith("git@"):
+        import subprocess
+        import tempfile
+
+        clone_dir = tempfile.mkdtemp(prefix="belief_fix_")
+        clone_cmd = ["git", "clone", "--depth", "1", repo, clone_dir]
+        if hasattr(args, "commit") and args.commit:
+            clone_cmd = ["git", "clone", repo, clone_dir]
+
+        print(f"  Cloning {repo}...")
+        proc = subprocess.run(clone_cmd, capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            print(f"  ✗ Clone failed: {proc.stderr[:200]}")
+            sys.exit(1)
+
+        # Checkout specific commit if provided
+        if hasattr(args, "commit") and args.commit:
+            subprocess.run(
+                ["git", "checkout", args.commit],
+                capture_output=True, cwd=clone_dir, timeout=30,
+            )
+
+        repo_path = clone_dir
+        print(f"  ✓ Cloned to {clone_dir}")
+    else:
+        repo_path = repo
+
+    # Run the brownfield pipeline
+    from belief.agents.brownfield_agent import fix_issue
+
+    print(f"\n  Fixing: {args.issue[:80]}...")
+    print(f"  Repo: {repo_path}")
+    print(f"  Patches: {args.patches}\n")
+
+    result = await fix_issue(
+        repo_path=repo_path,
+        issue=args.issue,
+        n_patches=args.patches,
+    )
+
+    if result.success:
+        print(f"\n  ✓ FIXED ({result.method})")
+        print(f"  File: {result.patch_file}")
+        print(f"  Tests: {result.tests_passed}/{result.tests_total} passed, {result.regressions} regressions")
+        print(f"  Time: {result.duration_seconds:.1f}s")
+        if result.patch_explanation:
+            print(f"  Explanation: {result.patch_explanation[:200]}")
+
+        # Show the diff
+        if result.patch_old and result.patch_new:
+            print(f"\n  --- a/{result.patch_file}")
+            print(f"  +++ b/{result.patch_file}")
+            for line in result.patch_old.split("\n")[:10]:
+                print(f"  - {line}")
+            print(f"  ...")
+            for line in result.patch_new.split("\n")[:10]:
+                print(f"  + {line}")
+    else:
+        print(f"\n  ✗ FAILED")
+        if result.error:
+            print(f"  Error: {result.error}")
+        print(f"  Iterations: {result.iterations}")
+        print(f"  Time: {result.duration_seconds:.1f}s")
+
+
 def app():
     """CLI entry point."""
     import argparse
@@ -460,6 +534,14 @@ def app():
     mine_parser.add_argument("--max-cost", type=float, default=0.50,
                              help="Max USD per challenge")
 
+    # Brownfield fix
+    fix_parser = subparsers.add_parser("fix", help="Fix an issue in an existing codebase")
+    fix_parser.add_argument("--repo", required=True,
+                            help="Path to repo or GitHub URL (https://github.com/user/repo)")
+    fix_parser.add_argument("--issue", required=True, help="Issue description (natural language)")
+    fix_parser.add_argument("--patches", type=int, default=3, help="Candidate patches (default: 3)")
+    fix_parser.add_argument("--commit", help="Specific commit to check out")
+
     # Backward compat: --goal without subcommand
     parser.add_argument("--goal", help="What to build (shortcut for: build --goal)")
     parser.add_argument("--max-cost", type=float, default=10.0)
@@ -487,6 +569,9 @@ def app():
             max_cost_per_challenge=args.max_cost,
         )
         miner.start()
+        sys.exit(0)
+    elif args.command == "fix":
+        asyncio.run(_run_fix_cmd(args))
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)
