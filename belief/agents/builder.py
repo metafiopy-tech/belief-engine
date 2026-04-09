@@ -28,12 +28,25 @@ logger = logging.getLogger("belief.agents.builder")
 BUILDER_SYSTEM = """You are the Builder Agent. Write complete, working code.
 Generate each file fully — no placeholders, no TODOs, no "implement this".
 Every function must have a real implementation. Handle errors gracefully.
-Use the libraries and patterns specified in the architecture.
 Match the language of the file being generated (Python for .py, TypeScript for .ts/.tsx).
 
-CRITICAL: When using SQLAlchemy 2.x with Mapped/mapped_column type annotations,
-do NOT use `from __future__ import annotations` — it breaks ORM type resolution
-at class definition time. Always use SQLAlchemy 2.x style: `Mapped[str]`, not `str`."""
+PYTHON COVENANTS:
+- When using SQLAlchemy 2.x with Mapped/mapped_column, do NOT use
+  `from __future__ import annotations` — it breaks ORM type resolution.
+- Always use SQLAlchemy 2.x style: `Mapped[str]`, not `str`.
+
+TYPESCRIPT COVENANTS (violations crash the build):
+- Relative imports MUST have .js extension: import { foo } from './utils.js'
+- NEVER use __dirname — use import.meta.dirname
+- NEVER use require() — use import
+- x402: ExactEvmScheme from '@x402/evm/exact/server', NOT '@x402/evm'
+- x402: HTTPFacilitatorClient from '@x402/core/server', NOT '@x402/core'
+- x402: @x402/types and @x402/client DO NOT EXIST
+- MCP: NEVER bare '@modelcontextprotocol/sdk' — use subpaths with .js
+- MCP: zod@^3.25 is mandatory peer dep
+- ethers v6: top-level imports from 'ethers', NEVER ethers.providers.* or @ethersproject/*
+- Express 5: wildcard '/{*splat}' not '*', error handlers use ErrorRequestHandler type
+- Vitest: import { describe, it, expect, vi } from 'vitest', NOT jest.*"""
 
 BUILDER_PROMPT_LEGACY = """Write the code for this file:
 
@@ -312,6 +325,32 @@ class BuilderAgent(BaseAgent):
                     system = f"{system}\n\nLANGUAGE: {lang.value.upper()}\n{lang_additions}"
             except Exception:
                 pass
+
+            # Inject protocol skeleton as reference for TypeScript builds
+            if file_spec.filename.endswith((".ts", ".tsx")):
+                try:
+                    from belief.prompts.protocol_skeletons import get_skeleton, get_all_protocol_names
+                    goal_lower = state.user_goal.lower() if state.user_goal else ""
+                    protocol_map = {
+                        "x402": ["x402", "payment", "micropayment", "paywall"],
+                        "mcp": ["mcp", "model context protocol", "mcp server", "mcp tool"],
+                        "a2a": ["a2a", "agent2agent", "agent card", "agent-to-agent"],
+                        "erc8004": ["erc-8004", "erc8004", "agent identity", "agent registration"],
+                    }
+                    for proto, keywords in protocol_map.items():
+                        if any(kw in goal_lower for kw in keywords):
+                            skeleton = get_skeleton(proto)
+                            # Find matching skeleton file
+                            for skel_fname, skel_content in skeleton.items():
+                                if file_spec.filename.endswith(skel_fname.split("/")[-1]):
+                                    prompt = (
+                                        f"REFERENCE SKELETON (use this exact pattern, adapt to the goal):\n"
+                                        f"```typescript\n{skel_content[:2000]}\n```\n\n{prompt}"
+                                    )
+                                    break
+                            break
+                except Exception:
+                    pass
 
             raw = await llm.generate_text(
                 role=self.role, system=system, prompt=prompt,
