@@ -232,6 +232,53 @@ CHALLENGES = [
         timeout_seconds=1200,
         tags=["api", "fastapi", "sqlalchemy", "dag", "complex", "automation"],
     ),
+
+    # ── Tier 6: Multi-service systems (5 challenges) ──
+    Challenge(
+        id="t6-api-gateway",
+        tier=6,
+        goal="Build a system with two FastAPI services: a user-service (CRUD for users with name, email, role) on port 8001 and an order-service (CRUD for orders with user_id, items, total) on port 8002. The order-service calls user-service to validate user_id exists before creating an order. Both use SQLite. Include a docker-compose.yml.",
+        acceptance_criteria=["User service CRUD works", "Order service CRUD works", "Order creation validates user exists", "Docker compose orchestrates both", "Services communicate via HTTP"],
+        verify_commands=["curl localhost:8001/docs", "curl localhost:8002/docs"],
+        timeout_seconds=1500,
+        tags=["multi-service", "fastapi", "sqlalchemy", "docker", "http"],
+    ),
+    Challenge(
+        id="t6-event-driven",
+        tier=6,
+        goal="Build a notification system with two FastAPI services: a task-service (CRUD for tasks with title, status, assignee) on port 8001 and a notification-service (stores notifications with message, recipient, read status) on port 8002. When a task is created or status changes, the task-service posts a notification to the notification-service via HTTP. Both use SQLite.",
+        acceptance_criteria=["Task CRUD works", "Notification CRUD works", "Task creation triggers notification", "Status change triggers notification", "Both services have health endpoints"],
+        verify_commands=["curl localhost:8001/docs", "curl localhost:8002/docs"],
+        timeout_seconds=1500,
+        tags=["multi-service", "fastapi", "sqlalchemy", "events", "http"],
+    ),
+    Challenge(
+        id="t6-shared-auth",
+        tier=6,
+        goal="Build two FastAPI services sharing an auth model: an auth-service (register, login with JWT tokens, user profile) on port 8001 and a document-service (CRUD for documents with title, content, owner_id) on port 8002. The document-service validates JWT tokens by calling auth-service. Both use SQLite.",
+        acceptance_criteria=["User registration works", "Login returns JWT", "Document CRUD works", "Documents require valid token", "Token validation via auth-service"],
+        verify_commands=["curl localhost:8001/docs", "curl localhost:8002/docs"],
+        timeout_seconds=1500,
+        tags=["multi-service", "fastapi", "sqlalchemy", "auth", "jwt"],
+    ),
+    Challenge(
+        id="t6-data-pipeline",
+        tier=6,
+        goal="Build two FastAPI services: an ingestion-service (accepts CSV uploads, parses rows, stores in SQLite) on port 8001 and an analytics-service (reads from the same SQLite database, provides aggregate endpoints: count, sum, average, group-by) on port 8002. The analytics-service queries the database that ingestion-service writes to.",
+        acceptance_criteria=["CSV upload works", "Parsed data stored in SQLite", "Count endpoint works", "Average endpoint works", "Group-by endpoint works"],
+        verify_commands=["curl localhost:8001/docs", "curl localhost:8002/docs"],
+        timeout_seconds=1500,
+        tags=["multi-service", "fastapi", "sqlalchemy", "csv", "analytics"],
+    ),
+    Challenge(
+        id="t6-microservice-crud",
+        tier=6,
+        goal="Build three FastAPI services: a product-service (CRUD for products with name, price, category) on port 8001, a review-service (CRUD for reviews with product_id, rating 1-5, comment) on port 8002, and a catalog-service (aggregates products with their average rating by calling both services) on port 8003. All use SQLite independently.",
+        acceptance_criteria=["Product CRUD works", "Review CRUD works", "Catalog aggregates products with ratings", "Average rating calculated correctly", "All three services have health endpoints"],
+        verify_commands=["curl localhost:8001/docs", "curl localhost:8002/docs", "curl localhost:8003/docs"],
+        timeout_seconds=1800,
+        tags=["multi-service", "fastapi", "sqlalchemy", "aggregation", "three-service"],
+    ),
 ]
 
 
