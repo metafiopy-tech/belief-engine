@@ -331,24 +331,18 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
     has_ts = any(f.endswith((".ts", ".tsx", ".jsx")) for f in code_files)
     if has_ts:
         try:
-            from belief.validators.typescript_covenants import enforce_ts_covenants
+            from belief.validators.typescript_fixup import fixup_typescript_output
 
-            ts_fixed, ts_result = enforce_ts_covenants(code_files, auto_fix=True)
+            goal = state.get("user_goal", "")
+            ts_fixed = fixup_typescript_output(code_files, goal=goal)
 
-            if ts_result.fixes_applied > 0:
+            if ts_fixed != code_files:
                 result["code_files"] = ts_fixed
-                logger.info(
-                    f"Covenant enforcer (TypeScript): {ts_result.fixes_applied} fixes "
-                    f"across {len(ts_result.files_modified)} files"
-                )
-
-            if ts_result.has_critical:
-                critical = [v for v in ts_result.violations if v.severity == "critical" and not v.auto_fixed]
-                for v in critical[:3]:
-                    logger.warning(f"TS covenant CRITICAL: {v.covenant} — {v.message} ({v.file}:{v.line})")
+                code_files = ts_fixed
+                logger.info("Covenant enforcer (TypeScript): fixup pipeline applied")
 
         except Exception as e:
-            logger.debug(f"TypeScript covenant enforcement skipped: {e}")
+            logger.debug(f"TypeScript fixup skipped: {e}")
 
     # ── Multi-service health check injection ──────────────────────
     svc_arch = state.get("service_architecture")

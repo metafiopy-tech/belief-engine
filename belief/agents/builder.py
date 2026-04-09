@@ -338,10 +338,16 @@ class BuilderAgent(BaseAgent):
                         "a2a": ["a2a", "agent2agent", "agent card", "agent-to-agent"],
                         "erc8004": ["erc-8004", "erc8004", "agent identity", "agent registration"],
                     }
+
+                    # Stage 1: Inject current API documentation (v0-style)
+                    from belief.validators.typescript_fixup import get_api_docs_for_goal
+                    api_docs = get_api_docs_for_goal(goal_lower)
+                    if api_docs:
+                        prompt = f"CURRENT API DOCUMENTATION (use these exact patterns):\n{api_docs}\n\n{prompt}"
+
                     for proto, keywords in protocol_map.items():
                         if any(kw in goal_lower for kw in keywords):
                             skeleton = get_skeleton(proto)
-                            # Find matching skeleton file
                             for skel_fname, skel_content in skeleton.items():
                                 if file_spec.filename.endswith(skel_fname.split("/")[-1]):
                                     prompt = (

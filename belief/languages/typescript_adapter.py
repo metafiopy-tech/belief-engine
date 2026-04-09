@@ -153,6 +153,7 @@ class TypeScriptAdapter(LanguageAdapter):
         }
 
         # NodeNext resolution — required for MCP SDK, x402, and most modern packages
+        # Node.js 24 native TS: erasableSyntaxOnly bans enum/namespace/parameter properties
         tsconfig = {
             "compilerOptions": {
                 "target": "ESNext",
@@ -160,6 +161,7 @@ class TypeScriptAdapter(LanguageAdapter):
                 "moduleResolution": "NodeNext",
                 "strict": True,
                 "verbatimModuleSyntax": True,
+                "erasableSyntaxOnly": True,  # Node.js 24 native TS support
                 "isolatedModules": True,
                 "esModuleInterop": True,
                 "resolveJsonModule": True,
