@@ -73,6 +73,10 @@ class TesterAgent(BaseAgent):
                 max_tests = 20
             test_files = _cap_test_count(test_files, max_tests_per_file=max_tests)
 
+            # GLOBAL cap: enforce across ALL test files combined.
+            # The per-file cap misses multi-file splits (e.g., 3 files × 15 tests = 45).
+            test_files = _global_test_cap(test_files, max_total=max_tests)
+
             state.test_files = test_files
             logger.info(f"Tester: {len(test_files)} test file(s)")
 
@@ -549,3 +553,63 @@ def _cap_test_count(test_files: dict[str, str], max_tests_per_file: int = 20) ->
         capped[fname] = capped_content
 
     return capped
+
+
+def _global_test_cap(test_files: dict[str, str], max_total: int = 14) -> dict[str, str]:
+    """Enforce a GLOBAL cap on total test functions across ALL test files.
+
+    The per-file cap misses multi-file splits where the tester generates
+    test_smoke.py (8 tests) + test_functional.py (12 tests) + test_edge.py (10 tests)
+    = 30 total despite each file being under the per-file cap.
+
+    Strategy: count all tests across all files, keep the first max_total
+    (preserving file order — smoke files come first), drop entire excess files
+    or truncate the last file to hit the cap.
+    """
+    import ast as _ast
+
+    # Count total tests across all files
+    file_test_counts = []
+    total = 0
+    for fname, content in test_files.items():
+        if not fname.endswith(".py") or "conftest" in fname or "__init__" in fname:
+            continue
+        try:
+            tree = _ast.parse(content)
+            count = sum(1 for node in _ast.walk(tree)
+                       if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef))
+                       and node.name.startswith("test_"))
+            file_test_counts.append((fname, count))
+            total += count
+        except SyntaxError:
+            continue
+
+    if total <= max_total:
+        return test_files  # Under budget
+
+    # Over budget — keep files in order until we hit the cap
+    result = {}
+    remaining = max_total
+    for fname, count in file_test_counts:
+        if remaining <= 0:
+            # Drop this entire file
+            logger.info(f"Global cap: dropping {fname} ({count} tests) — budget exhausted")
+            continue
+        if count <= remaining:
+            # Keep entire file
+            result[fname] = test_files[fname]
+            remaining -= count
+        else:
+            # Truncate this file to fit remaining budget
+            result[fname] = _cap_test_count({fname: test_files[fname]}, max_tests_per_file=remaining)[fname]
+            logger.info(f"Global cap: truncated {fname} from {count} to {remaining} tests")
+            remaining = 0
+
+    # Re-add conftest and __init__ files
+    for fname, content in test_files.items():
+        if "conftest" in fname or "__init__" in fname:
+            result[fname] = content
+
+    dropped = total - max_total
+    logger.info(f"Global cap: {total} → {max_total} tests across {len(file_test_counts)} files (dropped {dropped})")
+    return result
