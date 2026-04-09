@@ -177,11 +177,12 @@ class DebuggerAgent(BaseAgent):
         # Show the first 200 lines of each file involved
         file_context = []
         for fname, content in sorted(code_files.items()):
-            if not fname.endswith(".py"):
+            if not fname.endswith((".py", ".ts", ".tsx", ".js", ".jsx")):
                 continue
             lines = content.split("\n")[:150]
             truncated = "\n".join(lines)
-            file_context.append(f"### {fname}\n```python\n{truncated}\n```")
+            lang = "typescript" if fname.endswith((".ts", ".tsx")) else "javascript" if fname.endswith((".js", ".jsx")) else "python"
+            file_context.append(f"### {fname}\n```{lang}\n{truncated}\n```")
 
         # Cap total context
         context_str = "\n\n".join(file_context)
@@ -285,6 +286,12 @@ class DebuggerAgent(BaseAgent):
                     ast.parse(new_code)
                 except SyntaxError:
                     return None
+            elif filename.endswith((".ts", ".tsx", ".js", ".jsx")):
+                # Basic brace/bracket validation for TypeScript
+                if abs(new_code.count("{") - new_code.count("}")) > 1:
+                    return None
+                if abs(new_code.count("(") - new_code.count(")")) > 1:
+                    return None
 
             logger.info(f"Debugger: editor — {result.explanation[:60]}")
             return new_code
@@ -369,6 +376,10 @@ Respond ONLY with valid JSON:
                     ast.parse(new_code)
                 except SyntaxError:
                     logger.warning(f"Debugger: search/replace produced invalid Python for {filename}")
+                    return None
+            elif filename.endswith((".ts", ".tsx", ".js", ".jsx")):
+                if abs(new_code.count("{") - new_code.count("}")) > 1:
+                    logger.warning(f"Debugger: search/replace produced unmatched braces in {filename}")
                     return None
 
             logger.info(f"Debugger: search/replace fix — {result.explanation[:60]}")

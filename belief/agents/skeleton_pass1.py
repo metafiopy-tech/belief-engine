@@ -31,6 +31,22 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.info("SkeletonPass1: no skeleton_artifact — passthrough")
         return result
 
+    # TypeScript bypass: if the project has .ts files, skip Python skeleton
+    # generation entirely. TypeScript's type system handles interfaces inline
+    # — the builder generates everything including types.
+    code_files = state.get("code_files", {})
+    file_manifest = state.get("file_manifest")
+    all_filenames = list(code_files.keys())
+    if file_manifest:
+        if isinstance(file_manifest, dict):
+            all_filenames.extend(file_manifest.get("files", {}).keys() if isinstance(file_manifest.get("files"), dict) else [])
+        elif hasattr(file_manifest, "files"):
+            all_filenames.extend(f.filename if hasattr(f, "filename") else str(f) for f in (file_manifest.files or []))
+    has_typescript = any(f.endswith((".ts", ".tsx", ".jsx")) for f in all_filenames)
+    if has_typescript:
+        logger.info("SkeletonPass1: TypeScript project detected — skipping Python skeleton generation")
+        return result
+
     try:
         from belief.models.skeleton import SkeletonArtifact
         from belief.models.symbol_registry import SymbolRegistry
