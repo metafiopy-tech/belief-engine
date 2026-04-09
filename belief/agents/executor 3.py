@@ -230,16 +230,7 @@ class ExecutorAgent(BaseAgent):
         self, code_files: dict[str, str], test_files: dict[str, str],
         entry_points: list[str], use_import_verify: bool = False,
     ) -> ExecutionResult:
-        """Write files to a temp dir and verify the project works.
-
-        Verification strategy (research-backed):
-        1. Write all files + auto-generate __init__.py everywhere
-        2. Static analysis: circular import detection, undefined names
-        3. Install dependencies (pip or npm)
-        4. If tests exist → run pytest (primary verification)
-        5. If no tests → fall back to import verification
-        6. Capture actionable errors for the debugger
-        """
+        """Write files to a temp dir, verify imports, optionally run."""
         import sys as _sys
 
         with tempfile.TemporaryDirectory(prefix="belief_") as tmpdir:
@@ -257,48 +248,25 @@ class ExecutorAgent(BaseAgent):
                 fpath.parent.mkdir(parents=True, exist_ok=True)
                 fpath.write_text(content)
 
-            # ── Fix #1: Comprehensive __init__.py generation ──────────────
-            # Walk the ENTIRE temp directory tree and add __init__.py
-            # to every directory that contains .py files (or has subdirs
-            # that contain .py files). This fixes the #1 executor failure.
-            self._ensure_init_files(tmp)
+            # Auto-generate __init__.py in every directory containing .py files
+            for dirpath in set(
+                (tmp / f).parent for f in list(code_files) + list(test_files)
+                if "/" in f
+            ):
+                init_file = dirpath / "__init__.py"
+                if not init_file.exists():
+                    init_file.write_text("")
+                    logger.debug(f"Executor: auto-generated {init_file.relative_to(tmp)}")
 
             system_python = _sys.executable
 
             # ── TypeScript/Node.js path ──────────────────────────────────
+            # If project has package.json, use Node.js execution
             if "package.json" in code_files:
                 return self._verify_typescript(tmp, entry_points)
 
-            # ── Fix #2: Static import validation ─────────────────────────
-            # Detect broken imports BEFORE execution so the debugger
-            # gets actionable error messages instead of cryptic tracebacks.
-            static_errors = self._static_import_check(code_files, tmp)
-            if static_errors:
-                logger.info(f"Executor: {len(static_errors)} static import issues detected")
-                # Don't fail here — let pytest/import catch the real errors.
-                # But log them so the debugger can use them.
-
-            # ── Install dependencies ─────────────────────────────────────
-            install_result = self._install_deps(tmp)
-
-            # ── Fix #3: Pytest-first verification ────────────────────────
-            # If test files exist, run pytest as primary verification.
-            # This is what every competitive system does (SWE-agent,
-            # OpenHands, Aider). Import verification is the fallback.
-            all_test_files = dict(test_files)
-            for fname in code_files:
-                if fname.startswith("test") or "/test" in fname:
-                    all_test_files[fname] = code_files[fname]
-
-            if all_test_files:
-                pytest_result = self._run_pytest_verification(
-                    system_python, tmp, install_result
-                )
-                if pytest_result is not None:
-                    return pytest_result
-
-            # ── Fallback: import verification or script execution ────────
             if use_import_verify:
+                # M4: Verify each entry point independently — all must pass
                 all_results = []
                 for ep in entry_points:
                     result = self._verify_via_import(system_python, tmp, ep, code_files)
@@ -317,210 +285,8 @@ class ExecutorAgent(BaseAgent):
                     return final
 
             # For scripts: run the primary entry point
+            install_result = self._install_deps(tmp)
             return self._run_script(system_python, tmp, entry_points[0], install_result)
-
-    def _ensure_init_files(self, tmp: Path) -> int:
-        """Create __init__.py in every directory containing .py files.
-
-        This is the #1 fix for executor failures. LLM-generated projects
-        consistently miss __init__.py files, causing ImportError on
-        any cross-module import. We walk the ENTIRE tree, not just
-        directories where generated files have '/' in their name.
-
-        Returns count of __init__.py files created.
-        """
-        created = 0
-        for dirpath, dirnames, filenames in os.walk(tmp):
-            # Skip hidden dirs, __pycache__, .venv
-            dirnames[:] = [
-                d for d in dirnames
-                if not d.startswith(".") and d != "__pycache__" and d != ".venv"
-            ]
-            # If this directory (or any child) has .py files, ensure __init__.py
-            has_py = any(f.endswith(".py") for f in filenames)
-            if has_py:
-                init_path = Path(dirpath) / "__init__.py"
-                if not init_path.exists():
-                    init_path.write_text("")
-                    rel = init_path.relative_to(tmp)
-                    logger.debug(f"Executor: auto-created {rel}")
-                    created += 1
-        if created:
-            logger.info(f"Executor: auto-created {created} __init__.py file(s)")
-        return created
-
-    def _static_import_check(
-        self, code_files: dict[str, str], tmp: Path
-    ) -> list[str]:
-        """Static analysis of imports — detect issues before execution.
-
-        Checks:
-        1. All intra-project imports resolve to existing files
-        2. No circular import chains
-        3. Standard library imports are valid
-
-        Returns list of error descriptions (empty = all clear).
-        """
-        errors = []
-        import re as _re
-
-        # Build a map of available modules from code_files
-        available_modules = set()
-        for fname in code_files:
-            if fname.endswith(".py"):
-                mod = fname.replace("/", ".").replace(".py", "")
-                available_modules.add(mod)
-                # Also add parent packages
-                parts = mod.split(".")
-                for i in range(1, len(parts)):
-                    available_modules.add(".".join(parts[:i]))
-
-        # Check each file's imports
-        for fname, content in code_files.items():
-            if not fname.endswith(".py"):
-                continue
-            try:
-                tree = ast.parse(content)
-            except SyntaxError:
-                continue
-
-            current_module = fname.replace("/", ".").replace(".py", "")
-            current_pkg = ".".join(current_module.split(".")[:-1])
-
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and node.module:
-                    target = node.module
-                    # Resolve relative imports
-                    if node.level > 0 and current_pkg:
-                        parts = current_pkg.split(".")
-                        up = node.level - 1
-                        if up < len(parts):
-                            base = ".".join(parts[:len(parts) - up])
-                            target = f"{base}.{node.module}" if node.module else base
-                        else:
-                            target = node.module or ""
-
-                    # Check if it's an intra-project import that doesn't resolve
-                    if target and not target.startswith(("_", ".")):
-                        # Is it a standard library or third-party module?
-                        top_level = target.split(".")[0]
-                        # Check if it looks like an intra-project import
-                        if top_level in available_modules or target in available_modules:
-                            if target not in available_modules:
-                                errors.append(
-                                    f"{fname}: import '{target}' does not resolve "
-                                    f"to any project file"
-                                )
-
-        return errors
-
-    def _run_pytest_verification(
-        self, python: str, tmp: Path, install_result: ExecutionResult
-    ) -> ExecutionResult | None:
-        """Run pytest as primary verification — the state-of-the-art approach.
-
-        Every competitive code generation system (SWE-agent, OpenHands, Aider)
-        uses test execution as verification, not import checking. If pytest
-        runs and at least some tests pass, the code is structurally sound.
-
-        Returns ExecutionResult if pytest ran, None if pytest isn't available.
-        """
-        t0 = time.time()
-        env = {**os.environ, "PYTHONPATH": str(tmp)}
-
-        try:
-            proc = subprocess.run(
-                [python, "-m", "pytest", "-x", "-v", "--tb=short", "--no-header", "-q"],
-                capture_output=True, text=True,
-                timeout=60, cwd=str(tmp),
-                env=env,
-            )
-
-            output = proc.stdout + "\n" + proc.stderr
-            elapsed = round(time.time() - t0, 2)
-
-            # Parse results
-            import re as _re
-            passed = 0
-            failed = 0
-            errored = 0
-
-            match = _re.search(r"(\d+) passed", output)
-            if match:
-                passed = int(match.group(1))
-            match = _re.search(r"(\d+) failed", output)
-            if match:
-                failed = int(match.group(1))
-            match = _re.search(r"(\d+) error", output)
-            if match:
-                errored = int(match.group(1))
-
-            total = passed + failed + errored
-
-            # If pytest found and ran tests, use its result
-            if total > 0:
-                # Success if ANY tests passed (partial success is still structural soundness)
-                success = passed > 0
-                error_summary = ""
-                if not success:
-                    # Extract the first error for the debugger
-                    error_summary = _extract_error(proc.stderr or proc.stdout)
-
-                logger.info(
-                    f"Executor: pytest {passed}/{total} passed "
-                    f"({elapsed}s)"
-                )
-
-                return ExecutionResult(
-                    exit_code=proc.returncode,
-                    stdout=output[-3000:],
-                    stderr=proc.stderr[-2000:],
-                    duration_seconds=elapsed,
-                    success=success,
-                    error_summary=error_summary,
-                    install_success=install_result.install_success,
-                    install_stdout=install_result.install_stdout,
-                    install_stderr=install_result.install_stderr,
-                )
-
-            # pytest ran but found no tests — that's okay, fall through
-            # to import verification
-            if "no tests ran" in output.lower() or "collected 0 items" in output:
-                logger.info("Executor: pytest found no tests — falling back to import verification")
-                return None
-
-            # pytest itself failed to run (missing module, etc.)
-            # Check if it's a collection error vs pytest not being available
-            if "ModuleNotFoundError" in output and "pytest" in output:
-                logger.info("Executor: pytest not available — falling back")
-                return None
-
-            # Collection errors mean the code has import issues
-            if proc.returncode != 0 and ("ImportError" in output or "ModuleNotFoundError" in output):
-                error_msg = _extract_error(output)
-                logger.info(f"Executor: pytest collection failed — {error_msg}")
-                return ExecutionResult(
-                    exit_code=proc.returncode,
-                    stdout=output[-3000:],
-                    stderr=proc.stderr[-2000:],
-                    duration_seconds=elapsed,
-                    success=False,
-                    error_summary=f"Test collection failed: {error_msg}",
-                    install_success=install_result.install_success,
-                )
-
-            return None
-
-        except subprocess.TimeoutExpired:
-            return ExecutionResult(
-                exit_code=-1, success=False,
-                error_summary="pytest timed out after 60s",
-                install_success=install_result.install_success,
-                duration_seconds=round(time.time() - t0, 2),
-            )
-        except Exception as e:
-            logger.debug(f"Executor: pytest execution failed: {e}")
-            return None
 
     def _install_deps(self, tmp: Path) -> ExecutionResult:
         """Install requirements.txt in a venv. Returns install status."""
