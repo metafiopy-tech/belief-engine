@@ -100,6 +100,11 @@ class DebuggerAgent(BaseAgent):
                             logger.info(f"Debugger: single-file fix on {target_file}")
             else:
                 # ── Phase 2: Editor applies fixes (uses debugger role = may be Haiku) ──
+                # Protect skeleton files from destructive edits
+                skeleton_files = set()
+                if hasattr(state, 'skeleton_files') and state.skeleton_files:
+                    skeleton_files = set(state.skeleton_files.keys())
+
                 fixes_applied = 0
                 for fix_spec in diagnosis["files_to_fix"][:3]:  # Max 3 files per cycle
                     fname = fix_spec.get("file", "")
@@ -108,6 +113,12 @@ class DebuggerAgent(BaseAgent):
 
                     if not code or not instruction:
                         continue
+
+                    # Protect database.py skeleton — verify it still exports key symbols
+                    if fname in ("database.py", "db.py") and "get_db" in code and "engine" in code:
+                        # Database skeleton is correct — don't let editor replace it
+                        # Only allow additive edits
+                        instruction = f"ADDITIVE ONLY — do not remove get_db, engine, Base, SessionLocal, init_db. {instruction}"
 
                     fixed_code = await self._editor_apply(
                         llm, fname, code, instruction, state.complexity_score

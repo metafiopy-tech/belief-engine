@@ -229,8 +229,15 @@ def _generate_protocol_code(skeleton: SkeletonArtifact, file_path: str) -> str |
 def _generate_database_code(skeleton: SkeletonArtifact, file_path: str) -> str | None:
     """Generate SQLAlchemy database setup code for database.py files.
 
-    Handles the common pattern: engine + session + Base for SQLAlchemy 2.x.
-    Prevents the recurring __future__ + SQLAlchemy conflict.
+    This is the AUTHORITATIVE database setup. It exports:
+    - engine: SQLAlchemy engine
+    - SessionLocal: session factory
+    - Base: DeclarativeBase for models
+    - get_db: FastAPI dependency
+    - init_db: create all tables
+
+    The builder must NOT overwrite this file.
+    The debugger must NOT replace exports — only add to them.
     """
     base = file_path.split("/")[-1] if "/" in file_path else file_path
     if base not in ("database.py", "db.py"):
@@ -241,15 +248,14 @@ def _generate_database_code(skeleton: SkeletonArtifact, file_path: str) -> str |
     if not any(d in deps_lower for d in ("sqlalchemy", "sqlmodel")):
         return None
 
-    # Generate SQLAlchemy 2.x database setup
-    # NOTE: Do NOT use `from __future__ import annotations` — it breaks
-    # SQLAlchemy's Mapped type resolution at class definition time.
     return '''"""Database setup — SQLAlchemy 2.x engine, session, and base."""
+
+import os
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DATABASE_URL = "sqlite:///./app.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./app.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
@@ -268,6 +274,11 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def init_db():
+    """Create all database tables."""
+    Base.metadata.create_all(bind=engine)
 '''
 
 

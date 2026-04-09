@@ -60,6 +60,10 @@ class TesterAgent(BaseAgent):
             # Post-process: validate test imports and generate conftest if needed
             test_files = self._postprocess_tests(test_files, state.code_files)
 
+            # Hard cap: max 20 test functions per file
+            # More tests = more surface area for phantom failures
+            test_files = _cap_test_count(test_files, max_tests_per_file=20)
+
             state.test_files = test_files
             logger.info(f"Tester: {len(test_files)} test file(s)")
 
@@ -346,3 +350,78 @@ def _parse_test_files(raw: str) -> dict[str, str]:
         if os.path.basename(fname).startswith("test_"):
             files[fname] = content
     return files
+
+
+def _cap_test_count(test_files: dict[str, str], max_tests_per_file: int = 20) -> dict[str, str]:
+    """Hard cap on test functions per file.
+
+    The LLM often generates 40-60 tests when asked for 8-14.
+    Excess tests increase phantom failure surface area without
+    improving quality signal. Keep P0 smoke tests, then P1 functional,
+    drop P2 edge cases first.
+
+    Priority: P0 > P1 > P2 (by comment marker or position)
+    """
+    import ast
+
+    capped = {}
+    for fname, content in test_files.items():
+        if not fname.endswith(".py") or "conftest" in fname or "__init__" in fname:
+            capped[fname] = content
+            continue
+
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            capped[fname] = content
+            continue
+
+        # Count test functions
+        test_funcs = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name.startswith("test_"):
+                    test_funcs.append(node.name)
+
+        if len(test_funcs) <= max_tests_per_file:
+            capped[fname] = content
+            continue
+
+        # Too many tests — keep only the first max_tests_per_file
+        # (prioritized by position: smoke tests come first in generated output)
+        keep = set(test_funcs[:max_tests_per_file])
+        drop = set(test_funcs[max_tests_per_file:])
+
+        # Remove dropped test functions from the source
+        lines = content.split("\n")
+        new_lines = []
+        skip_until_next_def = False
+
+        for line in lines:
+            # Check if this line starts a dropped test function
+            stripped = line.lstrip()
+            if stripped.startswith("def test_") or stripped.startswith("async def test_"):
+                func_name = stripped.split("(")[0].replace("def ", "").replace("async ", "").strip()
+                if func_name in drop:
+                    skip_until_next_def = True
+                    continue
+                else:
+                    skip_until_next_def = False
+
+            # Check if we've reached a new top-level definition (end of dropped function)
+            if skip_until_next_def:
+                if stripped and not stripped.startswith("#") and not line.startswith(" ") and not line.startswith("\t"):
+                    if stripped.startswith("def ") or stripped.startswith("async def ") or stripped.startswith("class ") or stripped.startswith("@"):
+                        skip_until_next_def = False
+                    else:
+                        continue
+                else:
+                    continue
+
+            new_lines.append(line)
+
+        capped_content = "\n".join(new_lines)
+        logger.info(f"Tester: capped {fname} from {len(test_funcs)} to {max_tests_per_file} tests (dropped {len(drop)})")
+        capped[fname] = capped_content
+
+    return capped
