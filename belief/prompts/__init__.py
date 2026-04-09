@@ -242,22 +242,17 @@ ACCEPTANCE CRITERIA:
 
 {code_files}
 
-Generate TIERED test files with EXACTLY this structure:
+GENERATE EXACTLY {test_count} TESTS using this countdown:
 
-TIER P0 — SMOKE TESTS (2-3 tests):
-  - All source files can be imported without error
-  - Primary workflow runs end-to-end (e.g., create → read for CRUD)
+{countdown_markers}
 
-TIER P1 — FUNCTIONAL TESTS (3-5 tests, one per acceptance criterion):
-  - One test per acceptance criterion listed above
-  - Test the public API, not internal methods
-
-TIER P2 — EDGE CASES (1-2 tests, ONLY if spec mentions error handling):
-  - Invalid inputs return proper errors
-  - ONLY test error cases the specification explicitly requires
-
-HARD LIMIT: 8-10 tests total. Count as you go. Stop at 10.
-For Click CLI apps: use click.testing.CliRunner, NOT subprocess.
+RULES:
+- P0 SMOKE (2 tests): imports work, primary workflow runs end-to-end
+- P1 FUNCTIONAL (1 test per acceptance criterion): test the public API
+- P2 EDGE (1-2 tests): ONLY error cases the spec explicitly requires
+- After writing test #{test_count}, STOP IMMEDIATELY
+- For Click CLI apps: use click.testing.CliRunner, NOT subprocess
+- For FastAPI apps: use TestClient from starlette.testclient
 For FastAPI apps: use fastapi.testclient.TestClient.
 
 Use ###FILE: filename format:

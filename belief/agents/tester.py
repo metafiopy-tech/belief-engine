@@ -45,10 +45,30 @@ class TesterAgent(BaseAgent):
                     if contract:
                         contract_context = f"\n{contract}\n"
 
+            # ── Complexity-adaptive test count ─────────────────────────
+            # Research: 5-8 tests is optimal. Simple goals get fewer.
+            # Meta's TestGen-LLM found 4:1 ratio of generated-to-useful.
+            complexity = state.complexity_score
+            n_criteria = len(spec.acceptance_criteria) if spec.acceptance_criteria else 3
+            if complexity <= 2:
+                test_count = min(5, n_criteria + 2)
+            elif complexity <= 4:
+                test_count = min(8, n_criteria + 3)
+            else:
+                test_count = min(10, n_criteria + 4)
+
+            # ── Countdown markers (95% compliance vs 30% naive) ──────
+            countdown_markers = "\n".join(
+                f"  Test {i} of {test_count} [remaining: {test_count - i}]"
+                for i in range(1, test_count + 1)
+            )
+
             prompt = TESTER_PROMPT.format(
                 goal=spec.goal,
                 acceptance_criteria="\n".join(f"  {i}. {c}" for i, c in enumerate(spec.acceptance_criteria, 1)),
                 code_files=code_context + contract_context,
+                test_count=test_count,
+                countdown_markers=countdown_markers,
             )
             raw = await llm.generate_text(
                 role=self.role, system=TESTER_SYSTEM, prompt=prompt,
@@ -60,22 +80,14 @@ class TesterAgent(BaseAgent):
             # Post-process: validate test imports and generate conftest if needed
             test_files = self._postprocess_tests(test_files, state.code_files)
 
-            # Hard cap: scale test count by complexity to reduce phantom failures.
-            # Simple scripts (complexity 1-3) get 10 tests max.
-            # Medium apps (complexity 4-6) get 14 tests max.
-            # Complex systems (complexity 7+) get 20 tests max.
-            complexity = state.complexity_score
-            if complexity <= 3:
-                max_tests = 10
-            elif complexity <= 6:
-                max_tests = 14
-            else:
-                max_tests = 20
-            test_files = _cap_test_count(test_files, max_tests_per_file=max_tests)
-
-            # GLOBAL cap: enforce across ALL test files combined.
-            # The per-file cap misses multi-file splits (e.g., 3 files × 15 tests = 45).
-            test_files = _global_test_cap(test_files, max_total=max_tests)
+            # ── Generate-then-filter pipeline ────────────────────────
+            # Research-backed: generate many, filter by quality, hard cap.
+            # This is an UNCONDITIONAL final step — no code path skips it.
+            test_files = _filter_and_cap_tests(
+                test_files,
+                code_files=state.code_files,
+                max_total=test_count,
+            )
 
             state.test_files = test_files
             logger.info(f"Tester: {len(test_files)} test file(s)")
@@ -478,6 +490,174 @@ def _parse_test_files(raw: str) -> dict[str, str]:
         if os.path.basename(fname).startswith("test_") or "conftest" in fname or fname.endswith("__init__.py"):
             files[fname] = content
     return files
+
+
+def _filter_and_cap_tests(
+    test_files: dict[str, str],
+    code_files: dict[str, str],
+    max_total: int = 8,
+) -> dict[str, str]:
+    """Generate-then-filter pipeline — the research-backed approach.
+
+    Replaces the fragile _cap_test_count + _global_test_cap chain with
+    a single UNCONDITIONAL function that:
+    1. Extracts all test functions from all test files
+    2. Filters by quality (syntax valid, imports exist, no hallucinated modules)
+    3. Ranks by tier (P0 > P1 > P2) and position (earlier = more important)
+    4. Hard caps at max_total
+    5. Reconstructs the test file(s) with only the kept tests
+
+    This function ALWAYS runs. No conditional code path can skip it.
+    """
+    import ast
+
+    # Pass through non-test files (conftest, __init__)
+    passthrough = {}
+    testable = {}
+    for fname, content in test_files.items():
+        if not fname.endswith(".py") or "conftest" in fname or "__init__" in fname:
+            passthrough[fname] = content
+        else:
+            testable[fname] = content
+
+    if not testable:
+        return test_files
+
+    # ── Step 1: Extract all test functions with metadata ──────────
+    all_tests = []  # (fname, func_name, tier_priority, line_number, content_lines)
+
+    # Build available module set for import validation
+    available_modules = set()
+    for f in code_files:
+        if f.endswith(".py"):
+            mod = f.replace("/", ".").replace(".py", "")
+            available_modules.add(mod)
+            top = mod.split(".")[0]
+            available_modules.add(top)
+
+    for fname, content in testable.items():
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            # Syntax error in entire file — skip all tests from this file
+            logger.warning(f"Filter: dropping {fname} — syntax error")
+            continue
+
+        lines = content.split("\n")
+
+        # Check file-level imports for hallucinated modules
+        has_bad_imports = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                top_level = node.module.split(".")[0]
+                # If it looks like an intra-project import, check it exists
+                if top_level in available_modules:
+                    if node.module not in available_modules:
+                        has_bad_imports = True
+                        break
+
+        if has_bad_imports:
+            logger.warning(f"Filter: {fname} has hallucinated imports — deprioritizing")
+
+        # Extract individual test functions
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if not node.name.startswith("test_"):
+                    continue
+
+                # Determine tier from comments or position
+                tier = 2  # Default: P2 (edge case)
+                # Check for tier markers in the function or decorators
+                func_start = node.lineno - 1
+                func_end = node.end_lineno if hasattr(node, "end_lineno") and node.end_lineno else func_start + 10
+                func_lines = lines[func_start:min(func_end, len(lines))]
+                func_text = "\n".join(func_lines)
+
+                if "# P0" in func_text or "# p0" in func_text or "SMOKE" in func_text.upper():
+                    tier = 0
+                elif "# P1" in func_text or "# p1" in func_text or "FUNCTIONAL" in func_text.upper():
+                    tier = 1
+
+                # Import-bad files get deprioritized
+                priority = tier + (10 if has_bad_imports else 0)
+
+                all_tests.append((fname, node.name, priority, node.lineno))
+
+    # ── Step 2: Sort by quality (tier, then position) ─────────────
+    all_tests.sort(key=lambda t: (t[2], t[3]))
+
+    # ── Step 3: Keep only max_total tests ─────────────────────────
+    kept_tests = all_tests[:max_total]
+    dropped_tests = all_tests[max_total:]
+
+    if dropped_tests:
+        logger.info(
+            f"Filter: keeping {len(kept_tests)}/{len(all_tests)} tests "
+            f"(dropped {len(dropped_tests)})"
+        )
+
+    # ── Step 4: Reconstruct test files with only kept tests ───────
+    keep_by_file = {}
+    for fname, func_name, _, _ in kept_tests:
+        keep_by_file.setdefault(fname, set()).add(func_name)
+
+    result = dict(passthrough)
+
+    for fname, content in testable.items():
+        if fname not in keep_by_file:
+            # All tests from this file were dropped
+            if any(f == fname for f, _, _, _ in dropped_tests):
+                logger.info(f"Filter: dropping entire file {fname}")
+            continue
+
+        keep_names = keep_by_file[fname]
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            continue
+
+        # Find all test function names in this file
+        all_funcs_in_file = [
+            node.name for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        ]
+
+        drop_names = set(all_funcs_in_file) - keep_names
+
+        if not drop_names:
+            # Keep entire file unchanged
+            result[fname] = content
+            continue
+
+        # Remove dropped functions line by line
+        lines = content.split("\n")
+        new_lines = []
+        skip_func = False
+
+        for line in lines:
+            stripped = line.lstrip()
+            # Detect test function definition
+            if stripped.startswith("def test_") or stripped.startswith("async def test_"):
+                func_name = stripped.split("(")[0].replace("def ", "").replace("async ", "").strip()
+                if func_name in drop_names:
+                    skip_func = True
+                    continue
+                else:
+                    skip_func = False
+            elif skip_func:
+                # Still inside a dropped function — check if we've exited
+                if stripped and not line[0].isspace() and not stripped.startswith("#"):
+                    # New top-level definition
+                    skip_func = False
+                else:
+                    continue
+
+            new_lines.append(line)
+
+        result[fname] = "\n".join(new_lines)
+
+    return result
 
 
 def _cap_test_count(test_files: dict[str, str], max_tests_per_file: int = 20) -> dict[str, str]:
