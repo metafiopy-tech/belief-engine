@@ -45,8 +45,9 @@ TYPESCRIPT COVENANTS (violations crash the build):
 - MCP: NEVER bare '@modelcontextprotocol/sdk' — use subpaths with .js
 - MCP: zod@^3.25 is mandatory peer dep
 - ethers v6: top-level imports from 'ethers', NEVER ethers.providers.* or @ethersproject/*
+- ethers v6: native bigint, NOT BigNumber. parseLog() returns null — always null-check.
 - Express 5: wildcard '/{*splat}' not '*', error handlers use ErrorRequestHandler type
-- Vitest: import { describe, it, expect, vi } from 'vitest', NOT jest.*"""
+- Vitest: import { describe, it, expect, vi } from 'vitest', vi.fn() NOT jest.fn()"""
 
 BUILDER_PROMPT_LEGACY = """Write the code for this file:
 

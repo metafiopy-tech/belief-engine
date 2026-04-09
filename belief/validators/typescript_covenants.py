@@ -271,6 +271,9 @@ def _enforce_ethers_v6(
 
     for pattern, msg in v5_patterns:
         for i, line in enumerate(content.split("\n"), 1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
             if re.search(pattern, line):
                 violations.append(TSViolation(
                     covenant="C7:ethers-v6",
