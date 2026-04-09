@@ -170,12 +170,25 @@ class TesterAgent(BaseAgent):
                 logger.warning(f"Tester: removed {fname} (syntax error)")
                 continue
 
-            # Check for conftest imports
+            # Check for conftest imports (explicit)
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module == "conftest":
                     needs_conftest = True
                     for alias in node.names:
                         conftest_imports.add(alias.name)
+
+            # Check for pytest fixture usage (implicit via function parameters)
+            # Tests like `def test_health(client):` need a conftest with a `client` fixture
+            _KNOWN_FIXTURES = {"client", "runner", "run_cli", "db", "session", "app", "tmp_path", "tmpdir"}
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if node.name.startswith("test_"):
+                        for arg in node.args.args:
+                            if arg.arg in _KNOWN_FIXTURES:
+                                # tmp_path and tmpdir are built-in pytest fixtures
+                                if arg.arg not in ("tmp_path", "tmpdir"):
+                                    needs_conftest = True
+                                    conftest_imports.add(arg.arg)
 
             # Check for imports from non-existent local modules
             valid = True
@@ -194,18 +207,22 @@ class TesterAgent(BaseAgent):
 
             processed[fname] = content
 
-        # Generate conftest.py if tests import from it
+        # Generate conftest.py if tests need fixtures
         if needs_conftest and "conftest.py" not in processed and "tests/conftest.py" not in processed:
             conftest = self._generate_conftest(conftest_imports, code_files)
-            # Determine the right path
-            test_dir = ""
-            for fname in processed:
-                if "/" in fname:
-                    test_dir = fname.split("/")[0] + "/"
-                    break
-            conftest_path = f"{test_dir}conftest.py" if test_dir else "conftest.py"
-            processed[conftest_path] = conftest
-            logger.info(f"Tester: generated {conftest_path} with {len(conftest_imports)} fixtures")
+
+            # Always generate at root level — pytest discovers fixtures from conftest.py
+            # in the rootdir regardless of where test files live
+            processed["conftest.py"] = conftest
+            logger.info(f"Tester: generated conftest.py with fixtures: {', '.join(sorted(conftest_imports))}")
+
+            # Also generate in tests/ subdir if tests live there
+            test_dirs = {fname.split("/")[0] for fname in processed if "/" in fname and fname.endswith(".py")}
+            for d in test_dirs:
+                if d.startswith("test"):
+                    subdir_path = f"{d}/conftest.py"
+                    if subdir_path not in processed:
+                        processed[subdir_path] = conftest
 
         # Ensure __init__.py
         test_dirs = {fname.rsplit("/", 1)[0] for fname in processed if "/" in fname}
