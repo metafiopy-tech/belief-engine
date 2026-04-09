@@ -107,11 +107,22 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
     # ── Build the pipeline and run ────────────────────────────────────────
     router = ModelRouter()
 
-    # Detect multi-service goals and use the appropriate pipeline
-    _multi_keywords = ["two services", "three services", "multi-service", "microservice",
-                       "service a and service b", "docker-compose", "multiple services",
-                       "on port 8001", "on port 8002"]
-    is_multi_service = any(kw in goal.lower() for kw in _multi_keywords)
+    # Detect multi-service goals — LLM classification with keyword fallback
+    is_multi_service = False
+    try:
+        from belief.tools.multi_service import classify_goal
+        from belief.llm import LLMClient
+
+        classifier_llm = LLMClient(router)
+        classification = await classify_goal(goal, classifier_llm)
+        await classifier_llm.close()
+        is_multi_service = classification.is_multi_service
+    except Exception as e:
+        # Fallback to keyword detection if LLM fails
+        from belief.tools.multi_service import _classify_by_keywords
+        classification = _classify_by_keywords(goal)
+        is_multi_service = classification.is_multi_service
+        logger.debug(f"LLM classification failed ({e}), used keywords: {is_multi_service}")
 
     if is_multi_service:
         try:

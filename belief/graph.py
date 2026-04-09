@@ -350,6 +350,30 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
         except Exception as e:
             logger.debug(f"TypeScript covenant enforcement skipped: {e}")
 
+    # ── Multi-service health check injection ──────────────────────
+    svc_arch = state.get("service_architecture")
+    if svc_arch:
+        try:
+            from belief.tools.multi_service import inject_health_endpoints, verify_services
+
+            code_files = result.get("code_files", code_files)
+            svc_arch_dict = svc_arch if isinstance(svc_arch, dict) else svc_arch.model_dump()
+
+            # Auto-inject /health endpoints into services missing them
+            fixed = inject_health_endpoints(code_files, svc_arch_dict)
+            if fixed != code_files:
+                result["code_files"] = fixed
+                logger.info("Covenant enforcer: injected missing /health endpoints")
+
+            # Verify service structure (non-blocking — logged as warnings)
+            verification = verify_services(fixed, svc_arch_dict)
+            if not verification.passed:
+                for issue in verification.issues[:5]:
+                    logger.warning(f"Multi-service: {issue}")
+
+        except Exception as e:
+            logger.debug(f"Multi-service verification skipped: {e}")
+
     return result
 
 
