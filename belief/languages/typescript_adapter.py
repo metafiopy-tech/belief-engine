@@ -120,10 +120,19 @@ class TypeScriptAdapter(LanguageAdapter):
             deps.update(proto_deps.get("dependencies", {}))
             dev_deps.update(proto_deps.get("devDependencies", {}))
 
-        # Add explicit dependencies
+        # Add explicit dependencies (pin known packages, use ^ for unknown)
+        known_versions = {
+            "express": "^5.0.0",
+            "fastify": "^5.0.0",
+            "hono": "^4.0.0",
+            "zod": "^3.25.0",
+            "ethers": "^6.0.0",
+            "dotenv": "^16.0.0",
+            "cors": "^2.8.5",
+        }
         for dep in dependencies:
             if dep not in deps:
-                deps[dep] = "latest"
+                deps[dep] = known_versions.get(dep, "*")
 
         pkg = {
             "name": project_name,

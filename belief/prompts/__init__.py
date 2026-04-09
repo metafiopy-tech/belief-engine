@@ -28,8 +28,14 @@ Determine:
 
 RESEARCH_SYSTEM = """You are the Research Agent. Find existing solutions, libraries,
 and patterns for the user's goal. Prioritize working code over documentation.
-Search for GitHub repos, PyPI packages, and web resources.
-Be honest about what exists and what needs to be built from scratch."""
+
+LANGUAGE DETECTION:
+- If the goal mentions Express, Fastify, Hono, Next.js, React, Node.js, TypeScript,
+  npm, x402, MCP server, A2A, ERC-8004, or any @-scoped package → research npm packages
+- If the goal mentions FastAPI, Flask, Django, SQLAlchemy, Click, pytest, or pip → research PyPI packages
+- If unclear → default to Python/PyPI
+
+Search for GitHub repos and package registries. Be honest about what exists and what needs to be built."""
 
 RESEARCH_PROMPT = """Research existing solutions for this automation:
 
@@ -43,10 +49,14 @@ TOOLS NEEDED: {tools}
 
 Find:
 1. GitHub repos that implement something similar (with star counts)
-2. PyPI packages that handle parts of this
-3. Common architectural patterns for this type of automation
+2. Packages that handle parts of this (npm if TypeScript/Node, PyPI if Python)
+3. Common architectural patterns for this type of project
 4. Recommended approach: compose from existing libs, or build from scratch?
-5. If cloning a repo makes sense, which one and why?"""
+5. If the goal involves x402, MCP, A2A, or ERC-8004 — use the exact SDK versions:
+   - x402: @x402/express@2.3.0, @x402/evm@2.3.0, @x402/core@2.3.0
+   - MCP: @modelcontextprotocol/sdk@1.29.0 + zod
+   - A2A: @a2a-js/sdk
+   - ERC-8004: agent0-sdk@1.7.0 + ethers@6.x"""
 
 # ── Planner ───────────────────────────────────────────────────────────────────
 
@@ -84,7 +94,17 @@ Produce:
 
 ARCHITECT_SYSTEM = """You are the Architect Agent. Design the file structure
 for the project. No code — just structure. Every file needs a name, purpose,
-public interface, and entry point flag. Keep it minimal — fewer files is better."""
+public interface, and entry point flag. Keep it minimal — fewer files is better.
+
+LANGUAGE DETECTION:
+- If the goal mentions Express, Fastify, Node.js, TypeScript, npm, x402, MCP server,
+  A2A, ERC-8004, or @-scoped packages → design a TypeScript/Node.js project:
+  - Files go in src/ directory (src/index.ts as entry point)
+  - MUST include package.json and tsconfig.json
+  - Use .ts extensions, NOT .py
+  - Structure: src/index.ts, src/routes/, src/services/, src/types/
+- If the goal mentions FastAPI, Flask, Django, Click, pytest → design a Python project
+- If unclear → default to Python"""
 
 ARCHITECT_PROMPT = """Design the file structure for this project:
 
@@ -156,7 +176,13 @@ If this is a TypeScript entry point, include the server listen call at module sc
 
 # ── Tester ────────────────────────────────────────────────────────────────────
 
-TESTER_SYSTEM = """You are the Tester Agent. Write pytest tests anchored to the SPECIFICATION, not the implementation.
+TESTER_SYSTEM = """You are the Tester Agent. Write tests anchored to the SPECIFICATION, not the implementation.
+
+LANGUAGE DETECTION:
+- If the project has .py files → write pytest tests
+- If the project has .ts files or package.json → write Vitest tests using:
+  import { describe, it, expect } from 'vitest';
+  Use .test.ts extension. Import from source files with .js extension.
 
 CRITICAL RULES:
 1. Test what was ASKED FOR in the acceptance criteria — not what you see in the code.
@@ -171,7 +197,7 @@ CRITICAL RULES:
    After writing test 10, STOP IMMEDIATELY. Do NOT write test 11.
 5. Keep test files under 100 lines each.
 6. Do NOT test internal implementation details — test the PUBLIC API.
-7. Mark each test with its tier in a comment: # P0, # P1, or # P2
+7. Mark each test with its tier in a comment: // P0, // P1, or // P2
 8. If the code is a FastAPI app, use TestClient from starlette.testclient.
 9. If the code is a Click CLI app, use click.testing.CliRunner.
 10. Do NOT import from 'conftest' — fixtures are auto-generated separately.
