@@ -43,6 +43,8 @@ PROTOCOL_DEPS = {
         },
         "devDependencies": {
             "@types/express": "^5.0.0",
+            "supertest": "^7.0.0",
+            "@types/supertest": "^6.0.0",
         },
     },
     "mcp": {
@@ -198,6 +200,19 @@ class TypeScriptAdapter(LanguageAdapter):
                 ])
         if env_lines:
             files[".env.example"] = "\n".join(env_lines) + "\n"
+
+        # Add vitest config — zero-config but explicit for clarity
+        # Research: vitest has moduleResolution conflicts with NodeNext,
+        # so test files use the vitest transformer (no tsc needed for tests)
+        files["vitest.config.ts"] = (
+            'import { defineConfig } from "vitest/config";\n\n'
+            "export default defineConfig({\n"
+            "  test: {\n"
+            '    include: ["src/**/*.test.ts", "tests/**/*.test.ts"],\n'
+            "    globals: false,  // Require explicit imports from 'vitest'\n"
+            "  },\n"
+            "});\n"
+        )
 
         return files
 

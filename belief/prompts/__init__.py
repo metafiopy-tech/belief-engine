@@ -143,13 +143,38 @@ LANGUAGE DETECTION:
 - If the filename ends in .ts or .tsx → write TypeScript with ESM discipline
 - If the filename is package.json or tsconfig.json → write valid JSON
 
-TYPESCRIPT ESM RULES (when writing .ts files):
-1. Relative imports MUST include .js extension: import { foo } from './utils.js'
-2. NEVER use __dirname — use import.meta.dirname
-3. NEVER use require() — use import
-4. Use Zod for runtime validation at API boundaries
-5. All async functions must have explicit return types
-6. Use strict TypeScript — no 'any' types"""
+TYPESCRIPT COVENANTS (when writing .ts files — violations crash the build):
+
+ESM rules:
+  - Relative imports MUST have .js extension: import { foo } from './utils.js'
+  - NEVER use __dirname — use import.meta.dirname
+  - NEVER use require() — use import
+  - Use strict TypeScript — unknown instead of any
+
+x402 V2:
+  - ExactEvmScheme from '@x402/evm/exact/server' (NOT '@x402/evm')
+  - HTTPFacilitatorClient from '@x402/core/server' (NOT '@x402/core')
+  - @x402/types and @x402/client DO NOT EXIST
+  - Network: 'eip155:84532' not 'base-sepolia'. Price: '$0.001' not '0.001'
+
+MCP SDK:
+  - NEVER bare '@modelcontextprotocol/sdk' — use subpaths with .js:
+    '@modelcontextprotocol/sdk/server/mcp.js'
+    '@modelcontextprotocol/sdk/server/streamableHttp.js'
+  - zod@^3.25.0 is mandatory peer dep
+
+ethers v6:
+  - Top-level imports: import { JsonRpcProvider, Wallet, Contract } from 'ethers'
+  - NEVER ethers.providers.*, ethers.utils.*, @ethersproject/*
+  - Native bigint, NOT BigNumber. parseLog() returns null — always null-check.
+
+Express 5:
+  - Wildcard: '/{*splat}' not '*'. Optional: '/users{/:id}' not '/users/:id?'
+  - Error handlers: ErrorRequestHandler type. req.body is undefined without parser.
+
+Vitest:
+  - import { describe, it, expect, vi } from 'vitest'
+  - vi.fn() not jest.fn(). Mock<Args, Return> not Mock<Return, Args>."""
 
 BUILDER_PROMPT = """Write the code for this file:
 

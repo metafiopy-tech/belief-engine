@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "belief-engine"
+version = "2.3.0"
+description = "Autonomous AI build system. Describe what you want. Belief builds it, tests it, deploys it, and learns."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Fio", email = "metafiopy@gmail.com"},
+]
+keywords = ["ai", "agents", "code-generation", "autonomous", "langgraph", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "anthropic>=0.40.0",
+    "langgraph>=0.2.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "httpx>=0.27.0",
+    "chromadb>=0.5.0",
+    "pyyaml>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/metafiopy-tech/belief-engine"
+Repository = "https://github.com/metafiopy-tech/belief-engine"
+Issues = "https://github.com/metafiopy-tech/belief-engine/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.6.0",
+]
+local = [
+    "ollama>=0.3.0",
+]
+search = [
+    "duckduckgo-search>=6.0.0",
+]
+multiservice = [
+    "openapi-pydantic>=0.5.0",
+    "python-on-whales>=0.70.0",
+    "schemathesis>=3.0.0",
+    "pyyaml>=6.0.0",
+]
+brownfield = [
+    "networkx>=3.0",
+    "gitpython>=3.1.0",
+    "unidiff>=0.7.0",
+    "pytest-testmon>=2.0.0",
+]
+verification = [
+    "schemathesis>=3.0.0",
+    "hypothesis>=6.0.0",
+    "hypothesis-jsonschema>=0.23.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+belief = "belief.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["belief*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

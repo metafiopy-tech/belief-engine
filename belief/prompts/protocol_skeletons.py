@@ -38,12 +38,12 @@ def get_all_protocol_names() -> list[str]:
 def _x402_skeleton() -> dict[str, str]:
     """x402 V2 Express server — payment-gated API endpoints."""
     return {
-        "src/index.ts": '''import express from "express";
+        "src/app.ts": '''import express from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 // x402 payment setup
@@ -76,12 +76,32 @@ app.get("/health", (_req, res) => {
 app.get("/api/data", (_req, res) => {
   res.json({ data: "This is paid content", timestamp: new Date().toISOString() });
 });
+''',
+        "src/index.ts": '''import { app } from "./app.js";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 app.listen(PORT, () => {
   console.log(`x402 server running on http://localhost:${PORT}`);
   console.log(`Health: http://localhost:${PORT}/health`);
   console.log(`Paid:   http://localhost:${PORT}/api/data (requires x402 payment)`);
+});
+''',
+        "src/app.test.ts": '''import { describe, it, expect } from "vitest";
+import request from "supertest";
+import { app } from "./app.js";
+
+describe("x402 server", () => {
+  it("GET /health returns 200", async () => { // P0
+    const res = await request(app).get("/health");
+    expect(res.status).toBe(200);
+    expect(res.body.protocol).toBe("x402-v2");
+  });
+
+  it("GET /api/data returns 402 without payment", async () => { // P1
+    const res = await request(app).get("/api/data");
+    // x402 middleware returns 402 when no payment signature present
+    expect(res.status).toBe(402);
+  });
 });
 ''',
     }
