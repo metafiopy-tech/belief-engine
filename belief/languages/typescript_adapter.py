@@ -37,9 +37,9 @@ PROTOCOL_DEPS = {
     "x402": {
         "dependencies": {
             "@x402/express": "^2.3.0",
-            "@x402/evm": "^2.3.0",
-            "@x402/core": "^2.3.0",
-            "express": "^5.0.0",
+            "@x402/evm": "^2.5.0",
+            "@x402/core": "^2.3.0",  # MANDATORY peer dep — x402/express won't resolve without it
+            "express": "^5.1.0",
         },
         "devDependencies": {
             "@types/express": "^5.0.0",
@@ -48,8 +48,8 @@ PROTOCOL_DEPS = {
     "mcp": {
         "dependencies": {
             "@modelcontextprotocol/sdk": "^1.29.0",
-            "zod": "^3.25.0",
-            "express": "^5.0.0",
+            "zod": "^3.25.0",  # MANDATORY peer dep — SDK breaks without it. NOT zod v4.
+            "express": "^5.1.0",
         },
         "devDependencies": {
             "@types/express": "^5.0.0",
@@ -58,7 +58,7 @@ PROTOCOL_DEPS = {
     "a2a": {
         "dependencies": {
             "@a2a-js/sdk": "latest",
-            "express": "^5.0.0",
+            "express": "^5.1.0",
         },
         "devDependencies": {
             "@types/express": "^5.0.0",
@@ -67,7 +67,7 @@ PROTOCOL_DEPS = {
     "erc8004": {
         "dependencies": {
             "agent0-sdk": "^1.7.0",
-            "ethers": "^6.0.0",
+            "ethers": "^6.16.0",  # v6 — NOT v5. Top-level imports, native bigint.
         },
     },
     "bittensor": {

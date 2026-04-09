@@ -233,9 +233,9 @@ app.listen(PORT, () => {
 
 
 def _erc8004_skeleton() -> dict[str, str]:
-    """ERC-8004 agent registration CLI tool."""
+    """ERC-8004 agent registration CLI tool — ethers v6 compliant."""
     return {
-        "src/index.ts": '''import { ethers } from "ethers";
+        "src/index.ts": '''import { JsonRpcProvider, Wallet, Contract, Log, LogDescription } from "ethers";
 
 // ERC-8004 Identity Registry on Base Sepolia
 const IDENTITY_REGISTRY = "0x8004A818dC0b21ef9e8f9B2aaE2a12443F092cFC";
@@ -251,11 +251,12 @@ async function registerAgent(agentURI: string): Promise<{ agentId: string; tx: s
   const privateKey = process.env.PRIVATE_KEY;
   if (!privateKey) throw new Error("PRIVATE_KEY environment variable required");
 
-  const provider = new ethers.JsonRpcProvider(
+  // ethers v6: top-level imports, no ethers.providers.*
+  const provider = new JsonRpcProvider(
     process.env.RPC_URL ?? "https://sepolia.base.org"
   );
-  const wallet = new ethers.Wallet(privateKey, provider);
-  const registry = new ethers.Contract(IDENTITY_REGISTRY, IDENTITY_ABI, wallet);
+  const wallet = new Wallet(privateKey, provider);
+  const registry = new Contract(IDENTITY_REGISTRY, IDENTITY_ABI, wallet);
 
   console.log(`Registering agent with URI: ${agentURI}`);
   console.log(`Wallet: ${wallet.address}`);
@@ -264,11 +265,13 @@ async function registerAgent(agentURI: string): Promise<{ agentId: string; tx: s
   console.log(`Transaction: ${tx.hash}`);
 
   const receipt = await tx.wait();
+  // ethers v6: parseLog returns null (doesn't throw) — must null-check
   const event = receipt?.logs
-    ?.map((log: ethers.Log) => {
-      try { return registry.interface.parseLog(log); } catch { return null; }
+    ?.map((log: Log) => {
+      const parsed: LogDescription | null = registry.interface.parseLog(log);
+      return parsed;
     })
-    .find((e: ethers.LogDescription | null) => e?.name === "Transfer");
+    .find((e: LogDescription | null) => e !== null && e.name === "Transfer");
 
   const agentId = event?.args?.tokenId?.toString() ?? "unknown";
   console.log(`Agent registered! ID: ${agentId}`);
@@ -284,7 +287,7 @@ if (!uri) {
   process.exit(1);
 }
 
-registerAgent(uri).catch((err) => {
+registerAgent(uri).catch((err: Error) => {
   console.error("Registration failed:", err.message);
   process.exit(1);
 });

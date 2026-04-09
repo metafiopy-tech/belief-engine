@@ -295,11 +295,8 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
     """Structural enforcement of self-learned covenants.
 
     Runs AST-based validators that auto-fix violations:
-    - Remove __future__ from SQLAlchemy files
-    - Add missing Mapped/mapped_column imports
-    - Remove stdlib from requirements.txt
-    - Add missing stdlib imports
-    - Warn on files over 200 lines
+    Python: Remove __future__ from SQLAlchemy, add missing imports, etc.
+    TypeScript: Fix .js extensions, replace jest→vi, fix ethers v5→v6, etc.
 
     Zero LLM calls. Deterministic. Fast.
     """
@@ -309,6 +306,7 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
     if not code_files:
         return result
 
+    # ── Python covenants ──
     try:
         from belief.validators import enforce_all
 
@@ -316,18 +314,41 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
 
         if enforcement.fixes_applied > 0:
             result["code_files"] = fixed
+            code_files = fixed  # Use fixed version for TS pass
             logger.info(
-                f"Covenant enforcer: {enforcement.fixes_applied} fixes "
+                f"Covenant enforcer (Python): {enforcement.fixes_applied} fixes "
                 f"across {len(enforcement.files_modified)} files"
             )
 
-        # Log warnings (e.g., files over 200 lines)
         warnings = [v for v in enforcement.violations if v.severity == "warning" and not v.auto_fix]
         for w in warnings:
             logger.warning(f"Covenant warning: {w.covenant} — {w.message}")
 
     except Exception as e:
-        logger.debug(f"Covenant enforcement skipped: {e}")
+        logger.debug(f"Python covenant enforcement skipped: {e}")
+
+    # ── TypeScript covenants ──
+    has_ts = any(f.endswith((".ts", ".tsx", ".jsx")) for f in code_files)
+    if has_ts:
+        try:
+            from belief.validators.typescript_covenants import enforce_ts_covenants
+
+            ts_fixed, ts_result = enforce_ts_covenants(code_files, auto_fix=True)
+
+            if ts_result.fixes_applied > 0:
+                result["code_files"] = ts_fixed
+                logger.info(
+                    f"Covenant enforcer (TypeScript): {ts_result.fixes_applied} fixes "
+                    f"across {len(ts_result.files_modified)} files"
+                )
+
+            if ts_result.has_critical:
+                critical = [v for v in ts_result.violations if v.severity == "critical" and not v.auto_fixed]
+                for v in critical[:3]:
+                    logger.warning(f"TS covenant CRITICAL: {v.covenant} — {v.message} ({v.file}:{v.line})")
+
+        except Exception as e:
+            logger.debug(f"TypeScript covenant enforcement skipped: {e}")
 
     return result
 
