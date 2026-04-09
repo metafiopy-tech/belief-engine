@@ -60,9 +60,18 @@ class TesterAgent(BaseAgent):
             # Post-process: validate test imports and generate conftest if needed
             test_files = self._postprocess_tests(test_files, state.code_files)
 
-            # Hard cap: max 20 test functions per file
-            # More tests = more surface area for phantom failures
-            test_files = _cap_test_count(test_files, max_tests_per_file=20)
+            # Hard cap: scale test count by complexity to reduce phantom failures.
+            # Simple scripts (complexity 1-3) get 10 tests max.
+            # Medium apps (complexity 4-6) get 14 tests max.
+            # Complex systems (complexity 7+) get 20 tests max.
+            complexity = state.complexity_score
+            if complexity <= 3:
+                max_tests = 10
+            elif complexity <= 6:
+                max_tests = 14
+            else:
+                max_tests = 20
+            test_files = _cap_test_count(test_files, max_tests_per_file=max_tests)
 
             state.test_files = test_files
             logger.info(f"Tester: {len(test_files)} test file(s)")

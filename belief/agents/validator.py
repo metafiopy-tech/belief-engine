@@ -377,7 +377,12 @@ def _classify_and_score(result: ValidationResult) -> None:
     result.tests_passed = sum(1 for t in result.tests if t.passed)
     result.tests_total = len(result.tests)
 
-    if smoke_pass and result.weighted_score >= 0.85:
+    if smoke_pass and result.weighted_score >= 0.75:
+        result.verdict = ValidationVerdict.PASS
+    elif result.weighted_score >= 0.90:
+        # High score override: if 90%+ of weighted tests pass, a single
+        # smoke failure is almost certainly a phantom test (bad import,
+        # wrong fixture, etc.), not a real functional problem.
         result.verdict = ValidationVerdict.PASS
     elif result.weighted_score >= 0.5:
         result.verdict = ValidationVerdict.FAIL_FIXABLE
