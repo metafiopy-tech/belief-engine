@@ -279,6 +279,55 @@ CHALLENGES = [
         timeout_seconds=1800,
         tags=["multi-service", "fastapi", "sqlalchemy", "aggregation", "three-service"],
     ),
+
+    # ── Tier 7: Brownfield modification (5 challenges) ──
+    # These test extending or fixing existing codebases, not greenfield generation.
+    # The engine receives a working codebase + an issue to fix or feature to add.
+    Challenge(
+        id="t7-add-pagination",
+        tier=7,
+        goal="Given an existing FastAPI CRUD API for 'items' (name, price, category) with GET /items returning all items, add pagination support: GET /items?page=1&size=10 with total count in response headers. Do not break existing endpoints.",
+        acceptance_criteria=["GET /items?page=1&size=10 returns paginated results", "X-Total-Count header present", "Default page=1, size=20", "Existing POST/PUT/DELETE still work"],
+        verify_commands=["curl 'localhost:8000/items?page=1&size=10'"],
+        timeout_seconds=900,
+        tags=["brownfield", "fastapi", "pagination", "extend"],
+    ),
+    Challenge(
+        id="t7-add-search",
+        tier=7,
+        goal="Given an existing FastAPI notes API (CRUD for notes with title, content, created_at) stored in SQLite, add full-text search: GET /notes/search?q=keyword that searches both title and content fields. Return matching notes sorted by relevance.",
+        acceptance_criteria=["GET /notes/search?q=keyword works", "Searches title and content", "Returns matching notes", "Existing CRUD endpoints unaffected"],
+        verify_commands=["curl 'localhost:8000/notes/search?q=test'"],
+        timeout_seconds=900,
+        tags=["brownfield", "fastapi", "search", "extend"],
+    ),
+    Challenge(
+        id="t7-fix-validation",
+        tier=7,
+        goal="Given an existing FastAPI user registration API that accepts POST /register with {username, email, password}, fix the validation: currently it accepts empty strings for all fields and duplicate emails. Add proper validation: username 3-50 chars, valid email format, password min 8 chars, and unique email constraint.",
+        acceptance_criteria=["Empty username rejected", "Invalid email rejected", "Short password rejected", "Duplicate email returns 409", "Valid registration still works"],
+        verify_commands=["curl -X POST localhost:8000/register -H 'Content-Type: application/json' -d '{}'"],
+        timeout_seconds=900,
+        tags=["brownfield", "fastapi", "validation", "fix"],
+    ),
+    Challenge(
+        id="t7-add-auth",
+        tier=7,
+        goal="Given an existing FastAPI todo API (CRUD for tasks with title, description, completed) that has no authentication, add JWT-based auth: POST /login accepts {username, password}, returns {access_token}. All task endpoints require a valid Bearer token. Add a hardcoded test user (admin/admin123).",
+        acceptance_criteria=["POST /login returns JWT token", "Task endpoints reject requests without token", "Task endpoints work with valid token", "Invalid token returns 401"],
+        verify_commands=["curl -X POST localhost:8000/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"admin123\"}'"],
+        timeout_seconds=900,
+        tags=["brownfield", "fastapi", "auth", "jwt", "extend"],
+    ),
+    Challenge(
+        id="t7-add-export",
+        tier=7,
+        goal="Given an existing FastAPI expense tracker (CRUD for expenses with amount, category, description, date) stored in SQLite, add CSV export: GET /expenses/export returns a CSV file download of all expenses. Add date range filtering: GET /expenses/export?start=2024-01-01&end=2024-12-31.",
+        acceptance_criteria=["GET /expenses/export returns CSV", "CSV has correct headers", "Date range filtering works", "Existing CRUD endpoints unaffected"],
+        verify_commands=["curl localhost:8000/expenses/export"],
+        timeout_seconds=900,
+        tags=["brownfield", "fastapi", "csv", "export", "extend"],
+    ),
 ]
 
 

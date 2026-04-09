@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "belief-engine"
-version = "2.3.0"
+version = "2.2.2"
 description = "Autonomous AI build system. Describe what you want. Belief builds it, tests it, deploys it, and learns."
 readme = "README.md"
 license = {text = "MIT"}
@@ -34,7 +34,6 @@ dependencies = [
     "rich>=13.0.0",
     "httpx>=0.27.0",
     "chromadb>=0.5.0",
-    "pyyaml>=6.0.0",
 ]
 
 [project.urls]
@@ -53,24 +52,6 @@ local = [
 ]
 search = [
     "duckduckgo-search>=6.0.0",
-]
-multiservice = [
-    "openapi-pydantic>=0.5.0",
-    "python-on-whales>=0.70.0",
-    "schemathesis>=3.0.0",
-    "pyyaml>=6.0.0",
-]
-brownfield = [
-    "networkx>=3.0",
-    "gitpython>=3.1.0",
-    "unidiff>=0.7.0",
-    "pytest-testmon>=2.0.0",
-]
-verification = [
-    "schemathesis>=3.0.0",
-    "hypothesis>=6.0.0",
-    "hypothesis-jsonschema>=0.23.0",
-    "mypy>=1.0.0",
 ]
 
 [project.scripts]
