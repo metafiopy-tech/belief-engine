@@ -372,10 +372,10 @@ async def run_challenge(challenge: Challenge) -> ChallengeResult:
         if exec_result:
             result.executor_passed = exec_result.get("success", False) if isinstance(exec_result, dict) else getattr(exec_result, "success", False)
 
-        # Extract cost
-        budget = final_state.get("build_budget")
-        if budget:
-            result.cost_usd = budget.get("total_cost", 0.0) if isinstance(budget, dict) else getattr(budget, "total_cost", 0.0)
+        # Extract cost — from token_usage (set by BaseAgent), not build_budget
+        usage = final_state.get("token_usage")
+        if usage:
+            result.cost_usd = usage.get("total_cost_usd", 0.0) if isinstance(usage, dict) else getattr(usage, "total_cost_usd", 0.0)
 
     except Exception as e:
         result.error = str(e)

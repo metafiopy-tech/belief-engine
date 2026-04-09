@@ -170,6 +170,21 @@ class ArchitectAgent(BaseAgent):
     role = ModelRole.ARCHITECT
     name = "Architect"
 
+    def __init__(self, router):
+        super().__init__(router)
+        self._service_architecture = None  # Set by run() if multi-service detected
+
+    async def __call__(self, state):
+        """Override BaseAgent.__call__ to inject service_architecture into output dict."""
+        output = await super().__call__(state)
+        # If run() detected a multi-service architecture, inject it into the
+        # output dict. This survives because the graph uses dict state, not
+        # UnifiedState — extra keys are preserved between nodes.
+        if self._service_architecture:
+            output["service_architecture"] = self._service_architecture
+            self._service_architecture = None  # Reset for next invocation
+        return output
+
     @staticmethod
     def _build_context(state) -> str:
         """Combine TF-IDF similar builds + metabolization nutrient context."""
@@ -242,6 +257,11 @@ class ArchitectAgent(BaseAgent):
                 service_arch = _detect_service_architecture(skeleton, state)
                 if service_arch:
                     state.code_files["docker-compose.yml"] = service_arch.generate_docker_compose()
+                    # Store serialized ServiceArchitecture for downstream nodes.
+                    # Since UnifiedState doesn't have this field, we store it in
+                    # a special key that BaseAgent.__call__ will pass through.
+                    # The graph uses dict state, so extra keys survive.
+                    self._service_architecture = service_arch.model_dump()
                     logger.info(
                         f"Architect: multi-service detected — "
                         f"{len(service_arch.services)} services, "
