@@ -1,126 +1,102 @@
-# Belief Engine v2.0
+# 🧠 Belief Engine v2.0
 
-An autonomous multi-agent code generation system that takes a natural language goal and builds working software — from research through deployment.
+**An autonomous AI system that turns a sentence into deployed software.**
 
-Describe what you want. Belief builds it.
-
-## What It Does
+Describe what you want. Belief Engine builds it, tests it, deploys it, and learns from every build.
 
 ```bash
-python3 -m belief.cli --goal "Build a task management API with FastAPI, SQLAlchemy models, service layer, and tests"
+python3 -m belief.cli \
+  --goal "Build a bookmark manager API with FastAPI — CRUD with tags, GET /random. SQLite." \
+  --deploy docker_local \
+  --deploy-name bookmarks
+
+# 240 seconds later → http://localhost:8000
 ```
 
-The engine runs 11 LangGraph agents in a convergence loop:
+---
 
-**recomposer** → **intake** → **research** → **planner** → **architect** → **skeleton** → **builder** → **tester** → **executor** → **gap analyst** → **synthesizer** → **validator** → **refinement** → **decomposer**
-
-Each agent has a specific role. The architect designs the file structure. The skeleton generator creates typed interfaces deterministically (zero LLM calls). The builder implements each file with compressed cross-file context. The executor verifies the code actually runs. If it doesn't, the debugger fixes it and loops back. If it runs but has quality issues, the **water cycle** refines it through up to 3 cycles of targeted fixes.
-
-## Key Features
-
-- **Skeleton-first generation** — typed interfaces before implementations, based on the CodeS paper
-- **Dependency DAG ordering** — models before base classes before implementations before servers
-- **Parallel file generation** — independent files at each dependency level build simultaneously
-- **AST context compression** — function signatures extracted via ast.parse(), not full file contents
-- **Multi-entry-point verification** — each service in a multi-service project verified independently
-- **Multi-service architecture** — Tier 5 projects with ServiceArchitecture descriptors, Docker Compose
-- **Metabolization architecture** — a ChromaDB-backed memory system where every build deposits nutrients (patterns, antipatterns, skeletons, covenants) that feed future builds
-- **FSRS confidence decay** — nutrients that aren't reinforced fade over time; the system forgets what it doesn't use
-- **Self-learned covenants** — immutable rules extracted from repeated failures (e.g., "no file over 200 lines")
-- **Bottom-up import verification** — leaf modules verified first, so the debugger fixes the actual broken file
-- **Deterministic error classifier** — ~40% of import/syntax errors fixed without LLM calls
-- **Water cycle refinement** — test-driven polish loop using verbal self-reflection (Reflexion pattern)
-- **Security scanner** — AST-based scan blocking eval/exec/os.system before execution
-- **Rate limiting** — token bucket + exponential backoff for parallel generation
-
-## The Water Cycle
-
-When code runs but tests don't all pass, the refinement loop activates:
+## How It Works
 
 ```
-validator says fail_fixable + executor passed
-    → analyze failure (verbal self-reflection — WHY did the test fail?)
-    → generate fix (search/replace edit on ONE file)
-    → revalidate (run tests, check for progress)
-    → repeat up to 3 cycles
-    → deposit refinement lessons into soil
+You: "Build a todo app with Click"
+  ↓
+11 AI agents collaborate in a convergence loop:
+  intake → research → planner → architect → skeleton → builder
+  → covenant enforce → import fix → tester → executor → debugger
+  → synthesizer → validator (real pytest) → water cycle → deploy
+  ↓
+Working software, tested, Dockerized, deployed.
 ```
 
-The water never leaves the system. Code is polished, not rebuilt. If a fix causes regression (breaks a previously passing test), it's immediately rolled back. Each successful fix becomes a pattern nutrient; each regression becomes an antipattern.
+The engine doesn't just generate code — it **builds, tests, debugs, deploys, and learns**. Every build deposits knowledge into ChromaDB soil. Patterns from successes, antipatterns from failures, and covenants from repeated mistakes feed future builds. Build 51 is smarter than build 1.
 
-## The Food Chain
+## Key Numbers
 
-Every build decomposes its results into atomic nutrients:
-- **Patterns** — what worked (verified by passing builds)
-- **Antipatterns** — what failed and why (verified by concrete errors)
-- **Skeletons** — file structures that produced clean code
-- **Covenants** — immutable rules from repeated failures
+| Metric | Value |
+|--------|-------|
+| Files | 74 Python files |
+| Lines | ~18,650 |
+| Builds completed | 51+ |
+| Nutrients learned | 135+ |
+| Covenants self-learned | 7 |
+| Cost per build | **$0.18** (was $0.87) |
+| Build time | ~240s |
+| LLM calls in validator | **0** (fully deterministic) |
 
-These nutrients are stored in ChromaDB with FSRS-based confidence decay. Before each new build, the recomposer retrieves relevant nutrients and injects them into the architect's context. The system gets smarter with every build.
+## What Makes This Different
+
+### It Learns From Every Build
+ChromaDB-backed metabolization. Patterns, antipatterns, skeletons, and covenants accumulate in "soil" with FSRS confidence decay. Nutrients that aren't reinforced fade. The system forgets what it doesn't use.
+
+### Incompleteness Drives Convergence
+Latios finds what's missing. Latias protects what matters. The tension between them drives builds forward — the "remainder" after each operation seeds the next.
+
+### Covenants Are Structural, Not Suggestions
+Self-learned rules enforced via AST validators — not prompt injection. When the engine learned that `from __future__ import annotations` breaks SQLAlchemy's `Mapped` types, it didn't just add a note. It added a deterministic AST check that removes the offending line automatically. Zero LLM tokens. Permanent fix.
+
+### Real Tests, Not Imagination
+The validator runs actual `pytest` in a sandbox. Real pass/fail. Real error messages. Weighted scoring: smoke tests = 3x weight, functional = 2x, edge cases = 1x, environment errors (missing deps) = 0x.
+
+### Skeleton-First Architecture
+Typed interfaces generated deterministically before any implementation. Models → ABCs → implementations → servers. Parallel generation within each dependency level.
+
+### SEED Self-Improvement
+Every 5 builds, the engine analyzes its own failure patterns and proposes improvements to its own agents. Propose-only mode — human approval required.
+
+## Architecture
 
 ```
-Soil → Plant → Caterpillar → Bird → Soil
-Build 1 → Nutrients → Build 2 → More Nutrients → Build 3 → ...
-Nothing is lost. Everything is transformed.
+belief/
+  agents/          — 11+ LangGraph agents (intake → validator)
+  validators/      — AST covenant enforcers (deterministic, zero LLM)
+  memory/          — ChromaDB metabolization (nutrients, soil, decay)
+  refinement/      — Water cycle (analyze → fix → revalidate)
+  deploy/          — Docker + Railway deployment + health monitoring
+  codebase/        — Brownfield support (Agentless localization, patcher)
+  languages/       — Multi-language (Python, TypeScript adapters)
+  evolution/       — SEED self-improvement engine
+  polarity/        — Latios/Latias incompleteness engine
+  models/          — Pydantic models (state, artifacts, skeleton, contracts)
+  hardening.py     — Budget limits, rate limiter, security scanner, audit log
+  graph.py         — LangGraph pipeline wiring
+  llm.py           — Anthropic API client with prompt caching + JSON repair
 ```
 
 ## Quick Start
 
 ```bash
-# Clone
 git clone https://github.com/metafiopy-tech/belief-engine.git
 cd belief-engine
-
-# Install
 pip install -e ".[dev]"
-pip install chromadb
+cp .env.example .env   # Add your ANTHROPIC_API_KEY
 
-# Configure
-cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
+# Build something
+python3 -m belief.cli --goal "Build a URL shortener with FastAPI and SQLite"
 
-# Run
-python3 -m belief.cli --goal "Build a hello world FastAPI server with a health check endpoint"
-```
+# Build + deploy
+python3 -m belief.cli --goal "Build a REST API" --deploy docker_local --deploy-name myapi
 
-## Project Structure
-
-```
-belief/
-  agents/          — 11 LangGraph agents (intake through validator)
-  memory/          — Metabolization (nutrients, soil, decomposer, recomposer, lineage)
-  models/          — Pydantic models (state, artifacts, skeleton, service architecture)
-  refinement/      — Water cycle (analyzer, fixer, runner)
-  codebase/        — Tier 7: ingestion, Agentless localization, patcher, import verifier
-  languages/       — Tier 6: LanguageAdapter (Python, TypeScript), type pipeline
-  config/          — Settings, model routing
-  polarity/        — Incompleteness engine (Latios/Latias convergence)
-  evolution/       — SEED self-improvement (reads covenants from soil)
-  tools/           — Composition planner, deployment generator
-  hardening.py     — Budget, rate limiter, security scanner
-  graph.py         — LangGraph pipeline wiring
-  cli.py           — Command-line interface
-  llm.py           — Anthropic API client with JSON repair
-```
-
-## Build Tiers
-
-| Tier | Description | Status |
-|------|-------------|--------|
-| 1 | Single file scripts | ✅ |
-| 2 | MCP servers, simple APIs | ✅ |
-| 3 | Package-structured apps | ✅ ($0.40-0.60) |
-| 4 | Multi-component systems | ✅ |
-| 5 | Distributed microservices | ✅ |
-| 6 | Multi-language (Python + TypeScript) | ✅ |
-| 7 | Extend existing codebases | ✅ |
-| 8 | Autonomous deploy + monitor + heal | ✅ |
-
-## Soil Status
-
-124+ nutrients, 5 covenants self-learned from ~44 builds:
-
-```bash
+# Check what the engine has learned
 python3 -c "
 from belief.memory.soil import Soil
 from pathlib import Path
@@ -130,19 +106,79 @@ print(f'By type: {soil.count_by_type()}')
 "
 ```
 
-## Deploy
+## The 7 Optimization Moves
+
+The engine went through a research-driven optimization cycle that cut costs 55% and improved quality:
+
+| Move | What | Impact |
+|------|------|--------|
+| 1 | Real pytest validator | Accurate verdicts from execution, not LLM guessing |
+| 2 | AST covenant enforcers | SQLAlchemy bugs die permanently — deterministic fixes |
+| 3 | Prompt caching + Haiku routing | $0.42 → $0.18 per build (55% reduction) |
+| 4 | Repo map in tester/debugger | Phantom imports eliminated — tests import real modules |
+| 5 | Contract-first generation | API contracts are source of truth for code AND tests |
+| 6 | Architect/editor debugger | Sonnet diagnoses across all files, Haiku applies fixes |
+| 7 | Safety infrastructure | Resource limits, audit logging, SEED approval gates |
+
+## Build Tiers
+
+| Tier | Description | Status |
+|------|-------------|--------|
+| 1 | Single file scripts | ✅ |
+| 2 | MCP servers, simple APIs | ✅ |
+| 3 | Package-structured apps (6-15 files) | ✅ |
+| 4 | Multi-component systems | ✅ |
+| 5 | Distributed microservices | ✅ |
+| 6 | Multi-language (Python + TypeScript) | ✅ |
+| 7 | Extend existing codebases | ✅ |
+| 8 | Autonomous deploy + monitor + heal | ✅ |
+
+## The Food Chain
+
+Every build decomposes its results into atomic nutrients:
+
+```
+Soil → Plant → Caterpillar → Bird → Soil
+Build 1 → Nutrients → Build 2 → More Nutrients → Build 3 → ...
+Nothing is lost. Everything is transformed.
+```
+
+- **Patterns** — what worked (verified by passing builds)
+- **Antipatterns** — what failed and why (linked to concrete errors)
+- **Skeletons** — file structures that produced clean code
+- **Covenants** — immutable rules from repeated failures (currently 7)
+
+## Deploy CLI
 
 ```bash
-# Build + deploy in one command
-python3 -m belief.cli --goal "your goal" --deploy docker_local --deploy-name myapp
-
-# Or deploy a previous build
+# List previous builds
 python3 -m belief.deploy --list
+
+# Deploy a specific build
 python3 -m belief.deploy --target docker_local --name myapp
 
 # Health check
 python3 -m belief.deploy --health http://localhost:8000
 ```
+
+## Tech Stack
+
+- **Python 3.14** on macOS Apple Silicon
+- **LangGraph** for agent orchestration
+- **Anthropic Claude** (Sonnet 4.6 for reasoning, Haiku 4.5 for mechanical tasks)
+- **ChromaDB** for metabolization memory
+- **Docker** for deployment
+- **Railway** for cloud deployment (optional)
+
+## Model Routing
+
+| Agent | Model | Role |
+|-------|-------|------|
+| Research, Planner, Architect, Builder, Debugger | Sonnet 4.6 | Deep reasoning |
+| Intake, Tester, Gap Analyst, Synthesizer, Validator, Latios, Executor | Haiku 4.5 | Mechanical tasks |
+| Skeleton, Covenant Enforcer, Import Fix, Validator (core) | None | Deterministic (zero tokens) |
+
+Prompt caching provides 90% savings on repeated system prompts. Combined with Haiku routing, builds cost **$0.15-0.25** compared to $0.87 before optimization.
 
 ## License
 
@@ -150,4 +186,6 @@ MIT
 
 ## Author
 
-Built by [metafiopy-tech](https://github.com/metafiopy-tech)
+Built by [Fio](https://github.com/metafiopy-tech)
+
+*"90% of anything buildable already exists as composable pieces. The intelligence is in finding, routing, and stitching — not generating."*
