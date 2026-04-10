@@ -399,27 +399,90 @@ async def _run_sica_cmd(args):
     _configure_logging()
     logger = logging.getLogger("belief.cli")
 
-    from belief.evolution.sica import SelfImprovementCycle
+    from belief.evolution.sica import SelfImprovementCycle, composite_utility
     project_root = _get_project_root()
     cycle = SelfImprovementCycle(project_root)
 
-    for i in range(args.iterations):
-        print(f"\n  SICA iteration {i+1}/{args.iterations}")
-        result = await cycle.run_one_iteration(benchmark_tiers=args.tiers)
+    print(f"\n{'═' * 60}")
+    print(f"  SICA Self-Improvement — {args.iterations} iteration(s)")
+    print(f"  Benchmark tiers: {args.tiers}")
+    print(f"  Project: {project_root}")
+    print(f"{'═' * 60}\n")
 
-        if result.accepted:
-            print(f"  ✓ ACCEPTED: {result.proposal_title}")
-            print(f"    {result.pre_score:.0%} → {result.post_score:.0%} (+{result.improvement:.0%})")
-        elif result.rolled_back:
-            print(f"  ✗ ROLLED BACK: {result.proposal_title}")
-            print(f"    {result.pre_score:.0%} → {result.post_score:.0%} ({result.improvement:.0%})")
-        elif result.error:
-            print(f"  ⚠ ERROR: {result.error}")
+    for i in range(args.iterations):
+        print(f"\n  ── Iteration {i+1}/{args.iterations} {'─' * 40}")
+        try:
+            if hasattr(args, 'dry_run') and args.dry_run:
+                # Dry run: show what WOULD happen without modifying files
+                from belief.evolution.sica import SelfImprovementCycle as _SIC
+                # Run benchmark only
+                benchmark_data = await cycle._run_benchmark(args.tiers, None)
+                print(f"  Baseline: {benchmark_data['passed']}/{benchmark_data['total']} "
+                      f"({benchmark_data['pass_rate']:.0%})")
+                # Generate proposal only
+                proposal = await cycle._generate_proposal(benchmark_data)
+                if proposal:
+                    print(f"  Proposal: {proposal.get('title', 'untitled')}")
+                    print(f"  Target: {proposal.get('target_file', '?')}")
+                    print(f"  Why: {proposal.get('why', '?')[:200]}")
+                    print(f"  (dry run — not applied)")
+                else:
+                    print(f"  No proposal generated")
+                continue
+
+            result = await cycle.run_one_iteration(benchmark_tiers=args.tiers)
+
+            if result.accepted:
+                print(f"  ✓ ACCEPTED: {result.proposal_title}")
+                print(f"    Score: {result.pre_score:.0%} → {result.post_score:.0%}")
+                print(f"    Utility: {result.pre_utility:.4f} → {result.post_utility:.4f}")
+                if result.improvements:
+                    print(f"    New passes: {', '.join(result.improvements)}")
+                print(f"    File: {result.target_file}")
+                print(f"    Cost: ${result.cost_usd:.4f}, Time: {result.duration_seconds:.0f}s")
+            elif result.rolled_back:
+                print(f"  ✗ ROLLED BACK: {result.proposal_title}")
+                print(f"    Score: {result.pre_score:.0%} → {result.post_score:.0%}")
+                if result.regressions:
+                    print(f"    Regressions: {', '.join(result.regressions[:5])}")
+                print(f"    File: {result.target_file}")
+            elif result.error:
+                print(f"  ⚠ ERROR: {result.error[:200]}")
+            else:
+                print(f"  ○ NO CHANGE: {result.proposal_title}")
+
+        except Exception as e:
+            print(f"  ⚠ Iteration {i+1} crashed: {e}")
+            logger.error(f"SICA iteration {i+1} error: {e}", exc_info=True)
 
     # Summary
     archive = cycle.archive
-    print(f"\n  SICA Summary: {len(archive.iterations)} iterations, "
-          f"accept rate={archive.accept_rate:.0%}, best={archive.best_score:.0%}")
+    print(f"\n{'═' * 60}")
+    print(f"  SICA SUMMARY")
+    print(f"{'═' * 60}")
+    print(f"  Iterations: {len(archive.iterations)}")
+    print(f"  Accepted:   {sum(1 for r in archive.iterations if r.accepted)}")
+    print(f"  Rejected:   {sum(1 for r in archive.iterations if r.rolled_back)}")
+    print(f"  Errors:     {sum(1 for r in archive.iterations if r.error)}")
+    print(f"  Accept rate: {archive.accept_rate:.0%}")
+    print(f"  Best score:  {archive.best_score:.0%} (iteration {archive.best_iteration})")
+    print(f"  Best utility: {archive.best_utility:.4f}")
+    print(f"  Total cost:  ${archive.total_cost:.2f}")
+    print(f"  Archive: {cycle.archive_path}")
+
+    # Held-out validation — run on tiers NOT used during optimization
+    if hasattr(args, 'validate_tiers') and args.validate_tiers:
+        print(f"\n  ── Held-out Validation (Tiers {args.validate_tiers}) ──")
+        from belief.benchmark import run_benchmark
+        val_results = await run_benchmark(tiers=args.validate_tiers)
+        val_passed = sum(1 for r in val_results if r.verdict == "pass")
+        val_total = len(val_results)
+        print(f"  Validation: {val_passed}/{val_total} ({val_passed/max(val_total,1)*100:.0f}%)")
+        for r in val_results:
+            icon = "✓" if r.verdict == "pass" else "✗"
+            print(f"    {icon} {r.challenge_id}: {r.tests_passed}/{r.tests_total} tests")
+
+    print()
 
 
 async def _run_fix_cmd(args):
@@ -523,6 +586,10 @@ def app():
                              help="Number of improvement iterations (default: 1)")
     sica_parser.add_argument("--tiers", type=int, nargs="+", default=[1, 2, 3],
                              help="Benchmark tiers for validation (default: 1-3)")
+    sica_parser.add_argument("--dry-run", action="store_true",
+                             help="Run benchmark and generate proposals without applying them")
+    sica_parser.add_argument("--validate-tiers", type=int, nargs="+",
+                             help="Held-out tiers for post-run validation (e.g., 4 5)")
 
     # Bittensor miner
     mine_parser = subparsers.add_parser("mine", help="Run as Bittensor subnet miner")
