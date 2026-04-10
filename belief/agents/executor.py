@@ -523,7 +523,12 @@ class ExecutorAgent(BaseAgent):
             return None
 
     def _install_deps(self, tmp: Path) -> ExecutionResult:
-        """Install requirements.txt in a venv. Returns install status."""
+        """Install requirements.txt in a venv after verifying packages exist.
+
+        Security: LLMs hallucinate package names at 5-21% rate (Spracklen et al.,
+        USENIX 2025). Attackers register these names with malicious code
+        ("slopsquatting"). We verify each package exists on PyPI before installing.
+        """
         req_file = tmp / "requirements.txt"
         install_result = ExecutionResult(install_success=True)
         if not req_file.exists():
@@ -534,12 +539,61 @@ class ExecutorAgent(BaseAgent):
         if not deps:
             return install_result
 
+        # ── Verify packages exist before installing ──────────────────
+        verified_deps = []
+        for dep in deps:
+            # Extract package name (strip version specifiers)
+            pkg_name = dep.split(">=")[0].split("<=")[0].split("==")[0].split("~=")[0].split("[")[0].split("<")[0].split(">")[0].split("!=")[0].strip()
+            if not pkg_name:
+                continue
+
+            # Known-safe packages (stdlib-adjacent, extremely common)
+            SAFE_PACKAGES = {
+                "pytest", "click", "flask", "fastapi", "uvicorn", "requests",
+                "httpx", "pydantic", "sqlalchemy", "alembic", "jinja2",
+                "starlette", "python-dotenv", "aiohttp", "aiofiles",
+                "rich", "typer", "celery", "redis", "pymongo", "psycopg2-binary",
+                "boto3", "pillow", "numpy", "pandas", "scipy", "matplotlib",
+                "cryptography", "bcrypt", "pyjwt", "python-jose", "passlib",
+                "gunicorn", "python-multipart", "email-validator", "orjson",
+                "websockets", "httptools", "watchfiles", "itsdangerous",
+                "werkzeug", "markupsafe", "certifi", "charset-normalizer",
+                "idna", "urllib3", "packaging", "setuptools", "wheel", "pip",
+                "toml", "tomli", "tomli-w", "pyyaml", "tomlkit",
+            }
+
+            if pkg_name.lower() in SAFE_PACKAGES:
+                verified_deps.append(dep)
+                continue
+
+            # Check PyPI for unknown packages
+            try:
+                import urllib.request
+                url = f"https://pypi.org/pypi/{pkg_name}/json"
+                req = urllib.request.Request(url, method="HEAD")
+                req.add_header("User-Agent", "belief-engine/2.3")
+                resp = urllib.request.urlopen(req, timeout=5)
+                if resp.status == 200:
+                    verified_deps.append(dep)
+                else:
+                    logger.warning(f"Executor: BLOCKED unknown package '{pkg_name}' — not found on PyPI")
+            except Exception:
+                # Network error or package not found — skip it
+                logger.warning(f"Executor: BLOCKED unverified package '{pkg_name}' — PyPI check failed")
+
+        if len(verified_deps) < len(deps):
+            blocked = len(deps) - len(verified_deps)
+            logger.info(f"Executor: blocked {blocked} unverified package(s), installing {len(verified_deps)}")
+
+        if not verified_deps:
+            return install_result
+
         try:
             venv_dir = tmp / ".venv"
             venv.create(str(venv_dir), with_pip=True)
             pip = str(venv_dir / "bin" / "pip")
             proc = subprocess.run(
-                [pip, "install"] + deps,
+                [pip, "install"] + verified_deps,
                 capture_output=True, text=True,
                 timeout=INSTALL_TIMEOUT, cwd=str(tmp),
             )
@@ -935,15 +989,105 @@ except Exception as e:
 
 
 def _extract_error(stderr: str) -> str:
-    """Extract the most meaningful error line from stderr."""
+    """Extract and classify error into a structured diagnosis.
+
+    Instead of dumping raw tracebacks to the debugger, we classify the error
+    and explain what assumption was violated. This follows Julia Evans'
+    debugging framework: what did we expect? what happened? what was wrong?
+
+    The debugger can act on "missing __init__.py in app/" much faster
+    than on a 50-line ModuleNotFoundError traceback.
+    """
     if not stderr:
         return ""
+
+    stderr_lower = stderr.lower()
     lines = stderr.strip().splitlines()
+
+    # ── Classify by error pattern ────────────────────────────────
+    # Each pattern: (indicator, diagnosis template)
+    patterns = [
+        # Import errors — the #1 failure mode
+        ("modulenotfounderror: no module named '", lambda s: _diagnose_import(s)),
+        ("importerror: cannot import name '", lambda s: _diagnose_import(s)),
+        ("importerror: attempted relative import", "Relative import used outside a package. File needs to be inside a package with __init__.py, or use absolute imports."),
+
+        # Syntax errors
+        ("syntaxerror:", lambda s: _find_line(s, "SyntaxError")),
+
+        # Type/attribute errors
+        ("attributeerror: '", lambda s: _diagnose_attribute(s)),
+        ("typeerror:", lambda s: _find_line(s, "TypeError")),
+
+        # Runtime errors
+        ("filenotfounderror:", "Code references a file that doesn't exist. Check file paths and working directory assumptions."),
+        ("permissionerror:", "File permission denied. Check if the code is trying to write to a read-only location."),
+        ("connectionrefusederror:", "Network connection refused. Service dependency not running or wrong port."),
+        ("keyerror:", lambda s: _find_line(s, "KeyError")),
+
+        # Dependency errors
+        ("no matching distribution found for", "pip install failed — package doesn't exist or version constraint is unsatisfiable. Check requirements.txt."),
+        ("could not find a version that satisfies", "Version constraint in requirements.txt can't be satisfied. Relax the version pin."),
+    ]
+
+    for indicator, diagnosis in patterns:
+        if indicator in stderr_lower:
+            if callable(diagnosis):
+                result = diagnosis(stderr)
+                if result:
+                    return result[:400]
+            else:
+                return diagnosis[:400]
+
+    # Fallback: last meaningful line
     for line in reversed(lines):
         line = line.strip()
         if any(kw in line for kw in ("Error:", "Exception:", "Traceback")):
             return line[:300]
     return lines[-1][:300] if lines else ""
+
+
+def _diagnose_import(stderr: str) -> str:
+    """Diagnose import errors with actionable fix suggestions."""
+    import re
+    # Extract the module name
+    match = re.search(r"No module named '([^']+)'", stderr)
+    if match:
+        module = match.group(1)
+        parts = module.split(".")
+        if len(parts) > 1:
+            return (
+                f"ModuleNotFoundError: '{module}'. "
+                f"Check: (1) does {parts[0]}/__init__.py exist? "
+                f"(2) is '{parts[-1]}' defined in {'/'.join(parts[:-1])}/? "
+                f"(3) is the package in requirements.txt?"
+            )
+        return f"ModuleNotFoundError: '{module}'. Check: is it in requirements.txt? Is it spelled correctly?"
+
+    match = re.search(r"cannot import name '([^']+)' from '([^']+)'", stderr)
+    if match:
+        name, module = match.group(1), match.group(2)
+        return f"ImportError: '{name}' not found in '{module}'. Check: does '{name}' exist in {module.replace('.', '/')}? Is it exported?"
+
+    return "Import failed. Check module paths and __init__.py files."
+
+
+def _diagnose_attribute(stderr: str) -> str:
+    """Diagnose attribute errors — often caused by wrong API version."""
+    import re
+    match = re.search(r"AttributeError: '(\w+)' object has no attribute '(\w+)'", stderr)
+    if match:
+        obj_type, attr = match.group(1), match.group(2)
+        return f"AttributeError: '{obj_type}' has no '{attr}'. The API may have changed — check the library version and documentation."
+    return "AttributeError: accessing a property or method that doesn't exist on this object."
+
+
+def _find_line(stderr: str, keyword: str) -> str:
+    """Find the most relevant line containing a keyword."""
+    for line in stderr.strip().splitlines():
+        if keyword in line:
+            return line.strip()[:300]
+    return ""
 
 
 def _parse_pytest(output: str) -> PytestResult:

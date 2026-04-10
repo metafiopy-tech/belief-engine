@@ -80,6 +80,7 @@ def enforce_all(
         _enforce_file_length,
         _enforce_stdlib_imports,
         _enforce_no_stdlib_in_requirements,
+        _enforce_no_bare_except,
     ]
 
     for enforcer in enforcers:
@@ -362,3 +363,68 @@ def _enforce_no_stdlib_in_requirements(
         message=f"Removed stdlib from requirements.txt: {', '.join(removed)}",
         auto_fix=fixed,
     )]
+
+
+# ── Enforcer: No bare except clauses ─────────────────────────────────────────
+
+def _enforce_no_bare_except(
+    fname: str, code: str, uses_sqlalchemy: bool
+) -> list[Violation]:
+    """Covenant 7: Never use bare 'except:' or 'except Exception:' with pass.
+
+    Bare excepts swallow all errors silently, making debugging impossible.
+    This is the #1 anti-pattern in generated code — the LLM adds
+    'except: pass' to make code "robust" but actually hides bugs.
+
+    Auto-fix: replace 'except:' with 'except Exception:' and
+    'except Exception: pass' with 'except Exception: logger.exception("...")'.
+    """
+    if not fname.endswith(".py") or "test" in fname:
+        return []
+
+    violations = []
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+
+    lines = code.split("\n")
+    modified = False
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ExceptHandler):
+            line_idx = node.lineno - 1
+            if line_idx >= len(lines):
+                continue
+
+            line = lines[line_idx]
+
+            # Bare except: (no exception type)
+            if node.type is None and "except:" in line:
+                lines[line_idx] = line.replace("except:", "except Exception:")
+                modified = True
+                violations.append(Violation(
+                    covenant="no_bare_except",
+                    file=fname,
+                    line=node.lineno,
+                    message="Replaced bare 'except:' with 'except Exception:'",
+                    severity="warning",
+                ))
+
+            # except ...: pass (swallows error silently)
+            if (node.body and len(node.body) == 1
+                    and isinstance(node.body[0], ast.Pass)):
+                pass_line_idx = node.body[0].lineno - 1
+                if pass_line_idx < len(lines):
+                    indent = len(lines[pass_line_idx]) - len(lines[pass_line_idx].lstrip())
+                    spaces = " " * indent
+                    lines[pass_line_idx] = f"{spaces}pass  # TODO: handle error appropriately"
+                    modified = True
+
+    if modified:
+        fixed = "\n".join(lines)
+        if violations:
+            violations[0].auto_fix = fixed
+
+    return violations
