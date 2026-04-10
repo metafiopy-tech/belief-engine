@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 import operator
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
 from langgraph.types import Send
@@ -51,6 +51,62 @@ def _merge_dicts(left: dict | None, right: dict | None) -> dict:
     merged = (left or {}).copy()
     merged.update(right or {})
     return merged
+
+
+def _merge_lists(left: list | None, right: list | None) -> list:
+    """Merge two lists for fan-in (errors, warnings, service_results)."""
+    return (left or []) + (right or [])
+
+
+def _last_value(left: Any, right: Any) -> Any:
+    """Keep the last value written — default reducer for non-merged keys."""
+    return right if right is not None else left
+
+
+# ── Typed state schema with reducers for parallel fan-in ─────────────────────
+# This fixes the INVALID_CONCURRENT_GRAPH_UPDATE error.
+# LangGraph requires Annotated reducers on any key that parallel
+# Send() branches write to simultaneously.
+
+class MultiServiceState(TypedDict, total=False):
+    """State schema for the multi-service pipeline.
+
+    Keys with Annotated reducers can receive writes from parallel branches.
+    Keys without reducers use last-write-wins semantics.
+    """
+    # ── Merged keys (parallel branches write to these) ──
+    code_files: Annotated[dict, _merge_dicts]
+    test_files: Annotated[dict, _merge_dicts]
+    errors: Annotated[list, _merge_lists]
+    warnings: Annotated[list, _merge_lists]
+    service_results: Annotated[list, _merge_lists]
+    agent_timings: Annotated[dict, _merge_dicts]
+
+    # ── Single-writer keys (last value wins) ──
+    run_id: str
+    user_goal: str
+    phase: str
+    iteration: int
+    max_iterations: int
+    max_cost_usd: float
+    spec: Any
+    architecture: Any
+    service_architecture: Any
+    skeleton_artifact: Any
+    openapi_specs: dict
+    file_specs: list
+    dag: Any
+    code_plan: Any
+    token_usage: Any
+    validation_result: Any
+    execution_result: Any
+    build_budget: Any
+    complexity_score: int
+    similar_builds_context: str
+    previous_gap_summaries: list
+    service_spec: Any
+    shared_models: Any
+    openapi_spec: str
 
 
 # ── Service build sub-pipeline ───────────────────────────────────────────────
@@ -254,7 +310,7 @@ def build_multi_pipeline(router: ModelRouter | None = None) -> Any:
     planner = PlannerAgent(router)
     architect = ArchitectAgent(router)
 
-    graph = StateGraph(dict)
+    graph = StateGraph(MultiServiceState)
 
     # Shared front-end nodes
     graph.add_node("recomposer", recomposer_node)

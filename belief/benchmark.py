@@ -328,6 +328,53 @@ CHALLENGES = [
         timeout_seconds=900,
         tags=["brownfield", "fastapi", "csv", "export", "extend"],
     ),
+
+    # ── Tier 8: TypeScript / Cross-Language (5 challenges) ──
+    Challenge(
+        id="t8-express-api",
+        tier=8,
+        goal="Build a TypeScript Express 5 REST API for a book library. Endpoints: GET /books (list all), POST /books (add book with title, author, isbn), GET /books/:id (get by id), DELETE /books/:id. Store books in memory (array). Use TypeScript with ESM, package.json with type: module, and vitest for tests.",
+        acceptance_criteria=["GET /books returns array", "POST /books adds a book", "GET /books/:id returns one book", "DELETE /books/:id removes book", "package.json has type: module", "Tests use vitest"],
+        verify_commands=["curl localhost:3000/books"],
+        timeout_seconds=600,
+        tags=["typescript", "express5", "rest", "esm"],
+    ),
+    Challenge(
+        id="t8-ts-cli",
+        tier=8,
+        goal="Build a TypeScript CLI tool that converts Markdown files to HTML. It should accept a file path as argument, read the Markdown, convert to HTML using a simple parser (headings, bold, italic, links, code blocks), and write the output to a .html file. Use TypeScript with ESM (import/export, .js extensions in imports). Include vitest tests.",
+        acceptance_criteria=["Accepts file path argument", "Converts headings (#, ##, ###)", "Converts bold and italic", "Converts links", "Writes .html output file", "Tests pass with vitest"],
+        verify_commands=["npx tsx src/index.ts test.md"],
+        timeout_seconds=600,
+        tags=["typescript", "cli", "markdown", "esm"],
+    ),
+    Challenge(
+        id="t8-ethers-reader",
+        tier=8,
+        goal="Build a TypeScript script that reads the ETH balance of a given wallet address from Ethereum mainnet using ethers v6. Accept the address as a CLI argument. Use ethers v6 top-level imports (JsonRpcProvider, formatEther — NOT ethers.providers or ethers.utils). Use a public RPC endpoint. Print the balance in ETH. Include vitest tests with a mocked provider.",
+        acceptance_criteria=["Accepts address as CLI arg", "Uses ethers v6 top-level imports", "Prints balance in ETH", "Does NOT use ethers.providers or BigNumber", "Tests mock the provider"],
+        verify_commands=["npx tsx src/index.ts 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"],
+        timeout_seconds=600,
+        tags=["typescript", "ethers", "blockchain", "esm"],
+    ),
+    Challenge(
+        id="t8-mcp-server",
+        tier=8,
+        goal="Build a TypeScript MCP server with Streamable HTTP transport that exposes two tools: 'echo' (returns the input text) and 'word_count' (counts words in text). Use @modelcontextprotocol/sdk with correct subpath imports (.js extensions). Use zod for input validation. Mount on Express at POST /mcp. Include a health check at GET /health.",
+        acceptance_criteria=["MCP server starts on port 3000", "POST /mcp handles MCP protocol", "echo tool returns input text", "word_count tool returns count", "Uses correct MCP SDK subpath imports with .js", "Health check returns 200"],
+        verify_commands=["curl localhost:3000/health"],
+        timeout_seconds=600,
+        tags=["typescript", "mcp", "express5", "esm"],
+    ),
+    Challenge(
+        id="t8-ts-fullstack",
+        tier=8,
+        goal="Build a TypeScript Express 5 API for a task manager with: POST /tasks (create task with title, status=pending), GET /tasks (list all, filter by ?status=), PATCH /tasks/:id (update status to 'pending'|'in_progress'|'done'), DELETE /tasks/:id. Store in memory. Use zod for request validation. Use vitest + supertest for tests. All TypeScript with ESM.",
+        acceptance_criteria=["CRUD operations work", "Status filtering works", "Zod validates request bodies", "Invalid status returns 400", "Tests use vitest + supertest", "package.json has type: module"],
+        verify_commands=["curl localhost:3000/tasks"],
+        timeout_seconds=600,
+        tags=["typescript", "express5", "zod", "validation", "esm"],
+    ),
 ]
 
 
@@ -428,13 +475,18 @@ async def run_benchmark(
     print(f"  Executor rate: {executor_ok}/{total} ({executor_ok/max(total,1)*100:.0f}%)")
     print(f"  Avg weighted:  {avg_score:.2f}")
     print(f"  Total cost:    ${total_cost:.2f}")
+    if total_cost == 0.0 and total > 0:
+        print(f"  ⚠️  Cost is $0.00 — check token_usage tracking")
     print(f"  Total time:    {total_time:.0f}s ({total_time/60:.1f}min)")
     print()
 
     for tier in sorted(set(r.tier for r in results)):
         tier_results = [r for r in results if r.tier == tier]
         tier_pass = sum(1 for r in tier_results if r.verdict == "pass")
-        print(f"  Tier {tier}: {tier_pass}/{len(tier_results)} pass")
+        tier_exec = sum(1 for r in tier_results if r.executor_passed)
+        tier_label = {1: "Scripts", 2: "CLI/API", 3: "CRUD APIs", 4: "Multi-file",
+                      5: "Complex", 6: "Multi-service", 7: "Brownfield", 8: "TypeScript"}.get(tier, "")
+        print(f"  Tier {tier} ({tier_label}): {tier_pass}/{len(tier_results)} pass, {tier_exec}/{len(tier_results)} executor")
 
     # Save results
     results_file = Path.home() / ".belief-engine" / "benchmark_results.json"
@@ -469,10 +521,12 @@ if __name__ == "__main__":
 
     if not tiers and not ids:
         print("Usage:")
-        print("  python3 -m belief.benchmark --tier=1        # Run Tier 1 only")
-        print("  python3 -m belief.benchmark --tier=1,2,3     # Run Tiers 1-3")
-        print("  python3 -m belief.benchmark --id=t3-bookmark-api  # Run specific challenge")
-        print("  python3 -m belief.benchmark --tier=1,2,3,4,5 # Run all 20")
+        print("  python3 -m belief.benchmark --tier=1          # Run Tier 1 only")
+        print("  python3 -m belief.benchmark --tier=1,2,3      # Run Tiers 1-3")
+        print("  python3 -m belief.benchmark --tier=1,2,3,4,5  # Run Tiers 1-5 (Python)")
+        print("  python3 -m belief.benchmark --tier=8           # Run Tier 8 (TypeScript)")
+        print("  python3 -m belief.benchmark --tier=1,2,3,4,5,6,7,8  # Full suite (35)")
+        print("  python3 -m belief.benchmark --id=t8-express-api     # Run specific challenge")
         sys.exit(0)
 
     asyncio.run(run_benchmark(tiers=tiers, challenge_ids=ids))
