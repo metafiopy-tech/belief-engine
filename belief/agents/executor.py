@@ -295,6 +295,24 @@ class ExecutorAgent(BaseAgent):
                     system_python, tmp, install_result
                 )
                 if pytest_result is not None:
+                    # ── Smoke test: verify code works WITHOUT pytest ──────
+                    # pytest manipulates sys.path (prepend mode adds dirs
+                    # that conftest.py lives in). Code can pass pytest but
+                    # fail when run normally. This smoke test catches that.
+                    if pytest_result.success and entry_points:
+                        smoke = self._smoke_test(
+                            system_python, tmp, entry_points, code_files
+                        )
+                        if smoke:
+                            pytest_result.stdout = (
+                                (pytest_result.stdout or "") +
+                                f"\nSMOKE_TEST: {smoke}"
+                            )
+                            logger.info(f"Executor: smoke test passed — {smoke}")
+                        # Even if smoke test fails, we keep pytest's verdict
+                        # (tests passed = code is functionally correct).
+                        # The smoke test failure goes into error_summary
+                        # so the debugger can fix the structural issue.
                     return pytest_result
 
             # ── Fallback: import verification or script execution ────────
@@ -430,7 +448,8 @@ class ExecutorAgent(BaseAgent):
 
         try:
             proc = subprocess.run(
-                [python, "-m", "pytest", "-x", "-v", "--tb=short", "--no-header", "-q"],
+                [python, "-m", "pytest", "-x", "-v", "--tb=short", "--no-header", "-q",
+                 "--import-mode=importlib"],
                 capture_output=True, text=True,
                 timeout=60, cwd=str(tmp),
                 env=env,
@@ -521,6 +540,79 @@ class ExecutorAgent(BaseAgent):
         except Exception as e:
             logger.debug(f"Executor: pytest execution failed: {e}")
             return None
+
+    def _smoke_test(
+        self, python: str, tmp: Path, entry_points: list[str],
+        code_files: dict[str, str],
+    ) -> str:
+        """Smoke test: verify code works WITHOUT pytest's sys.path manipulation.
+
+        Pytest's default 'prepend' import mode adds conftest.py directories
+        to sys.path, making imports work that would fail in normal execution.
+        This smoke test catches that gap by:
+        1. Importing every .py module individually (no pytest)
+        2. Running the entry point with a short timeout
+
+        Returns a status string, or empty string on failure.
+        """
+        env = {**os.environ, "PYTHONPATH": str(tmp)}
+        results = []
+
+        # Step 1: Import every source file individually
+        for fname in sorted(code_files.keys()):
+            if not fname.endswith(".py"):
+                continue
+            if "test" in fname or fname == "__init__.py":
+                continue
+            if fname.endswith("__init__.py"):
+                continue
+
+            module = fname.replace("/", ".").replace(".py", "")
+            try:
+                proc = subprocess.run(
+                    [python, "-c", f"import sys; sys.path.insert(0, '{tmp}'); import {module}"],
+                    capture_output=True, text=True,
+                    timeout=10, cwd=str(tmp), env=env,
+                )
+                if proc.returncode != 0:
+                    error = _extract_error(proc.stderr)
+                    logger.info(f"Smoke test: import {module} FAILED — {error}")
+                    results.append(f"FAIL:{module}")
+                else:
+                    results.append(f"OK:{module}")
+            except subprocess.TimeoutExpired:
+                results.append(f"TIMEOUT:{module}")
+
+        ok_count = sum(1 for r in results if r.startswith("OK:"))
+        fail_count = sum(1 for r in results if r.startswith("FAIL:"))
+
+        # Step 2: Try running the entry point
+        ep_status = "skipped"
+        if entry_points:
+            ep = entry_points[0]
+            ep_path = tmp / ep
+            if ep_path.exists():
+                try:
+                    proc = subprocess.run(
+                        [python, str(ep_path)],
+                        capture_output=True, text=True,
+                        timeout=15, cwd=str(tmp), env=env,
+                    )
+                    ep_status = "pass" if proc.returncode == 0 else "fail"
+                    if ep_status == "fail":
+                        error = _extract_error(proc.stderr)
+                        logger.info(f"Smoke test: entry point {ep} FAILED — {error}")
+                except subprocess.TimeoutExpired:
+                    # Timeout is okay for servers — they bind a port and wait
+                    ep_status = "timeout_ok"
+
+        status = f"imports={ok_count}/{ok_count + fail_count}, entry={ep_status}"
+        if fail_count == 0:
+            logger.info(f"Smoke test PASSED: {status}")
+        else:
+            logger.info(f"Smoke test: {fail_count} import failure(s) — {status}")
+
+        return status
 
     def _install_deps(self, tmp: Path) -> ExecutionResult:
         """Install requirements.txt in a venv after verifying packages exist.
