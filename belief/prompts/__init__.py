@@ -233,7 +233,7 @@ CRITICAL RULES:
 14. Every test MUST map to a specific acceptance criterion. If you can't cite which
     criterion a test validates, DELETE that test."""
 
-TESTER_PROMPT = """Write pytest tests anchored to these acceptance criteria:
+TESTER_PROMPT = """Write tests anchored to these acceptance criteria:
 
 GOAL: {goal}
 
@@ -241,6 +241,13 @@ ACCEPTANCE CRITERIA:
 {acceptance_criteria}
 
 {code_files}
+
+LANGUAGE: Detect from the code files above.
+- If .py files → write pytest tests in tests/test_*.py
+- If .ts files or package.json → write vitest tests in src/*.test.ts
+  Use: import {{ describe, it, expect }} from 'vitest';
+  Import source with .js extension: import {{ app }} from './index.js';
+  For Express APIs, use supertest: import request from 'supertest';
 
 GENERATE EXACTLY {test_count} TESTS using this countdown:
 

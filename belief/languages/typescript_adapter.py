@@ -136,6 +136,14 @@ class TypeScriptAdapter(LanguageAdapter):
             if dep not in deps:
                 deps[dep] = known_versions.get(dep, "*")
 
+        # Auto-add type declarations and test utilities for detected frameworks
+        if "express" in deps:
+            dev_deps["@types/express"] = "^5.0.0"
+            dev_deps["supertest"] = "^7.0.0"
+            dev_deps["@types/supertest"] = "^6.0.0"
+        if "cors" in deps:
+            dev_deps["@types/cors"] = "^2.8.0"
+
         pkg = {
             "name": project_name,
             "version": "0.1.0",
@@ -179,6 +187,15 @@ class TypeScriptAdapter(LanguageAdapter):
         files = {
             "package.json": json.dumps(pkg, indent=2),
             "tsconfig.json": json.dumps(tsconfig, indent=2),
+            "vitest.config.ts": (
+                'import { defineConfig } from "vitest/config";\n\n'
+                "export default defineConfig({\n"
+                "  test: {\n"
+                '    include: ["src/**/*.test.ts", "src/**/*.spec.ts"],\n'
+                "    globals: false,\n"
+                "  },\n"
+                "});\n"
+            ),
         }
 
         # Add .env.example for protocol configs
