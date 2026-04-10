@@ -353,6 +353,17 @@ async def run_refinement_loop(
                         failed_test_ids=failed_ids, file_modified=target_file,
                         diagnosis=diagnosis, fix_summary=fix_summary, regression=True,
                     )
+                    # Reflect on the regression
+                    regression_reflection = (
+                        f"REGRESSION: fix '{fix_summary}' on {target_file} broke "
+                        f"{len(newly_broken)} previously-passing test(s): "
+                        f"{', '.join(list(newly_broken)[:3])}. "
+                        f"Rolled back. Do NOT try this approach again."
+                    )
+                    record.reflection = regression_reflection
+                    if hasattr(state, 'reflections'):
+                        state.reflections.append(regression_reflection)
+                    state.previous_fixes.append(f"Cycle {cycle+1}: {fix_summary} → REGRESSION (rolled back)")
                     state.test_history.append(record)
                     state.exit_reason = "regression"
                     break
@@ -362,6 +373,23 @@ async def run_refinement_loop(
                 failed_test_ids=failed_ids, file_modified=target_file,
                 diagnosis=diagnosis, fix_summary=fix_summary,
             )
+
+            # ── Reflexion: generate structured reflection ────────────
+            # This is the critical step Reflexion's ablation proved necessary.
+            # Without verbal reflection, retry shows zero improvement.
+            pre_passed = state.best_pass_count if cycle == 0 else (
+                state.test_history[-1].passed_count if state.test_history else 0
+            )
+            reflection = await _generate_reflection(
+                llm, diagnosis, fix_summary, target_file,
+                pre_passed=pre_passed, post_passed=passed, total=total,
+                failed_ids=failed_ids,
+            )
+            record.reflection = reflection
+            if hasattr(state, 'reflections'):
+                state.reflections.append(reflection)
+            state.previous_fixes.append(f"Cycle {cycle+1}: {fix_summary} → {passed}/{total} tests")
+
             state.test_history.append(record)
             
             logger.info(
@@ -473,6 +501,77 @@ def _build_lessons(state: RefinementState) -> list[dict]:
             })
     
     return lessons
+
+
+# ── Reflexion: structured verbal reflection ──────────────────────────────────
+
+async def _generate_reflection(
+    llm, diagnosis: str, fix_summary: str, target_file: str,
+    pre_passed: int, post_passed: int, total: int,
+    failed_ids: list[str],
+) -> str:
+    """Generate a structured reflection on why a fix attempt succeeded or failed.
+
+    This is the Reflexion mechanism (Shinn et al., NeurIPS 2023).
+    The ablation study proved this step is critical — without it,
+    retry with error feedback shows ZERO improvement over baseline.
+
+    The reflection answers:
+    1. What was tried and what happened?
+    2. What assumption was wrong?
+    3. What should the next attempt do differently?
+    """
+    improved = post_passed > pre_passed
+    regressed = post_passed < pre_passed
+
+    if improved and post_passed == total:
+        return f"Fixed {target_file}: {fix_summary}. All {total} tests now pass."
+
+    status = "IMPROVED" if improved else "REGRESSED" if regressed else "NO CHANGE"
+
+    try:
+        reflection = await llm.generate_text(
+            role="debugger",
+            system=(
+                "You are reflecting on a code fix attempt. Be specific and actionable. "
+                "One paragraph. Focus on what assumption was wrong and what to try next."
+            ),
+            prompt=(
+                f"Fix attempt on {target_file}:\n"
+                f"Diagnosis: {diagnosis}\n"
+                f"Fix applied: {fix_summary}\n"
+                f"Result: {status} — {pre_passed}/{total} → {post_passed}/{total}\n"
+                f"Still failing: {', '.join(failed_ids[:5])}\n\n"
+                f"Why did this fix {'partially work' if improved else 'not work'}? "
+                f"What assumption was wrong? What should the next attempt do differently?"
+            ),
+            temperature=0.3,
+        )
+        reflection = reflection.strip()[:500]
+        logger.info(f"Reflection: {reflection[:100]}...")
+        return reflection
+
+    except Exception as e:
+        # Fallback: deterministic reflection without LLM
+        if regressed:
+            return (
+                f"Cycle regressed ({pre_passed}→{post_passed}/{total}). "
+                f"Fix '{fix_summary}' on {target_file} broke something. "
+                f"Try a different file or approach."
+            )
+        elif not improved:
+            return (
+                f"Cycle stalled at {post_passed}/{total}. "
+                f"Fix '{fix_summary}' on {target_file} didn't help. "
+                f"The root cause is likely in a different file. "
+                f"Still failing: {', '.join(failed_ids[:3])}"
+            )
+        else:
+            return (
+                f"Partial improvement ({pre_passed}→{post_passed}/{total}). "
+                f"Fix '{fix_summary}' helped but {total - post_passed} tests remain. "
+                f"Focus on: {', '.join(failed_ids[:3])}"
+            )
 
 
 # ── Soil integration ─────────────────────────────────────────────────────────

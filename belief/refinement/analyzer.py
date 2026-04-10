@@ -115,6 +115,9 @@ ANALYZER_PROMPT = """## Test Output
 ## Previous Fix Attempts (DO NOT repeat these)
 {previous_fixes}
 
+## Reflections on Previous Attempts
+{reflections}
+
 Analyze the MOST IMPACTFUL test failure. Determine whether the bug is in SOURCE code
 or in TEST code. If the test is testing the wrong endpoint, using the wrong import,
 or asserting the wrong value — the bug is in the TEST, not the code."""
@@ -141,12 +144,14 @@ async def analyze_failures(state: RefinementState, llm) -> dict:
     ) if state.test_files else "  (no test files)"
     
     previous = "\n".join(f"  - {p}" for p in state.previous_fixes) if state.previous_fixes else "  (none — first cycle)"
+    reflections = "\n".join(f"  - {r}" for r in state.reflections) if hasattr(state, 'reflections') and state.reflections else "  (none — first cycle)"
     
     prompt = ANALYZER_PROMPT.format(
         test_output=state.test_output[-3000:],  # Last 3K chars of test output
         file_list=file_list,
         test_file_list=test_file_list,
         previous_fixes=previous,
+        reflections=reflections,
     )
     
     try:

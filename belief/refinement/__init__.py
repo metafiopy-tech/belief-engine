@@ -26,6 +26,7 @@ class CycleRecord:
     diagnosis: str
     fix_summary: str
     regression: bool = False
+    reflection: str = ""  # Reflexion: why did this fix work/fail?
 
 
 @dataclass
@@ -38,6 +39,7 @@ class RefinementState:
     max_cycles: int = 3
     test_history: list[CycleRecord] = field(default_factory=list)
     previous_fixes: list[str] = field(default_factory=list)
+    reflections: list[str] = field(default_factory=list)  # Reflexion episodic memory
     best_snapshot: dict[str, str] = field(default_factory=dict)
     best_pass_count: int = 0
     initial_pass_count: int = 0
