@@ -89,14 +89,22 @@ class MultiServiceState(TypedDict, total=False):
     iteration: int
     max_iterations: int
     max_cost_usd: float
+    # These are the critical keys the shared agents (intake, research,
+    # planner, architect) read and write. Missing any of these causes
+    # the pipeline to loop on "no requirement_spec" errors.
+    requirement_spec: Any
     spec: Any
+    research_report: Any
     architecture: Any
     service_architecture: Any
     skeleton_artifact: Any
     openapi_specs: dict
     file_specs: list
+    file_manifest: Any
     dag: Any
     code_plan: Any
+    implementation_plan: Any
+    gap_report: Any
     token_usage: Any
     validation_result: Any
     execution_result: Any
@@ -104,6 +112,10 @@ class MultiServiceState(TypedDict, total=False):
     complexity_score: int
     similar_builds_context: str
     previous_gap_summaries: list
+    polarity: dict
+    nutrient_context: str
+    nutrient_profile: Any
+    extracted_nutrients: Any
     service_spec: Any
     shared_models: Any
     openapi_spec: str
