@@ -73,44 +73,55 @@ def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "
     iteration = state.get("iteration", 0)
     max_iter = state.get("max_iterations", 3)
 
-    # Circuit breakers
-    if iteration >= max_iter:
-        return "synthesizer"
-
-    # Oscillation detection
-    prev = state.get("previous_gap_summaries", [])
-    if len(prev) >= 2:
-        last = set(prev[-1].lower().split())
-        prev_set = set(prev[-2].lower().split())
-        union = last | prev_set
-        if union and len(last & prev_set) / len(union) > 0.85:
-            return "synthesizer"
-
-    # Error hash deduplication — if same error appears 3+ times, stop debugging
+    # ── OTP-style error classification ──────────────────────────────
+    # Instead of ad-hoc checks, classify the error and route based on
+    # the recovery strategy. This is the Erlang supervision pattern
+    # applied to LLM agent pipelines.
     exec_r = state.get("execution_result")
-    if exec_r:
-        error = exec_r.get("error_summary", "") if isinstance(exec_r, dict) else getattr(exec_r, "error_summary", "")
-        if error:
-            error_hashes = state.get("_error_hashes", [])
-            h = _error_hash(error)
-            if error_hashes.count(h) >= 2:  # Already seen twice + this = 3
-                logger.info(f"Error dedup: same error seen 3 times (hash={h}), skipping to synthesizer")
-                return "synthesizer"
 
-    # Check execution status
+    # If execution succeeded, the code WORKS — go to synthesizer
     exec_success = False
     if exec_r:
         exec_success = exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
-
-    # KEY INSIGHT: If execution succeeded, the code WORKS.
     if exec_success:
         return "synthesizer"
 
+    # Classify the error
+    if exec_r:
+        error = exec_r.get("error_summary", "") if isinstance(exec_r, dict) else getattr(exec_r, "error_summary", "")
+        stderr = exec_r.get("stderr", "") if isinstance(exec_r, dict) else getattr(exec_r, "stderr", "")
+
+        if error or stderr:
+            from belief.agents.error_classifier import classify_error, RecoveryStrategy
+
+            previous_errors = state.get("_previous_error_summaries", [])
+            classified = classify_error(
+                error_summary=error,
+                stderr=stderr,
+                iteration=iteration,
+                max_iterations=max_iter,
+                previous_errors=previous_errors,
+            )
+
+            logger.info(f"Error classified: {classified.category.value} → {classified.strategy.value} ({classified.reason})")
+
+            if classified.strategy == RecoveryStrategy.FAIL_FAST:
+                return "synthesizer"
+            elif classified.strategy == RecoveryStrategy.CIRCUIT_BREAK:
+                return "synthesizer"
+            elif classified.strategy == RecoveryStrategy.RETRY_BACKOFF:
+                # Transient — retry via debugger (which will re-execute)
+                return "debugger"
+            elif classified.strategy == RecoveryStrategy.REPROMPT:
+                if classified.should_rebuild:
+                    return "builder"
+                return "debugger"
+
+    # No execution result or no error — check gap report
     gap = state.get("gap_report")
     if gap is None:
         return "synthesizer"
 
-    # Extract gap fields (handle both dict and model)
     if isinstance(gap, dict):
         requires_research = gap.get("requires_research", False)
         total_blockers = gap.get("total_blockers", 0)
@@ -118,7 +129,8 @@ def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "
         requires_research = getattr(gap, "requires_research", False)
         total_blockers = getattr(gap, "total_blockers", 0)
 
-    # Code didn't run — route based on gap severity
+    if iteration >= max_iter:
+        return "synthesizer"
     if requires_research:
         return "research"
     if total_blockers > 0:
@@ -277,14 +289,20 @@ def _increment_iteration(state: dict[str, Any]) -> dict[str, Any]:
     result = dict(state)
     result["iteration"] = state.get("iteration", 0) + 1
 
-    # Track error hashes for deduplication
+    # Track errors for the OTP-style classifier
     exec_r = state.get("execution_result")
     if exec_r:
         error = exec_r.get("error_summary", "") if isinstance(exec_r, dict) else getattr(exec_r, "error_summary", "")
         if error:
+            # Hash tracking (legacy)
             hashes = list(state.get("_error_hashes", []))
             hashes.append(_error_hash(error))
             result["_error_hashes"] = hashes
+
+            # Summary tracking (for classifier)
+            summaries = list(state.get("_previous_error_summaries", []))
+            summaries.append(error)
+            result["_previous_error_summaries"] = summaries
 
     return result
 
