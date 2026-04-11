@@ -122,6 +122,9 @@ class SelfImprovementCycle:
         self.project_root = Path(project_root)
         self.archive_path = self.project_root / ".belief-engine" / "sica_archive.json"
         self.archive = self._load_archive()
+        # Eager initialization — create the file immediately
+        if not self.archive_path.exists():
+            self._save_archive()
 
     async def run_one_iteration(
         self,

@@ -205,7 +205,9 @@ def _route_after_polarity(state: dict[str, Any]) -> Literal["planner", "__end__"
 async def _polarity_check_node(state: dict[str, Any]) -> dict[str, Any]:
     """Post-validation Latios gap check.
 
-    Source: taskforce_base.py latios_gap_check() lines 358-447
+    OVERRIDE: When tests pass AND validator says pass, skip the LLM call entirely.
+    Latios hallucinates "no code provided" on passing builds, wasting tokens
+    and triggering unnecessary rebuild iterations.
     """
     from belief.config.settings import settings
     from belief.llm import LLMClient
@@ -214,9 +216,26 @@ async def _polarity_check_node(state: dict[str, Any]) -> dict[str, Any]:
     result = dict(state)
     result["phase"] = Phase.POLARITY_CHECK.value
 
-    spec = state.get("requirement_spec")
+    # ── Deterministic override: tests pass + validator pass = done ──
     validation = state.get("validation_result")
     exec_result = state.get("execution_result")
+
+    exec_success = False
+    if exec_result:
+        exec_success = exec_result.get("success") if isinstance(exec_result, dict) else getattr(exec_result, "success", False)
+
+    verdict = "unknown"
+    if validation:
+        verdict = validation.get("verdict") if isinstance(validation, dict) else getattr(validation, "verdict", "unknown")
+        if hasattr(verdict, "value"):
+            verdict = verdict.value
+
+    if exec_success and verdict == "pass":
+        logger.info("Latios: SKIPPED — tests pass + validator pass (deterministic override)")
+        result["polarity"] = {"current_remainder": None, "accumulated_remainders": []}
+        return result
+
+    spec = state.get("requirement_spec")
 
     goal = ""
     criteria = ""
@@ -237,10 +256,6 @@ async def _polarity_check_node(state: dict[str, Any]) -> dict[str, Any]:
             validator_summary = validation.get("summary", "")
         else:
             validator_summary = getattr(validation, "summary", "")
-
-    exec_success = False
-    if exec_result:
-        exec_success = exec_result.get("success") if isinstance(exec_result, dict) else getattr(exec_result, "success", False)
 
     router = ModelRouter()
     llm = LLMClient(router)

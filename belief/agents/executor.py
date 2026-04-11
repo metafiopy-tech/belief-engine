@@ -290,6 +290,33 @@ class ExecutorAgent(BaseAgent):
                 if fname.startswith("test") or "/test" in fname:
                     all_test_files[fname] = code_files[fname]
 
+            # ── Hard cap: filter ALL test files (including builder-generated)
+            # The builder sometimes generates 30+ tests that bypass the tester's
+            # filter. This catches them before pytest runs.
+            if all_test_files:
+                try:
+                    from belief.agents.tester import _filter_and_cap_tests
+                    pre_count = sum(
+                        c.count("\ndef test_") + c.count("\n    def test_")
+                        for c in all_test_files.values()
+                    )
+                    all_test_files = _filter_and_cap_tests(
+                        all_test_files, code_files=code_files, max_total=14,
+                    )
+                    post_count = sum(
+                        c.count("\ndef test_") + c.count("\n    def test_")
+                        for c in all_test_files.values()
+                    )
+                    if pre_count != post_count:
+                        logger.info(f"Executor: test cap {pre_count} → {post_count}")
+                        # Rewrite the capped test files to disk
+                        for fname, content in all_test_files.items():
+                            fpath = tmp / fname
+                            fpath.parent.mkdir(parents=True, exist_ok=True)
+                            fpath.write_text(content)
+                except Exception as e:
+                    logger.debug(f"Executor: test cap skipped: {e}")
+
             if all_test_files:
                 pytest_result = self._run_pytest_verification(
                     system_python, tmp, install_result
@@ -308,11 +335,23 @@ class ExecutorAgent(BaseAgent):
                                 (pytest_result.stdout or "") +
                                 f"\nSMOKE_TEST: {smoke}"
                             )
-                            logger.info(f"Executor: smoke test passed — {smoke}")
-                        # Even if smoke test fails, we keep pytest's verdict
-                        # (tests passed = code is functionally correct).
-                        # The smoke test failure goes into error_summary
-                        # so the debugger can fix the structural issue.
+                            # Check if smoke test found import failures
+                            if "FAIL:" in smoke:
+                                # Tests pass but code has structural issues
+                                # Report as error_summary so the debugger can fix it
+                                fail_modules = [
+                                    s.replace("FAIL:", "")
+                                    for s in smoke.split(", ")
+                                    if s.startswith("FAIL:")
+                                ]
+                                pytest_result.error_summary = (
+                                    f"Smoke test: {len(fail_modules)} module(s) fail to import "
+                                    f"outside pytest: {', '.join(fail_modules[:3])}. "
+                                    f"Check __init__.py files and import paths."
+                                )
+                                logger.info(f"Executor: smoke test found {len(fail_modules)} import failure(s)")
+                            else:
+                                logger.info(f"Executor: smoke test passed — {smoke}")
                     return pytest_result
 
             # ── Fallback: import verification or script execution ────────

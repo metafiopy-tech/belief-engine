@@ -419,6 +419,12 @@ async def _run_sica_cmd(args):
                 benchmark_data = await cycle._run_benchmark(args.tiers, None)
                 print(f"  Baseline: {benchmark_data['passed']}/{benchmark_data['total']} "
                       f"({benchmark_data['pass_rate']:.0%})")
+
+                # Early stop: all passing = nothing to improve
+                if benchmark_data['pass_rate'] >= 1.0:
+                    print(f"  All challenges passing — nothing to improve. Stopping.")
+                    break
+
                 # Generate proposal only
                 proposal = await cycle._generate_proposal(benchmark_data)
                 if proposal:
@@ -427,10 +433,16 @@ async def _run_sica_cmd(args):
                     print(f"  Why: {proposal.get('why', '?')[:200]}")
                     print(f"  (dry run — not applied)")
                 else:
-                    print(f"  No proposal generated")
+                    print(f"  No proposal generated — stopping.")
+                    break
                 continue
 
             result = await cycle.run_one_iteration(benchmark_tiers=args.tiers)
+
+            # Early stop: no proposal generated (nothing to improve)
+            if result.error == "No proposal generated":
+                print(f"  ○ All challenges passing — stopping early.")
+                break
 
             if result.accepted:
                 print(f"  ✓ ACCEPTED: {result.proposal_title}")
