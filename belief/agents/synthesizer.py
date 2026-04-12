@@ -44,11 +44,24 @@ class SynthesizerAgent(BaseAgent):
             # Milestone B: Skip files over 6000 chars from polishing —
             # the LLM truncates large files, replacing working code with broken code.
             # Also skip test files — they don't need polishing and waste tokens.
+            #
+            # Skip skeleton files too: they were generated deterministically
+            # from the architect's artifact and must remain exact. An LLM
+            # polish pass on a skeleton file drops exports (seen: `init_db`
+            # vanished from `database.py` after synthesis, breaking every
+            # downstream `from database import init_db`). The debugger's
+            # additive-only guard doesn't help here because synthesis
+            # runs in a different code path after debugging.
+            skeleton_files: set[str] = set()
+            if getattr(state, "skeleton_files", None):
+                skeleton_files = set(state.skeleton_files.keys())
+
             polish_candidates = {
                 f: c for f, c in sorted(state.code_files.items())
                 if len(c) <= 6000
                 and "/test" not in f and not f.startswith("test")
                 and f.endswith(".py")
+                and f not in skeleton_files
             }
             # Include non-.py files (config, requirements, etc.) without size limit
             for f, c in state.code_files.items():

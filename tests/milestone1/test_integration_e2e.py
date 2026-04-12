@@ -15,7 +15,14 @@ import ast
 import re
 import pytest
 
-from belief.models.skeleton import (
+pytest.skip(
+    "Legacy milestone-1 e2e scaffold: references belief.agents.builder_skeleton, "
+    "architect_skeleton, and graph_integration — all removed in the v2 rewrite. "
+    "Kept until rewritten against the current graph.py pipeline nodes.",
+    allow_module_level=True,
+)
+
+from belief.models.skeleton import (  # noqa: E402
     SkeletonArtifact,
     FileTreeEntry,
     FileRole,

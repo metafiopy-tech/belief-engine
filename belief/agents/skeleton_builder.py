@@ -20,13 +20,200 @@ from __future__ import annotations
 
 import ast
 import logging
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from belief.models.skeleton import SkeletonArtifact
+    from belief.models.skeleton import ModelSpec, SkeletonArtifact
     from belief.models.symbol_registry import SymbolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+# Canonical package names we treat as SQLAlchemy-family.
+# Extend here rather than adding new matching logic in each generator.
+_SQLA_PACKAGES = {"sqlalchemy", "sqlmodel"}
+# Symbols that identify a file as the authoritative DB module, regardless
+# of filename or external_dependencies wording.
+_DB_EXPORT_SYMBOLS = {"Base", "engine", "SessionLocal", "get_db", "init_db"}
+
+
+def _normalized_deps(skeleton: SkeletonArtifact) -> set[str]:
+    """Lowercased external deps, stripped of version specifiers and extras.
+
+    `"SQLAlchemy>=2.0"` → `"sqlalchemy"`; `"sqlalchemy[asyncio]==2.0.25"` → `"sqlalchemy"`.
+    """
+    out: set[str] = set()
+    for dep in skeleton.external_dependencies:
+        base = re.split(r"[<>=!~\[;\s]", dep.strip(), maxsplit=1)[0].lower()
+        if base:
+            out.add(base)
+    return out
+
+
+def _uses_sqlalchemy(skeleton: SkeletonArtifact) -> bool:
+    """True if the project declares any SQLAlchemy-family dependency."""
+    return bool(_normalized_deps(skeleton) & _SQLA_PACKAGES)
+
+
+def _module_path(file_path: str) -> str:
+    """Convert `pkg/models.py` → `pkg.models` for use in import statements."""
+    return file_path.replace("/", ".").removesuffix(".py")
+
+
+def _resolve_external_bases(
+    skeleton: SkeletonArtifact,
+    source_file: str,
+    needed: set[str],
+) -> tuple[dict[str, set[str]], set[str]]:
+    """Map each needed base class to the module that exports it.
+
+    Walks `skeleton.dependency_edges` looking for edges where
+    `source == source_file` and the edge's `symbols` contain names we need.
+    Returns `({module_path: {symbol, ...}}, unresolved_symbols)`.
+    """
+    resolved: dict[str, set[str]] = {}
+    remaining = set(needed)
+
+    for edge in skeleton.dependency_edges:
+        if edge.source != source_file:
+            continue
+        hits = remaining & set(edge.symbols or ())
+        if not hits:
+            continue
+        module_path = _module_path(edge.target)
+        resolved.setdefault(module_path, set()).update(hits)
+        remaining -= hits
+        if not remaining:
+            break
+
+    return resolved, remaining
+
+
+# Crude type-annotation → SQLAlchemy Column type mapping. Covers the
+# common cases seen in tier 3 schemas; anything unrecognized falls back
+# to `String`, which pydantic-happy JSON string fields round-trip fine.
+_SQLA_COLUMN_TYPES = {
+    "int": "Integer",
+    "str": "String",
+    "bytes": "String",
+    "bool": "Integer",
+    "float": "String",
+    "datetime": "DateTime",
+    "date": "DateTime",
+}
+
+
+def _literal_default(default: str | None) -> str | None:
+    """Return a syntactically valid Python literal for a field default.
+
+    The architect stores defaults as raw strings, so `"sqlite:///./x.db"`
+    arrives as the bare characters `sqlite:///./x.db`. Emitting that into
+    `Field(default=...)` produces invalid syntax. This helper uses
+    `ast.literal_eval` as the authoritative test: if the raw default
+    parses as a Python literal (None/True/False, a number, a quoted
+    string, a list/dict/tuple literal), pass it through; otherwise
+    treat it as a plain string and `repr()` it so embedded quotes and
+    backslashes are escaped safely.
+    """
+    if default is None:
+        return None
+    if not isinstance(default, str):
+        return repr(default)
+    try:
+        ast.literal_eval(default)
+        return default
+    except (ValueError, SyntaxError):
+        return repr(default)
+
+
+def _derive_tablename(class_name: str) -> str:
+    """Convert a camelCase class name to a snake_case plural table name."""
+    out: list[str] = []
+    for i, ch in enumerate(class_name):
+        if ch.isupper() and i > 0:
+            out.append("_")
+        out.append(ch.lower())
+    name = "".join(out)
+    return name if name.endswith("s") else name + "s"
+
+
+def _orm_column_type(type_annotation: str) -> str:
+    """Map a Python type annotation string to a SQLAlchemy Column type.
+
+    Strips `Optional[...]`, `list[...]`, and other generic wrappers to get
+    at the inner type. Unknown types fall back to `String`.
+    """
+    annot = type_annotation.strip()
+    # Peel a single level of generic wrapping, e.g. `Optional[int]` → `int`.
+    for prefix in ("Optional[", "list[", "List[", "Mapped["):
+        if annot.startswith(prefix) and annot.endswith("]"):
+            annot = annot[len(prefix):-1].strip()
+            break
+    annot_lower = annot.lower()
+    # Long-text heuristic: any "text" or "content" style ends up as Text.
+    if annot_lower in _SQLA_COLUMN_TYPES:
+        return _SQLA_COLUMN_TYPES[annot_lower]
+    return "String"
+
+
+def _emit_orm_body(lines: list[str], model: ModelSpec) -> None:
+    """Emit a valid SQLAlchemy ORM class body from a ModelSpec.
+
+    - Pulls `__tablename__` from a dunder field if present, otherwise
+      derives it from the class name.
+    - Emits every non-dunder field as `Column(...)`.
+    - Guarantees a primary-key `id` column — SQLAlchemy rejects mapped
+      classes without one, and the architect often omits it.
+    """
+    tablename = _derive_tablename(model.name)
+    column_fields: list = []
+    has_id = False
+
+    for f in model.fields:
+        if f.name == "__tablename__":
+            if f.default:
+                raw = f.default.strip().strip('"').strip("'")
+                if raw:
+                    tablename = raw
+            continue
+        if f.name.startswith("__") and f.name.endswith("__"):
+            continue  # other dunder metadata — ignore, builder can add later
+        column_fields.append(f)
+        if f.name == "id":
+            has_id = True
+
+    lines.append(f'    __tablename__ = "{tablename}"')
+    lines.append("")
+    if not has_id:
+        lines.append("    id = Column(Integer, primary_key=True, index=True)")
+
+    for f in column_fields:
+        col_type = _orm_column_type(f.type_annotation)
+        if f.name == "id":
+            lines.append(f"    id = Column({col_type}, primary_key=True, index=True)")
+            continue
+        nullable = f.default is not None or "Optional" in f.type_annotation
+        nullable_str = "True" if nullable else "False"
+        lines.append(f"    {f.name} = Column({col_type}, nullable={nullable_str})")
+
+
+def _file_is_db_module(skeleton: SkeletonArtifact, file_path: str) -> bool:
+    """True if `file_path` is (or should be) the authoritative DB module.
+
+    Three independent signals, any one sufficient:
+      1. Basename is `database.py` or `db.py`.
+      2. Any dependency edge targets this file requesting DB exports
+         (`Base`, `engine`, `SessionLocal`, `get_db`, `init_db`).
+      3. Project uses SQLAlchemy and the file basename contains "db".
+    """
+    base = file_path.rsplit("/", 1)[-1]
+    if base in ("database.py", "db.py"):
+        return True
+    for edge in skeleton.dependency_edges:
+        if edge.target == file_path and set(edge.symbols or ()) & _DB_EXPORT_SYMBOLS:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -48,8 +235,7 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
         return None
 
     # Detect if project uses SQLAlchemy (avoid __future__ annotations)
-    deps_lower = {d.lower() for d in skeleton.external_dependencies}
-    uses_sqlalchemy = any(d in deps_lower for d in ("sqlalchemy", "sqlmodel"))
+    uses_sqlalchemy = _uses_sqlalchemy(skeleton)
 
     lines = [
         '"""Auto-generated Pydantic models — skeleton (Pass 1)."""',
@@ -71,19 +257,71 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
     # Collect base classes that are in the same file
     local_names = {m.name for m in models_in_file}
 
-    # Collect imports for base classes from other files
+    # Collect imports for base classes from other files.
+    # Emit REAL imports (not TODO comments) so the generated class body
+    # parses and executes. For each external base, look up the dependency
+    # edge that imports it and resolve the target module path.
     external_bases = set()
     for model in models_in_file:
         if model.base_class != "BaseModel" and model.base_class not in local_names:
             external_bases.add(model.base_class)
 
-    # We'll leave external imports as comments for now —
-    # the Builder (Pass 2) or manual wiring will resolve them
     if external_bases:
-        lines.append(f"# TODO: Import external bases: {', '.join(sorted(external_bases))}")
+        resolved, unresolved = _resolve_external_bases(
+            skeleton, file_path, external_bases
+        )
+        for module_path, names in sorted(resolved.items()):
+            names_str = ", ".join(sorted(names))
+            lines.append(f"from {module_path} import {names_str}")
+        if unresolved:
+            # Still log so we can see what the architect didn't wire up,
+            # but don't leave unresolved names — the class body below
+            # would reference undefined symbols.
+            logger.warning(
+                f"skeleton_builder: {file_path} references unresolved base(s) "
+                f"{sorted(unresolved)} — no dependency edge found"
+            )
+            # Heuristic fallback: if the project uses SQLAlchemy and a
+            # `Base` is unresolved, import it from the conventional
+            # database module. This matches the database-generator output.
+            if uses_sqlalchemy and "Base" in unresolved:
+                lines.append("from database import Base")
+                unresolved.discard("Base")
+            for name in sorted(unresolved):
+                lines.append(f"# TODO: Import external base: {name}")
+        lines.append("")
+
+    # Track whether any ORM (non-pydantic) class appears in this file so
+    # we can decide whether to emit SQLAlchemy Column imports at the top.
+    any_orm_class = any(
+        m.base_class != "BaseModel"
+        and m.base_class not in local_names
+        for m in models_in_file
+    )
+    if any_orm_class:
+        lines.append("from sqlalchemy import Column, DateTime, Integer, String, Text")
         lines.append("")
 
     for model in models_in_file:
+        # Pydantic Field(...) syntax only applies when the model actually
+        # inherits from `BaseModel` (or chains from another BaseModel).
+        # A class inheriting from SQLAlchemy's `Base` is an ORM class and
+        # rejects pydantic `Field(...)`. If the architect put `__tablename__`
+        # in `model.fields`, naively emitting it as a pydantic field yields
+        # `__tablename__: str = Field(default='contacts', ...)`, which
+        # DeclarativeBase reads as a FieldInfo for the table name and
+        # blows up with `ArgumentError: could not assemble any primary
+        # key columns`.
+        #
+        # For ORM classes we emit real Column(...) bodies here. Emitting
+        # `pass` and deferring to the builder doesn't work — the builder's
+        # contract is "don't touch skeleton files", so an empty ORM class
+        # ships to pytest and hits `does not have __tablename__`.
+        base_is_pydantic = (
+            model.base_class == "BaseModel"
+            or model.base_class in local_names
+        )
+
         # Class definition
         lines.append("")
         if model.docstring:
@@ -93,23 +331,31 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
             lines.append(f"class {model.name}({model.base_class}):")
 
         if not model.fields and not model.validators:
-            lines.append("    pass")
+            if not base_is_pydantic:
+                # Empty ORM class still needs a __tablename__ or
+                # SQLAlchemy will reject it.
+                tablename = _derive_tablename(model.name)
+                lines.append(f'    __tablename__ = "{tablename}"')
+                lines.append("    id = Column(Integer, primary_key=True, index=True)")
+            else:
+                lines.append("    pass")
             lines.append("")
             continue
 
-        # Fields
+        if not base_is_pydantic:
+            _emit_orm_body(lines, model)
+            lines.append("")
+            continue
+
+        # Fields (pydantic path only). Defensive filter: never emit dunder
+        # attributes like `__tablename__` as pydantic fields even if the
+        # architect put them in `model.fields` — they're class-level
+        # metadata, not data fields.
         for f in model.fields:
-            # Sanitize description to prevent quote escaping issues
+            if f.name.startswith("__") and f.name.endswith("__"):
+                continue
             desc = f.description.replace('"', "'") if f.description else ""
-            # Sanitize default to prevent syntax issues
-            default = f.default
-            if isinstance(default, str):
-                # If default looks like a Python literal, keep as-is
-                # Otherwise wrap in quotes
-                if default not in ("None", "True", "False", "[]", "{}", "()") and \
-                   not default.startswith(("'", '"', "[", "{", "(")) and \
-                   not default.replace(".", "").replace("-", "").isdigit():
-                    default = f'"{default}"'
+            default = _literal_default(f.default)
             if desc:
                 if default is not None:
                     lines.append(
@@ -247,19 +493,34 @@ def _generate_database_code(skeleton: SkeletonArtifact, file_path: str) -> str |
     - get_db: FastAPI dependency
     - init_db: create all tables
 
+    Fires when EITHER:
+      * the file is a DB module by name or by dep-edge evidence, AND
+      * the project declares a SQLAlchemy-family dependency OR a
+        dependency edge into this file names a DB export symbol.
+
+    Previously this returned None when `external_dependencies` contained
+    `"sqlalchemy>=2.0"` instead of the bare `"sqlalchemy"` — which made
+    the generator fall through to `_generate_config_code` and emit a
+    bare `DatabaseConfig` class with no engine/Base/get_db. See
+    belief/agents/skeleton_builder.py root-cause analysis.
+
     The builder must NOT overwrite this file.
     The debugger must NOT replace exports — only add to them.
     """
-    base = file_path.split("/")[-1] if "/" in file_path else file_path
-    if base not in ("database.py", "db.py"):
+    if not _file_is_db_module(skeleton, file_path):
         return None
 
-    # Check if project uses SQLAlchemy
-    deps_lower = {d.lower() for d in skeleton.external_dependencies}
-    if not any(d in deps_lower for d in ("sqlalchemy", "sqlmodel")):
+    # Must also have some SQLAlchemy evidence — either a dep or a dep-edge
+    # into this file requesting DB exports. Without that we'd clobber a
+    # file that happens to be named `db.py` in a non-SQL project.
+    has_dep_edge_signal = any(
+        edge.target == file_path and set(edge.symbols or ()) & _DB_EXPORT_SYMBOLS
+        for edge in skeleton.dependency_edges
+    )
+    if not (_uses_sqlalchemy(skeleton) or has_dep_edge_signal):
         return None
 
-    return '''"""Database setup — SQLAlchemy 2.x engine, session, and base."""
+    db_core = '''"""Database setup — SQLAlchemy 2.x engine, session, and base."""
 
 import os
 
@@ -268,7 +529,10 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./app.db")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -287,10 +551,47 @@ def get_db():
         db.close()
 
 
-def init_db():
+def init_db() -> None:
     """Create all database tables."""
     Base.metadata.create_all(bind=engine)
 '''
+
+    # If the architect also attached a ConfigSchema to this file
+    # (e.g. a DatabaseConfig with SQLALCHEMY_DATABASE_URL), we used to
+    # lose the engine/Base because _generate_config_code fired instead.
+    # Now we merge: append the config class body below the engine block.
+    config_body = _generate_config_code(skeleton, file_path)
+    if config_body is None:
+        return db_core
+
+    # Strip the config body's duplicate module docstring + __future__ line,
+    # keep the imports and class definitions.
+    config_tail = _strip_module_header(config_body)
+    return db_core + "\n" + config_tail
+
+
+def _strip_module_header(source: str) -> str:
+    """Drop leading module docstring and `from __future__ import annotations`."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return source
+    lines = source.splitlines()
+    drop_until = 0
+    for node in tree.body:
+        is_docstring = (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        )
+        is_future = (
+            isinstance(node, ast.ImportFrom) and node.module == "__future__"
+        )
+        if is_docstring or is_future:
+            drop_until = max(drop_until, node.end_lineno or 0)
+        else:
+            break
+    return "\n".join(lines[drop_until:]).lstrip("\n")
 
 
 def _generate_config_code(skeleton: SkeletonArtifact, file_path: str) -> str | None:
@@ -324,18 +625,20 @@ def _generate_config_code(skeleton: SkeletonArtifact, file_path: str) -> str | N
             lines.append("    pass")
         else:
             for f in config.fields:
-                if f.description:
-                    if f.default is not None:
+                default_literal = _literal_default(f.default)
+                desc = f.description.replace('"', "'") if f.description else ""
+                if desc:
+                    if default_literal is not None:
                         lines.append(
-                            f'    {f.name}: {f.type_annotation} = Field(default={f.default}, description="{f.description}")'
+                            f'    {f.name}: {f.type_annotation} = Field(default={default_literal}, description="{desc}")'
                         )
                     else:
                         lines.append(
-                            f'    {f.name}: {f.type_annotation} = Field(description="{f.description}")'
+                            f'    {f.name}: {f.type_annotation} = Field(description="{desc}")'
                         )
                 else:
-                    if f.default is not None:
-                        lines.append(f"    {f.name}: {f.type_annotation} = {f.default}")
+                    if default_literal is not None:
+                        lines.append(f"    {f.name}: {f.type_annotation} = {default_literal}")
                     else:
                         lines.append(f"    {f.name}: {f.type_annotation}")
 
@@ -400,6 +703,13 @@ def generate_skeleton_file(
     Returns:
         Generated source code, or None if no generators matched.
     """
+    # Short-circuit on non-Python files. Every generator here emits
+    # Python source and the downstream `ast.parse` check will fail on
+    # anything else (seen: `requirements.txt` landing here and producing
+    # spurious `invalid syntax` errors in the logs).
+    if not file_path.endswith(".py"):
+        return None
+
     generators = [
         _generate_model_chain_code,
         _generate_abc_code,

@@ -85,33 +85,34 @@ class DebuggerAgent(BaseAgent):
                 llm, error, state.code_files, repo_context, state.complexity_score
             )
 
+            # Skeleton files are ADDITIVE-ONLY for the debugger: we allow
+            # edits, but reject any edit that removes a top-level export.
+            # This lets the debugger add a missing symbol to `database.py`
+            # (e.g. `get_db`) while still blocking edits that would
+            # clobber the generator's engine/Base/SessionLocal scaffolding.
+            skeleton_files = set()
+            if hasattr(state, 'skeleton_files') and state.skeleton_files:
+                skeleton_files = set(state.skeleton_files.keys())
+
             if not diagnosis or not diagnosis.get("files_to_fix"):
                 # Fallback: single-file fix on the error file
                 target_file = _find_error_file(error, state.code_files)
                 if target_file:
-                    # Never edit skeleton files — they are deterministically correct
-                    skeleton_files = set()
-                    if hasattr(state, 'skeleton_files') and state.skeleton_files:
-                        skeleton_files = set(state.skeleton_files.keys())
-                    if target_file in skeleton_files:
-                        logger.info(f"Debugger: skipping skeleton file {target_file} (immutable)")
-                    else:
-                        code = state.code_files.get(target_file, "")
-                        if code:
-                            fixed_code = await self._fix_via_search_replace(
-                                llm, state.user_goal, error, target_file, code,
-                                state.complexity_score, code_files=state.code_files,
-                            )
-                            if fixed_code and fixed_code != code:
-                                state.code_files[target_file] = fixed_code
-                                logger.info(f"Debugger: single-file fix on {target_file}")
+                    code = state.code_files.get(target_file, "")
+                    if code:
+                        fixed_code = await self._fix_via_search_replace(
+                            llm, state.user_goal, error, target_file, code,
+                            state.complexity_score, code_files=state.code_files,
+                        )
+                        fixed_code = _accept_if_additive(
+                            target_file, code, fixed_code,
+                            is_skeleton=target_file in skeleton_files,
+                        )
+                        if fixed_code and fixed_code != code:
+                            state.code_files[target_file] = fixed_code
+                            logger.info(f"Debugger: single-file fix on {target_file}")
             else:
                 # ── Phase 2: Editor applies fixes (uses debugger role = may be Haiku) ──
-                # Build the set of skeleton files — these are IMMUTABLE
-                skeleton_files = set()
-                if hasattr(state, 'skeleton_files') and state.skeleton_files:
-                    skeleton_files = set(state.skeleton_files.keys())
-
                 fixes_applied = 0
                 for fix_spec in diagnosis["files_to_fix"][:3]:  # Max 3 files per cycle
                     fname = fix_spec.get("file", "")
@@ -121,20 +122,12 @@ class DebuggerAgent(BaseAgent):
                     if not code or not instruction:
                         continue
 
-                    # HARD BLOCK: skeleton files are immutable — never edit them.
-                    # The skeleton builder generates database.py, models.py, etc.
-                    # deterministically. LLM edits always make them worse.
-                    if fname in skeleton_files:
-                        logger.info(f"Debugger: skipping skeleton file {fname} (immutable)")
-                        continue
-
-                    # Secondary guard: protect database files even if not tracked as skeleton
-                    if fname in ("database.py", "db.py") and "get_db" in code and "engine" in code:
-                        logger.info(f"Debugger: skipping database file {fname} (protected)")
-                        continue
-
                     fixed_code = await self._editor_apply(
                         llm, fname, code, instruction, state.complexity_score
+                    )
+                    fixed_code = _accept_if_additive(
+                        fname, code, fixed_code,
+                        is_skeleton=fname in skeleton_files,
                     )
 
                     if fixed_code and fixed_code != code:
@@ -420,6 +413,71 @@ Respond ONLY with valid JSON:
                 return None
 
         return fixed_code
+
+
+# ── Skeleton-file safety: additive-only edits ────────────────────────────
+
+
+def _top_level_exports(source: str) -> set[str]:
+    """Return the set of top-level names defined in a Python source file.
+
+    Includes classes, functions, async functions, and module-level
+    assignments. Used to verify that a debugger edit doesn't remove any
+    symbols a skeleton file was generated to export.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
+
+
+def _accept_if_additive(
+    filename: str,
+    original: str,
+    fixed: str | None,
+    *,
+    is_skeleton: bool,
+) -> str | None:
+    """Gate an edit against the additive-only rule for skeleton files.
+
+    For non-skeleton files the edit passes through unchanged. For
+    skeleton files we require that every top-level export present in
+    the original survives in the fixed version — edits may only ADD
+    symbols, never remove them. This replaces the old blanket
+    "skeleton files are immutable" block, which made the debugger
+    unable to add a missing `get_db` to a generator-emitted `database.py`.
+    """
+    if fixed is None or fixed == original:
+        return fixed
+    if not is_skeleton:
+        return fixed
+
+    original_exports = _top_level_exports(original)
+    new_exports = _top_level_exports(fixed)
+    missing = original_exports - new_exports
+    if missing:
+        logger.info(
+            f"Debugger: rejecting edit to skeleton file {filename} — "
+            f"would remove exports {sorted(missing)}"
+        )
+        return original
+    logger.info(
+        f"Debugger: additive edit to skeleton file {filename} "
+        f"(+{sorted(new_exports - original_exports)})"
+    )
+    return fixed
 
 
 # ── Deterministic fixes (no LLM needed) ──────────────────────────────────

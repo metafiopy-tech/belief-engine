@@ -12,7 +12,15 @@ import ast
 import json
 import pytest
 
-from belief.models.skeleton import (
+pytest.skip(
+    "Legacy milestone-1 scaffold: references belief.agents.skeleton_pipeline "
+    "and sibling modules removed in the v2 architecture rewrite. Kept for "
+    "historical reference until rewritten against the current skeleton_pass1 "
+    "+ builder pipeline.",
+    allow_module_level=True,
+)
+
+from belief.models.skeleton import (  # noqa: E402
     SkeletonArtifact,
     FileTreeEntry,
     FileRole,

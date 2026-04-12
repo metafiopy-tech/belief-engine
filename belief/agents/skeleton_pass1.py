@@ -22,6 +22,38 @@ from typing import Any
 logger = logging.getLogger("belief.agents.skeleton_pass1")
 
 
+def _promote_database_files_to_skeleton(skeleton: Any) -> None:
+    """Flip `skeleton=True` on any database module in the file tree.
+
+    Mutates the SkeletonArtifact in place. Fires when the project uses
+    a SQLAlchemy-family dependency and there's a file in the tree whose
+    basename is `database.py` or `db.py` (package-scoped layouts like
+    `blog_engine/database.py` also match). The architect's prune step
+    can mark these as implementation files, which bypasses the
+    deterministic skeleton generator entirely.
+    """
+    try:
+        deps = {
+            d.split("[")[0].split("=")[0].split("<")[0].split(">")[0].strip().lower()
+            for d in (skeleton.external_dependencies or [])
+        }
+    except AttributeError:
+        return
+    if not (deps & {"sqlalchemy", "sqlmodel"}):
+        return
+
+    promoted = 0
+    for entry in skeleton.file_tree:
+        basename = entry.path.rsplit("/", 1)[-1]
+        if basename in ("database.py", "db.py") and not entry.skeleton:
+            entry.skeleton = True
+            promoted += 1
+    if promoted:
+        logger.info(
+            f"SkeletonPass1: promoted {promoted} database file(s) to skeleton=True"
+        )
+
+
 async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
     """LangGraph node: generate skeleton files from SkeletonArtifact."""
     result = dict(state)
@@ -57,6 +89,16 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
             skeleton = SkeletonArtifact.model_validate(skeleton_raw)
         else:
             skeleton = skeleton_raw
+
+        # Force-promote database modules to skeleton=True when the
+        # project uses SQLAlchemy. The architect's prune step sometimes
+        # leaves `blog_engine/database.py` (and siblings) marked as
+        # implementation files, which means my deterministic generator
+        # never fires on them and the LLM builder writes them instead —
+        # frequently with case-mismatched `settings.database_url`
+        # against a `DATABASE_URL` config field, or missing `Base`/
+        # `init_db` exports. Seen on every tier-4 build before this fix.
+        _promote_database_files_to_skeleton(skeleton)
 
         # --- M2: Topological sort for build plan ---
         build_plan_summary = ""

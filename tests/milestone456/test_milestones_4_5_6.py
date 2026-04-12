@@ -18,7 +18,7 @@ from belief.models.project_manifest import (
     HealthCheck,
     manifest_from_skeleton,
 )
-from belief.agents.deployment_generator import (
+from belief.tools.deployment_generator import (
     generate_dockerfile,
     generate_docker_compose,
     generate_env_example,
@@ -28,7 +28,7 @@ from belief.agents.deployment_generator import (
     generate_dockerignore,
     generate_all_deployment_artifacts,
 )
-from belief.agents.composition_planner import (
+from belief.tools.composition_planner import (
     PackageCandidate,
     PackageSource,
     ComponentStrategy,
@@ -88,7 +88,7 @@ class TestProjectManifest:
         assert m.service_type == ServiceType.API
 
     def test_manifest_from_skeleton(self):
-        from tests.test_milestone2 import _make_12_file_skeleton
+        from tests.milestone2.test_milestone2 import _make_12_file_skeleton
         skeleton = _make_12_file_skeleton()
         files = {"main.py": "from fastapi import FastAPI\napp = FastAPI()"}
         manifest = manifest_from_skeleton(skeleton, files)

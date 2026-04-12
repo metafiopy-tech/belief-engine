@@ -21,7 +21,15 @@ import json
 import re
 import pytest
 
-from belief.models.skeleton import (
+pytest.skip(
+    "Legacy milestone-2 scaffold: references belief.agents.parallel_builder "
+    "and belief.agents.pyright_checker (now at belief.tools.pyright_checker). "
+    "parallel_builder was removed in the v2 rewrite. Kept until rewritten "
+    "against the current DAG-driven builder.",
+    allow_module_level=True,
+)
+
+from belief.models.skeleton import (  # noqa: E402
     SkeletonArtifact,
     FileTreeEntry,
     FileRole,

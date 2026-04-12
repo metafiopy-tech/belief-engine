@@ -80,6 +80,14 @@ class MultiServiceState(TypedDict, total=False):
     errors: Annotated[list, _merge_lists]
     warnings: Annotated[list, _merge_lists]
     service_results: Annotated[list, _merge_lists]
+    # Per-service ExecutionResult dicts. Populated by each parallel
+    # `_build_one_service` branch; `_collect_service_results` folds
+    # them into a single top-level `execution_result` with
+    # `success = all(services succeeded)`. Without this sidecar, the
+    # multi-service pipeline can't propagate executor results up to
+    # the benchmark, so tier-6 builds always report executor_passed=False
+    # even when every service's sub-pipeline passed.
+    service_execution_results: Annotated[list, _merge_lists]
     agent_timings: Annotated[dict, _merge_dicts]
 
     # ── Single-writer keys (last value wins) ──
@@ -196,6 +204,21 @@ async def _build_one_service(state: dict[str, Any]) -> dict[str, Any]:
             else:
                 test_files[fname] = content
 
+        # Lift the sub-pipeline's execution result into the sidecar
+        # list so it survives the fan-in merge.
+        sub_exec = result.get("execution_result")
+        if sub_exec is not None and not isinstance(sub_exec, dict):
+            # UnifiedState objects expose attributes; coerce to dict so
+            # the reducer stays type-simple.
+            sub_exec = {
+                "success": getattr(sub_exec, "success", False),
+                "error_summary": getattr(sub_exec, "error_summary", ""),
+                "exit_code": getattr(sub_exec, "exit_code", -1),
+                "service": service_spec.name,
+            }
+        elif isinstance(sub_exec, dict):
+            sub_exec = {**sub_exec, "service": service_spec.name}
+
         return {
             "code_files": code_files,
             "test_files": test_files,
@@ -205,7 +228,9 @@ async def _build_one_service(state: dict[str, Any]) -> dict[str, Any]:
                     if isinstance(result.get("validation_result"), dict)
                     else getattr(result.get("validation_result"), "verdict", "unknown"),
                 "files": len(code_files),
+                "executor_passed": bool(sub_exec and sub_exec.get("success")) if sub_exec else False,
             }],
+            "service_execution_results": [sub_exec] if sub_exec else [],
         }
 
     except Exception as e:
@@ -286,6 +311,36 @@ async def _collect_service_results(state: dict[str, Any]) -> dict[str, Any]:
         "tests_total": total,
         "summary": f"{passed}/{total} services built successfully",
     }
+
+    # Roll up per-service execution results into a single top-level
+    # `execution_result` so the benchmark reporter (and any downstream
+    # consumer reading `state["execution_result"]`) sees the actual
+    # multi-service executor state instead of None.
+    sub_execs = state.get("service_execution_results", []) or []
+    if sub_execs:
+        all_ok = all(e.get("success") for e in sub_execs)
+        failed = [e for e in sub_execs if not e.get("success")]
+        summary = (
+            f"all {len(sub_execs)} services executed"
+            if all_ok
+            else f"{len(failed)}/{len(sub_execs)} services failed: "
+                 + "; ".join(
+                     f"{e.get('service', '?')}={e.get('error_summary', '')[:80]}"
+                     for e in failed[:3]
+                 )
+        )
+        result["execution_result"] = {
+            "success": all_ok,
+            "exit_code": 0 if all_ok else 1,
+            "error_summary": "" if all_ok else summary,
+            "stdout": summary,
+            "stderr": "",
+            "install_success": True,
+        }
+        logger.info(
+            f"Fan-in execution: "
+            f"{sum(1 for e in sub_execs if e.get('success'))}/{len(sub_execs)} services exec=True"
+        )
 
     return result
 

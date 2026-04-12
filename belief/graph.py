@@ -139,6 +139,46 @@ def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "
     return "builder"
 
 
+_REFINEMENT_ELIGIBLE_ERROR_MARKERS = (
+    "ModuleNotFoundError",
+    "ImportError",
+    "cannot import name",
+    "Test collection failed",
+    "Smoke test:",
+    "missing_symbol",
+    # Failing tests are the water cycle's core use case — the fixer is
+    # literally designed to read pytest output and patch the offending
+    # code. Previously excluded because the marker list was scoped to
+    # import errors only, which meant exec-failed builds with genuine
+    # test failures circuit-broke instead of getting a refinement pass.
+    "NameError",
+    "AttributeError",
+    "TypeError",
+)
+
+
+def _exec_error_is_refinable(exec_r: Any) -> bool:
+    """True if the executor's error summary is in a class refinement can patch.
+
+    Refinement's fixer is good at surgical import/export edits but can't
+    untangle genuine logic errors. We route to refinement only for the
+    failure classes the fixer actually handles — missing imports, missing
+    symbols, failed test collection, smoke-test import failures.
+    """
+    if not exec_r:
+        return False
+    summary = (
+        exec_r.get("error_summary") if isinstance(exec_r, dict)
+        else getattr(exec_r, "error_summary", "")
+    ) or ""
+    stderr = (
+        exec_r.get("stderr") if isinstance(exec_r, dict)
+        else getattr(exec_r, "stderr", "")
+    ) or ""
+    haystack = f"{summary}\n{stderr}"
+    return any(marker in haystack for marker in _REFINEMENT_ELIGIBLE_ERROR_MARKERS)
+
+
 def _route_after_validation(state: dict[str, Any]) -> Literal["polarity_check", "builder", "research", "refinement"]:
     exec_r = state.get("execution_result")
     exec_ok = False
@@ -159,6 +199,21 @@ def _route_after_validation(state: dict[str, Any]) -> Literal["polarity_check", 
     # ALWAYS send to refinement — regardless of iteration count.
     # Refinement is polishing, not rebuilding. It doesn't cost a rebuild iteration.
     if v == "fail_fixable" and exec_ok:
+        return "refinement"
+
+    # Executor-failed, but the failure is in a class refinement's fixer
+    # can patch (missing exports, import paths, failed test collection,
+    # failing tests). Refinement is a terminal sink (refinement →
+    # decomposer → END), so it's safe to let it run regardless of
+    # iteration budget — it can't loop back into the main pipeline.
+    # Previously these bypassed refinement entirely and burned rebuild
+    # iterations on the debugger's immutable-skeleton deadlock.
+    if (
+        v == "fail_fixable"
+        and not exec_ok
+        and _exec_error_is_refinable(exec_r)
+    ):
+        logger.info("Router: executor failed with refinable error — routing to refinement")
         return "refinement"
 
     # For rebuilds (not refinement), check iteration limit
