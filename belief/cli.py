@@ -187,6 +187,8 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
             fpath = out_dir / fname
             fpath.parent.mkdir(parents=True, exist_ok=True)
             fpath.write_text(content)
+            if fname.endswith(".sh"):
+                fpath.chmod(0o755)
 
         # Store in build memory
         spec = final_state.get("requirement_spec")
