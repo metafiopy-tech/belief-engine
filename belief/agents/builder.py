@@ -505,6 +505,24 @@ _IMPORT_TO_PIP = {
     "jinja2": "jinja2", "markdown": "markdown", "starlette": "starlette",
     "celery": "celery", "redis": "redis", "motor": "motor",
     "watchdog": "watchdog", "GitPython": "gitpython", "gitpython": "gitpython",
+    # Common mismatches where import name ≠ pip name
+    "github": "PyGithub",
+    "dateutil": "python-dateutil",
+    "jose": "python-jose",
+    "multipart": "python-multipart",
+    "jwt": "PyJWT",
+    "attr": "attrs",
+    "serial": "pyserial",
+    "usb": "pyusb",
+    "nacl": "PyNaCl",
+    "Crypto": "pycryptodome",
+    "docx": "python-docx",
+    "pptx": "python-pptx",
+    "skimage": "scikit-image",
+    "wx": "wxPython",
+    "telegram": "python-telegram-bot",
+    "magic": "python-magic",
+    "gi": "PyGObject",
 }
 
 

@@ -48,14 +48,16 @@ class TesterAgent(BaseAgent):
             # ── Complexity-adaptive test count ─────────────────────────
             # Research: 5-8 tests is optimal. Simple goals get fewer.
             # Meta's TestGen-LLM found 4:1 ratio of generated-to-useful.
+            # Hard ceiling of 15 to prevent test explosion — the LLM
+            # sometimes ignores soft limits and generates 50+.
             complexity = state.complexity_score
             n_criteria = len(spec.acceptance_criteria) if spec.acceptance_criteria else 3
             if complexity <= 2:
                 test_count = min(5, n_criteria + 2)
             elif complexity <= 4:
-                test_count = min(8, n_criteria + 3)
+                test_count = min(10, n_criteria + 3)
             else:
-                test_count = min(10, n_criteria + 4)
+                test_count = min(15, n_criteria + 5)
 
             # ── Countdown markers (95% compliance vs 30% naive) ──────
             countdown_markers = "\n".join(

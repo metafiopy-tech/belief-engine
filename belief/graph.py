@@ -73,6 +73,15 @@ def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "
     iteration = state.get("iteration", 0)
     max_iter = state.get("max_iterations", 3)
 
+    # ── Hard iteration cap (unconditional) ────────────────────────────
+    # After 3 debugger iterations, ALWAYS circuit-break regardless of
+    # error classification. This prevents infinite retry loops when a
+    # transient classification (e.g. "429" in an import error string)
+    # masks a non-transient failure.
+    if iteration >= max_iter:
+        logger.warning(f"Hard iteration cap reached ({iteration}/{max_iter}) — circuit-breaking to synthesizer")
+        return "synthesizer"
+
     # ── OTP-style error classification ──────────────────────────────
     # Instead of ad-hoc checks, classify the error and route based on
     # the recovery strategy. This is the Erlang supervision pattern
@@ -129,8 +138,6 @@ def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "
         requires_research = getattr(gap, "requires_research", False)
         total_blockers = getattr(gap, "total_blockers", 0)
 
-    if iteration >= max_iter:
-        return "synthesizer"
     if requires_research:
         return "research"
     if total_blockers > 0:

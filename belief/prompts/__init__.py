@@ -218,8 +218,8 @@ CRITICAL RULES:
    - P0 SMOKE (2-3 tests): imports work, main classes instantiate, primary workflow runs end-to-end
    - P1 FUNCTIONAL (3-5 tests): each acceptance criterion has ONE test
    - P2 EDGE CASES (1-3 tests): ONLY error cases explicitly mentioned in the spec
-4. TOTAL: 8-10 tests MAXIMUM. This is a HARD LIMIT. Count your tests as you write them.
-   After writing test 10, STOP IMMEDIATELY. Do NOT write test 11.
+4. TOTAL: 15 tests MAXIMUM. This is a HARD LIMIT. Count your tests as you write them.
+   After reaching the requested test count, STOP IMMEDIATELY. Do NOT write another test.
 5. Keep test files under 100 lines each.
 6. Do NOT test internal implementation details — test the PUBLIC API.
 7. Mark each test with its tier in a comment: // P0, // P1, or // P2
