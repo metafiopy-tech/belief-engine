@@ -236,6 +236,19 @@ async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.warning(f"Decomposer: failed (non-fatal): {e}")
         result["extracted_nutrients"] = []
 
+    # Every 10 builds, run one recombination to cross-pollinate the soil
+    try:
+        soil = _get_soil()
+        build_count = soil._collection.count()
+        if build_count > 0 and build_count % 10 == 0:
+            from belief.memory.recombination import RecombinationEngine
+            engine = RecombinationEngine(soil)
+            nutrient = await engine.recombine_once()
+            if nutrient:
+                logger.info(f"Decomposer: recombination produced {nutrient.nutrient_id}")
+    except Exception as e:
+        logger.debug(f"Decomposer: recombination skipped: {e}")
+
     return result
 
 
