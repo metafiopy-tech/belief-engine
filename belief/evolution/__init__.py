@@ -145,11 +145,30 @@ class SEED:
                 temperature=0.3,
                 max_tokens=2000,
             )
-            # Parse JSON
+            # Parse JSON — with repair fallback for truncated/malformed output
             import re
             match = re.search(r'\{.*\}', raw, re.DOTALL)
+            data = None
             if match:
-                data = json.loads(match.group())
+                try:
+                    data = json.loads(match.group())
+                except json.JSONDecodeError:
+                    pass
+
+            # Fallback: repair truncated JSON (same strategy as architect)
+            if data is None:
+                from belief.llm import _repair_json
+                brace = raw.find("{")
+                if brace >= 0:
+                    repaired = _repair_json(raw[brace:])
+                    if repaired:
+                        try:
+                            data = json.loads(repaired)
+                            logger.info("SEED: repaired truncated proposal JSON")
+                        except json.JSONDecodeError:
+                            pass
+
+            if data:
                 proposal = ImprovementProposal(
                     **data,
                     remainder_sources=remainders[-5:] if remainders else [],

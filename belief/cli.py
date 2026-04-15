@@ -573,6 +573,25 @@ async def _run_fix_cmd(args):
         print(f"  Time: {result.duration_seconds:.1f}s")
 
 
+async def _run_recombine_cmd(args) -> None:
+    """Run N recombinations to enrich the soil between builds."""
+    from pathlib import Path
+    from belief.memory.soil import Soil
+    from belief.memory.recombination import RecombinationEngine
+
+    soil_dir = Path.home() / ".belief-engine" / "soil"
+    soil = Soil(soil_dir)
+    engine = RecombinationEngine(soil)
+
+    count = getattr(args, "n", 5)
+    print(f"  Recombining {count} nutrient pairs...\n")
+    results = await engine.run(n=count)
+    print(f"\n  Created {len(results)} new recombination nutrients.")
+    for r in results:
+        parents = ", ".join(r.lineage_parent_ids)
+        print(f"    {r.nutrient_id} (from {parents})")
+
+
 def app():
     """CLI entry point."""
     import argparse
@@ -615,6 +634,11 @@ def app():
     mine_parser.add_argument("--max-cost", type=float, default=0.50,
                              help="Max USD per challenge")
 
+    # Recombine
+    recombine_parser = subparsers.add_parser("recombine", help="Cross-pollinate soil nutrients")
+    recombine_parser.add_argument("--n", type=int, default=5,
+                                  help="Number of recombinations to run (default: 5)")
+
     # Brownfield fix
     fix_parser = subparsers.add_parser("fix", help="Fix an issue in an existing codebase")
     fix_parser.add_argument("--repo", required=True,
@@ -653,6 +677,9 @@ def app():
         sys.exit(0)
     elif args.command == "fix":
         asyncio.run(_run_fix_cmd(args))
+        sys.exit(0)
+    elif args.command == "recombine":
+        asyncio.run(_run_recombine_cmd(args))
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)

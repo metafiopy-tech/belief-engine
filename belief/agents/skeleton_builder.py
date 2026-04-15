@@ -250,7 +250,7 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
     lines.extend([
         "from typing import Optional",
         "",
-        "from pydantic import BaseModel, Field",
+        "from pydantic import BaseModel, ConfigDict, Field",
         "",
     ])
 
@@ -353,6 +353,10 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
         # metadata, not data fields.
         for f in model.fields:
             if f.name.startswith("__") and f.name.endswith("__"):
+                continue
+            # model_config is class-level Pydantic v2 config, not a Field
+            if f.name == "model_config":
+                lines.append(f"    model_config = ConfigDict(from_attributes=True)")
                 continue
             desc = f.description.replace('"', "'") if f.description else ""
             default = _literal_default(f.default)
@@ -605,7 +609,7 @@ def _generate_config_code(skeleton: SkeletonArtifact, file_path: str) -> str | N
         "",
         "from __future__ import annotations",
         "",
-        "from pydantic import Field",
+        "from pydantic import ConfigDict, Field",
         "from pydantic_settings import BaseSettings",
         "",
     ]
@@ -618,7 +622,7 @@ def _generate_config_code(skeleton: SkeletonArtifact, file_path: str) -> str | N
             lines.append(f"class {config.name}(BaseSettings):")
 
         if config.env_prefix:
-            lines.append(f"    model_config = dict(env_prefix='{config.env_prefix}')")
+            lines.append(f"    model_config = ConfigDict(env_prefix='{config.env_prefix}')")
             lines.append("")
 
         if not config.fields:
