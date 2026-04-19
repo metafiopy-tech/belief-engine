@@ -121,8 +121,8 @@ class TesterAgent(BaseAgent):
                     "## PROJECT API MAP (these are the ONLY importable symbols)\n"
                     f"{overview}"
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Repo map failed in tester: {e}")
 
         # 2. Extract import paths from all built code files via AST
         import_map = self._extract_imports_and_exports(state.code_files)
@@ -167,8 +167,8 @@ class TesterAgent(BaseAgent):
                 symbols = adapter.parse_exports(code, fname)
                 if symbols:
                     result[fname] = [s.name for s in symbols]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Export parse failed for {fname}: {e}")
 
         return result
 

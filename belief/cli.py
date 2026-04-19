@@ -270,8 +270,8 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
                 soil = Soil(soil_path)
                 antipatterns = soil.retrieve("build failure", nutrient_type=NutrientType.ANTIPATTERN, n=5)
                 all_remainders.extend([a.content for a in antipatterns])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Soil antipattern retrieval failed: {e}")
 
             if all_remainders:
                 logger.info(f"SEED: triggered — analyzing {len(all_remainders)} remainders/antipatterns")
@@ -346,8 +346,8 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
         try:
             from belief.tools.notify import notify_build_complete
             notify_build_complete(run_id, goal, verdict_str, cost, elapsed, len(code_files))
-        except Exception:
-            pass  # Never block on notification failure
+        except Exception as e:
+            logger.debug(f"Notification failed (non-blocking): {e}")
 
     else:
         print(f"\n  BUILD FAILED — no code files produced after {elapsed:.1f}s")
@@ -358,8 +358,8 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
         try:
             from belief.tools.notify import notify_build_complete
             notify_build_complete(run_id, goal, "failed", 0, elapsed, 0)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Notification failed (non-blocking): {e}")
 
     # Cleanup
     health.stop()

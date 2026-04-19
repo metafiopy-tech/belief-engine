@@ -324,8 +324,8 @@ class BuilderAgent(BaseAgent):
                 lang_additions = adapter.get_system_prompt_additions()
                 if lang_additions:
                     system = f"{system}\n\nLANGUAGE: {lang.value.upper()}\n{lang_additions}"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Language adapter failed for {file_spec.filename}: {e}")
 
             # Inject protocol skeleton as reference for TypeScript builds
             if file_spec.filename.endswith((".ts", ".tsx")):
@@ -356,8 +356,8 @@ class BuilderAgent(BaseAgent):
                                     )
                                     break
                             break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Protocol skeleton injection failed for {file_spec.filename}: {e}")
 
             raw = await llm.generate_text(
                 role=self.role, system=system, prompt=prompt,

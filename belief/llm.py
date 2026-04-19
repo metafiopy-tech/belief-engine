@@ -251,8 +251,8 @@ def _parse_structured(raw: str, schema: Type[T]) -> T:
         try:
             data = json.loads(json_str)
             return schema.model_validate(data)
-        except Exception:
-            pass  # Fall through to repair
+        except Exception as e:
+            logger.debug(f"Initial JSON parse failed, attempting repair: {e}")
 
     # Try 2: Repair truncated JSON
     truncated = text[brace_start:]

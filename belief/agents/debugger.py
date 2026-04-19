@@ -77,8 +77,8 @@ class DebuggerAgent(BaseAgent):
                 from belief.agents.repo_map import RepoMap
                 repo_map = RepoMap.from_code_files(state.code_files)
                 repo_context = repo_map.format_overview(max_tokens=1500)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Repo map failed in debugger: {e}")
 
             # ── Phase 1: Architect diagnoses across all files (Sonnet) ──
             diagnosis = await self._architect_diagnose(
@@ -307,8 +307,8 @@ class DebuggerAgent(BaseAgent):
                 repo_context = repo_map.format_overview(max_tokens=1000)
                 if repo_context:
                     repo_context = f"\nAVAILABLE MODULES AND SYMBOLS:\n{repo_context}\n"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Repo map failed in debugger editor: {e}")
 
         prompt = f"""Fix this execution error using a search/replace edit:
 

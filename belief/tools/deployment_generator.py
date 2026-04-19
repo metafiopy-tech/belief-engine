@@ -72,7 +72,7 @@ def generate_dockerfile(manifest: ProjectManifest) -> str:
         port = manifest.docker_expose[0] if manifest.docker_expose else 8000
         lines.extend([
             f"HEALTHCHECK --interval={hc.interval_seconds}s --timeout={hc.timeout_seconds}s --retries={hc.retries} \\",
-            f'    CMD curl -f http://localhost:{port}{hc.path} || exit 1',
+            f'    CMD python -c "import urllib.request; urllib.request.urlopen(\'http://localhost:{port}{hc.path}\')" || exit 1',
             "",
         ])
 

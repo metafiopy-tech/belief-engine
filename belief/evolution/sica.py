@@ -189,10 +189,6 @@ class SelfImprovementCycle:
                 f"({result.pre_score:.0%}), utility={result.pre_utility:.4f}"
             )
 
-            # ── Step 1b: Check whether to propose new_tool ───────��─────
-            if await self._should_propose_new_tool():
-                logger.info("SICA: new_tool proposal triggered by failure clustering")
-
             # ── Step 2: Generate improvement proposal ───────────────────
             proposal = await self._generate_proposal(baseline)
             if not proposal:
@@ -205,7 +201,47 @@ class SelfImprovementCycle:
             result.proposal_title = proposal.get("title", "")
             result.target_file = proposal.get("target_file", "")
 
-            # ── Step 3: Validate target is evolvable ────────────────────
+            # ── Step 2b: NEW_TOOL autocatalytic path ─────────────────────
+            if proposal.get("improvement_type") == "new_tool":
+                from belief.evolution.self_improvement import execute_new_tool_proposal
+
+                logger.info(f"SICA: NEW_TOOL proposal — {proposal.get('title', 'unnamed')}")
+                tool_result = await execute_new_tool_proposal(
+                    soil=self.soil,
+                    proposal_title=proposal.get("title", ""),
+                )
+
+                if tool_result.success:
+                    result.accepted = True
+                    result.post_score = result.pre_score
+                    result.improvement = 0.0
+                    result.post_utility = result.pre_utility
+                    logger.info(
+                        f"SICA: NEW_TOOL accepted — {proposal.get('title', '')} "
+                        f"(tool_id={tool_result.backup_path})"
+                    )
+                    if self.evo_archive is not None:
+                        try:
+                            self._save_to_evo_archive(result, proposal, baseline, baseline)
+                        except Exception as e:
+                            logger.debug(f"SICA: evo archive update skipped: {e}")
+                else:
+                    result.accepted = False
+                    result.error = f"NEW_TOOL failed: {tool_result.error}"
+                    logger.info(f"SICA: NEW_TOOL rejected — {tool_result.error}")
+
+                result.duration_seconds = time.time() - t0
+                self.archive.add(result)
+                self._save_archive()
+
+                try:
+                    self._record_metrics(result, iteration)
+                except Exception as e:
+                    logger.debug(f"SICA: metrics recording skipped: {e}")
+
+                return result
+
+            # ── Step 3: Validate target is evolvable (standard path) ─────
             from belief.evolution.scaffold import ScaffoldDecomposition
             decomp = ScaffoldDecomposition.from_project(self.project_root)
             if not decomp.is_safe_to_modify(result.target_file):
@@ -373,7 +409,24 @@ class SelfImprovementCycle:
         }
 
     async def _generate_proposal(self, baseline: dict) -> dict | None:
-        """Use SEED to generate an improvement proposal from benchmark failures."""
+        """Use SEED to generate an improvement proposal from benchmark failures.
+
+        Returns a new_tool proposal when failure clustering conditions are met;
+        otherwise falls through to the SEED LLM proposal path.
+        """
+        # NEW_TOOL path: check before spending LLM tokens on standard proposal
+        if await self._should_propose_new_tool():
+            logger.info("SICA: routing to NEW_TOOL — failure cluster detected")
+            return {
+                "improvement_type": "new_tool",
+                "title": "Build self-authored tool for recurring failure pattern",
+                "description": (
+                    "SICA detected a recurring failure cluster that could be addressed "
+                    "by a self-authored validation tool."
+                ),
+                "target_file": "",
+            }
+
         failures = [
             r for r in baseline.get("results", [])
             if r.verdict != "pass"

@@ -127,15 +127,15 @@ class ComposeStack:
                 try:
                     await self._run_compose("kill", timeout=10)
                     await self._run_compose("down", "-v", timeout=10)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Force kill failed during teardown: {e}")
 
         # Clean up temp dir
         if self.tmp_dir and self.tmp_dir.exists():
             try:
                 shutil.rmtree(self.tmp_dir)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Temp dir cleanup failed: {e}")
 
     async def run_tests(self, test_fn: Callable) -> dict[str, Any]:
         """Run integration tests against the running services.

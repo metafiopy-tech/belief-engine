@@ -71,6 +71,7 @@ class PyrightResult:
     """Results from a pyright run."""
     errors: list[PyrightError] = field(default_factory=list)
     success: bool = False
+    skipped: bool = False
     error_count: int = 0
     warning_count: int = 0
     information_count: int = 0
@@ -139,7 +140,7 @@ def run_pyright(
         )
     except FileNotFoundError:
         logger.warning("basedpyright not found — skipping type check")
-        return PyrightResult(success=True, raw_output="basedpyright not installed")
+        return PyrightResult(success=False, skipped=True, raw_output="basedpyright not installed")
     except subprocess.TimeoutExpired:
         logger.error("Pyright timed out after 120s")
         return PyrightResult(raw_output="timeout")

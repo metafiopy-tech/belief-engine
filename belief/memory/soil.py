@@ -71,6 +71,9 @@ class _HashEmbeddingFunction(EmbeddingFunction[Documents]):
 
     DIM = 384
 
+    def __init__(self) -> None:
+        pass
+
     def __call__(self, input: Documents) -> Embeddings:
         return [self._embed_one(text) for text in input]
 
@@ -427,8 +430,8 @@ class Soil:
         # Also update legacy
         try:
             self._collection.update(ids=[nutrient_id], metadatas=[metadata])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Legacy collection update skipped: {e}")
 
     def lapse(self, nutrient_id: str) -> None:
         """Mark a nutrient as having led to a failure -- drops its stability."""
@@ -446,8 +449,8 @@ class Soil:
         col.update(ids=[nutrient_id], metadatas=[metadata])
         try:
             self._collection.update(ids=[nutrient_id], metadatas=[metadata])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Legacy collection lapse update skipped: {e}")
 
     def _find_nutrient(
         self, nutrient_id: str
@@ -466,7 +469,8 @@ class Soil:
                         result["metadatas"][0],
                     )
                     return n, col
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Collection search failed for {nutrient_id}: {e}")
                 continue
         return None, None
 
@@ -648,8 +652,8 @@ class Soil:
                             nn_distance = nn["distances"][0][1]
                             if nn_distance < 0.05:
                                 near_dupes += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Duplicate check query failed: {e}")
 
         return {
             "duplicate_rate": near_dupes / total_records if total_records > 0 else 0.0,
@@ -706,8 +710,8 @@ class Soil:
                 # Also remove from legacy
                 try:
                     self._collection.delete(ids=[doc_id])
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Legacy collection delete skipped for {doc_id}: {e}")
                 archived_count += 1
 
             total += col_count
@@ -746,7 +750,8 @@ class Soil:
                     include=[],
                 )
                 counts[ntype.value] = len(result["ids"])
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Count by type failed for {ntype.value}: {e}")
                 counts[ntype.value] = 0
         return counts
 

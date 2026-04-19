@@ -195,8 +195,8 @@ def _execute_pytest(
                      "--break-system-packages", "-r", str(req_path)],
                     capture_output=True, text=True, timeout=60,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"pip install from requirements.txt failed: {e}")
 
         # Run pytest with verbose output to get individual test results
         try:
@@ -388,8 +388,8 @@ def _validate_typescript(
                     ))
             except subprocess.TimeoutExpired:
                 issues.append("tsc timed out")
-            except Exception:
-                pass  # tsc not available — skip
+            except Exception as e:
+                logger.debug(f"tsc not available or failed: {e}")
 
         # Step 4: Run vitest if test files exist
         ts_test_files = [f for f in list(code_files) + list(test_files)
