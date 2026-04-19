@@ -613,40 +613,69 @@ def evaluate_tool_against_failures(
     Returns the catch rate (fraction of failures where the tool
     found at least one error).
     """
+    import subprocess
+    import sys
+    import tempfile
+    import textwrap
+
     if not failure_traces:
         return 0.0
 
-    # Find the check function in the tool code
-    namespace: dict = {}
+    code_samples = [
+        trace.get("code_sample", trace.get("content", ""))
+        for trace in failure_traces
+    ]
+    code_samples = [c for c in code_samples if c and len(c) >= 10]
+    if not code_samples:
+        return 0.0
+
+    harness_template = textwrap.dedent("""\
+        import json, sys
+
+        TOOL_CODE_PLACEHOLDER
+
+        samples = SAMPLES_PLACEHOLDER
+        caught = 0
+        for code in samples:
+            try:
+                fn = None
+                for name, obj in list(globals().items()):
+                    if callable(obj) and not name.startswith('_') and name not in ('json', 'sys'):
+                        fn = obj
+                        break
+                if fn is not None:
+                    errors = fn(code)
+                    if errors:
+                        caught += 1
+            except Exception:
+                pass
+        print(json.dumps({"caught": caught, "tested": len(samples)}))
+    """)
+    harness = harness_template.replace(
+        "TOOL_CODE_PLACEHOLDER", tool_code
+    ).replace(
+        "SAMPLES_PLACEHOLDER", json.dumps(code_samples)
+    )
+
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
+        f.write(harness)
+        tmp_path = f.name
+
     try:
-        exec(compile(tool_code, "<tool_test>", "exec"), namespace)  # noqa: S102
+        proc = subprocess.run(
+            [sys.executable, tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode != 0:
+            return 0.0
+        result = json.loads(proc.stdout.strip())
+        return result["caught"] / max(result["tested"], 1)
     except Exception:
         return 0.0
-
-    check_fn = None
-    for key, val in namespace.items():
-        if callable(val) and not key.startswith("_"):
-            check_fn = val
-            break
-
-    if check_fn is None:
-        return 0.0
-
-    caught = 0
-    tested = 0
-    for trace in failure_traces:
-        code = trace.get("code_sample", trace.get("content", ""))
-        if not code or len(code) < 10:
-            continue
-        tested += 1
-        try:
-            errors = check_fn(code)
-            if errors:
-                caught += 1
-        except Exception:
-            pass
-
-    return caught / max(tested, 1)
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 async def execute_new_tool_proposal(

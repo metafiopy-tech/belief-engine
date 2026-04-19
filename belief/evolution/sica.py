@@ -520,19 +520,26 @@ class SelfImprovementCycle:
             logger.debug(f"SICA: new_tool check failed (non-fatal): {e}")
             return False
 
-    def _snapshot(self, target: Path) -> Path:
+    def _snapshot(self, target: Path, snapshot_dir: Path | None = None) -> Path | None:
         """Save a snapshot before modification."""
+        import tempfile
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        snap_dir = self.project_root / ".belief-engine" / "sica_snapshots"
-        snap_dir.mkdir(parents=True, exist_ok=True)
-        snap_path = snap_dir / f"{target.name}.{ts}.bak"
-        if target.exists():
-            shutil.copy2(target, snap_path)
-        return snap_path
+        try:
+            if snapshot_dir is None:
+                snap_dir = Path(tempfile.mkdtemp(prefix="sica_snapshots_"))
+            else:
+                snap_dir = snapshot_dir
+                snap_dir.mkdir(parents=True, exist_ok=True)
+            snap_path = snap_dir / f"{target.name}.{ts}.bak"
+            if target.exists():
+                shutil.copy2(target, snap_path)
+            return snap_path
+        except Exception:
+            return None
 
-    def _rollback(self, target: Path, snapshot: Path) -> None:
+    def _rollback(self, target: Path, snapshot: Path | None) -> None:
         """Restore from snapshot."""
-        if snapshot.exists():
+        if snapshot is not None and snapshot.exists():
             shutil.copy2(snapshot, target)
             logger.info(f"SICA: rolled back {target.name}")
 

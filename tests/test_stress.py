@@ -472,8 +472,10 @@ class TestSICASafety:
             f.write("original = True\n")
             tmp = Path(f.name)
 
+        snapshot = None
         try:
             snapshot = cycle._snapshot(tmp)
+            assert snapshot is not None, "_snapshot returned None"
             tmp.write_text("modified = True\n")
             assert tmp.read_text() == "modified = True\n"
 
@@ -481,7 +483,7 @@ class TestSICASafety:
             assert tmp.read_text() == "original = True\n"
         finally:
             tmp.unlink()
-            if snapshot.exists():
+            if snapshot is not None and snapshot.exists():
                 snapshot.unlink()
 
     def test_sica_rejects_syntax_error(self):

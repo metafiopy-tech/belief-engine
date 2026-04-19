@@ -128,7 +128,7 @@ def generate_docker_compose(manifest: ProjectManifest) -> str:
         port = manifest.ports[0].container_port if manifest.ports else 8000
         lines.extend([
             "    healthcheck:",
-            f'      test: ["CMD", "curl", "-f", "http://localhost:{port}{hc.path}"]',
+            f'      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(\'http://localhost:{port}{hc.path}\')"]',
             f"      interval: {hc.interval_seconds}s",
             f"      timeout: {hc.timeout_seconds}s",
             f"      retries: {hc.retries}",
