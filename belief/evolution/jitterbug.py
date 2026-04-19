@@ -361,8 +361,8 @@ async def compression_node(state: dict) -> dict:
                                 len(result_q["distances"][0]) >= 2 and
                                 result_q["distances"][0][1] < 0.15):
                                 redundant_pairs.append((t1.id, t2.id))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Redundancy query skipped: {e}")
     except Exception as e:
         logger.debug(f"Redundancy check skipped: {e}")
 
@@ -566,8 +566,8 @@ async def integration_node(state: dict) -> dict:
                     try:
                         col.delete(ids=[doc_id])
                         pruned.append(doc_id)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Prune delete skipped for {doc_id}: {e}")
     except Exception as e:
         logger.debug(f"Pruning skipped: {e}")
 
@@ -683,8 +683,8 @@ async def run_jitterbug_cycle(
         registry = ToolRegistry(soil)
         metrics = compute_progression(soil, registry, [])
         initial_state["stage_before"] = metrics.current_stage
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Pre-cycle progression metrics skipped: {e}")
 
     logger.info(
         f"Jitterbug cycle {cycle_number}: "

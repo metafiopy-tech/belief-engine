@@ -127,8 +127,8 @@ def _get_tool_embeddings(soil, tools: list) -> list[list[float]]:
         )
         if result.get("embeddings"):
             embeddings = [e for e in result["embeddings"] if e is not None]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Tool embedding retrieval skipped: {e}")
 
     return embeddings
 
@@ -242,8 +242,8 @@ def _compute_coverage(soil, tools: list) -> float:
             if (result["distances"] and result["distances"][0] and
                     result["distances"][0][0] < 0.3):  # cosine distance < 0.3 means sim > 0.7
                 covered += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Coverage query skipped: {e}")
 
     return covered / len(challenge_goals)
 

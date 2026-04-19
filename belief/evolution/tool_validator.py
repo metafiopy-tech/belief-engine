@@ -7,23 +7,46 @@ it must pass structural validation:
   2. No imports from belief internals
   3. No bare except clauses
   4. Has a docstring
-  5. No dangerous calls (exec, eval, __import__, compile)
+  5. No dangerous calls (exec, eval, __import__, compile, os.remove, etc.)
   6. Reasonable length (< 200 lines)
-  7. Importable without errors
+  7. Subprocess parse check (no in-process execution)
 """
 
 from __future__ import annotations
 
 import ast
+import importlib.util
 import logging
+import subprocess
 import sys
 import tempfile
-import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("belief.evolution.tool_validator")
+
+# Standard library module names (Python 3.10+)
+_STDLIB_MODULES: frozenset[str] = frozenset(
+    getattr(sys, "stdlib_module_names", frozenset())
+)
+
+# Dangerous calls — bare names and dotted names
+_DANGEROUS_BARE: frozenset[str] = frozenset({
+    "exec", "eval", "__import__", "compile", "execfile",
+})
+
+_DANGEROUS_DOTTED: frozenset[str] = frozenset({
+    # Filesystem mutation
+    "os.remove", "os.unlink", "os.rmdir", "os.makedirs",
+    "shutil.rmtree", "shutil.move", "shutil.copy",
+    # Process spawning (shell=False variants checked separately)
+    "subprocess.call", "subprocess.Popen", "subprocess.run",
+    "os.system", "os.popen",
+    # Network
+    "urllib.request.urlopen", "requests.get", "requests.post",
+    "socket.socket", "http.client.HTTPConnection",
+})
 
 
 @dataclass
@@ -35,10 +58,91 @@ class ToolValidationResult:
     warnings: list[str] = field(default_factory=list)
 
 
-@dataclass
-class _ImportResult:
-    success: bool
-    error: Optional[str] = None
+def _extract_imports(code: str) -> list[str]:
+    """Extract all imported top-level module names via AST. No code execution."""
+    tree = ast.parse(code)
+    imports: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                imports.append(node.module.split(".")[0])
+    return imports
+
+
+def _check_imports(imports: list[str], declared_deps: list[str]) -> list[str]:
+    """Return error strings for imports that are undeclared and unavailable."""
+    errors: list[str] = []
+    dep_names = {d.lower().replace("-", "_") for d in (declared_deps or [])}
+    for mod in imports:
+        if mod in _STDLIB_MODULES:
+            continue
+        if mod.lower().replace("-", "_") in dep_names:
+            continue
+        if importlib.util.find_spec(mod) is not None:
+            continue
+        errors.append(f"Undeclared/unavailable import: {mod}")
+    return errors
+
+
+def _subprocess_parse_check(code: str, timeout: int = 10) -> tuple[bool, str]:
+    """Verify the code parses cleanly in an isolated subprocess (no execution)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tool_path = Path(tmpdir) / "tool_check.py"
+        tool_path.write_text(code)
+        escaped = str(tool_path).replace("'", "\\'")
+        result = subprocess.run(
+            [
+                sys.executable, "-c",
+                f"import ast; ast.parse(open('{escaped}').read()); print('OK')",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=tmpdir,
+        )
+        if result.returncode != 0:
+            return False, result.stderr.strip()
+        return True, ""
+
+
+def _check_dangerous_calls(tree: ast.AST) -> list[str]:
+    """Return error strings for any dangerous call nodes in the AST."""
+    errors: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+
+        # Bare name calls: exec(), eval(), …
+        if isinstance(node.func, ast.Name):
+            if node.func.id in _DANGEROUS_BARE:
+                errors.append(f"Dangerous call: {node.func.id}()")
+
+        # Dotted calls: os.remove(), subprocess.run(), …
+        elif isinstance(node.func, ast.Attribute):
+            parent = node.func
+            # Reconstruct the dotted name (up to two levels)
+            if isinstance(parent.value, ast.Name):
+                dotted = f"{parent.value.id}.{parent.attr}"
+                if dotted in _DANGEROUS_DOTTED:
+                    # subprocess.run with shell=False is acceptable
+                    if dotted == "subprocess.run":
+                        shell_true = any(
+                            (isinstance(kw.value, ast.Constant) and kw.value.value is True)
+                            for kw in node.keywords
+                            if kw.arg == "shell"
+                        )
+                        if shell_true:
+                            errors.append(f"Dangerous call: {dotted}(shell=True)")
+                    else:
+                        errors.append(f"Dangerous call: {dotted}()")
+            # Bare attribute (e.g. just `.exec` without a known prefix)
+            if parent.attr in _DANGEROUS_BARE:
+                errors.append(f"Dangerous call: {parent.attr}()")
+
+    return errors
 
 
 def validate_tool(tool) -> ToolValidationResult:
@@ -85,7 +189,6 @@ def validate_tool(tool) -> ToolValidationResult:
     # 4. Has docstring
     module_docstring = ast.get_docstring(tree)
     if not module_docstring:
-        # Check if the first function/class has a docstring
         has_any_docstring = False
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -95,70 +198,28 @@ def validate_tool(tool) -> ToolValidationResult:
         if not has_any_docstring:
             warnings.append("No module-level or function-level docstring")
 
-    # 5. No dangerous calls
-    _DANGEROUS_CALLS = {"exec", "eval", "__import__", "compile"}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            func_name = ""
-            if isinstance(node.func, ast.Name):
-                func_name = node.func.id
-            elif isinstance(node.func, ast.Attribute):
-                func_name = node.func.attr
-            if func_name in _DANGEROUS_CALLS:
-                errors.append(f"Dangerous call: {func_name}()")
+    # 5. No dangerous calls (static AST check — no execution)
+    errors.extend(_check_dangerous_calls(tree))
 
     # 6. Code length check
     line_count = len(code.splitlines())
     if line_count > 200:
         warnings.append(f"Tool is {line_count} lines (recommend < 200)")
 
-    # 7. Try to import the tool's module
-    import_result = _try_import(code, deps)
-    if not import_result.success:
-        errors.append(f"Import failed: {import_result.error}")
+    # 7. Static import availability check (no execution)
+    imports = _extract_imports(code)
+    errors.extend(_check_imports(imports, deps))
+
+    # 8. Subprocess parse check (isolated, no execution of tool body)
+    try:
+        ok, err_msg = _subprocess_parse_check(code)
+        if not ok:
+            errors.append(f"Subprocess parse failed: {err_msg}")
+    except Exception as e:
+        warnings.append(f"Subprocess parse check skipped: {e}")
 
     return ToolValidationResult(
         valid=len(errors) == 0,
         errors=errors,
         warnings=warnings,
     )
-
-
-def _try_import(code: str, dependencies: list[str]) -> _ImportResult:
-    """Try to execute the tool's code in an isolated namespace.
-
-    This catches import errors and top-level crashes without
-    actually installing dependencies.
-    """
-    try:
-        # Compile first (catches syntax errors, which we already checked,
-        # but also catches encoding issues)
-        compiled = compile(code, "<tool_validation>", "exec")
-
-        # Execute in isolated namespace
-        namespace: dict = {}
-        exec(compiled, namespace)  # noqa: S102
-
-        return _ImportResult(success=True)
-
-    except ImportError as e:
-        # ImportError is OK if it's a missing third-party dependency
-        # that would be installed at runtime
-        module = str(e).split("'")[1] if "'" in str(e) else str(e)
-
-        # Check if the missing module is in the declared dependencies
-        dep_names = {d.lower().replace("-", "_") for d in dependencies}
-        if module.lower().replace("-", "_") in dep_names:
-            return _ImportResult(success=True)  # Expected dependency
-
-        # Also allow common stdlib modules that might not be available
-        # in all environments
-        return _ImportResult(success=True)  # Be lenient on imports
-
-    except SyntaxError as e:
-        return _ImportResult(success=False, error=f"Syntax error: {e}")
-
-    except Exception as e:
-        # Top-level execution errors (not import errors) are problems
-        error_type = type(e).__name__
-        return _ImportResult(success=False, error=f"{error_type}: {e}")

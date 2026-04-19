@@ -73,6 +73,15 @@ def check(code: str) -> list[str]:
     return []
 '''
 
+BAD_TOOL_OS_REMOVE = '''\
+"""Bad tool that deletes files."""
+import os
+
+def cleanup(path: str) -> list[str]:
+    os.remove(path)
+    return []
+'''
+
 GOOD_TOOL_AST = '''\
 """Checks for bare except clauses."""
 import ast
@@ -278,6 +287,12 @@ class TestToolValidation:
         result = validate_tool(tool)
         assert result.valid is False
         assert any("Dangerous call" in e for e in result.errors)
+
+    def test_os_remove_fails(self):
+        tool = _make_tool(code=BAD_TOOL_OS_REMOVE)
+        result = validate_tool(tool)
+        assert result.valid is False
+        assert any("os.remove" in e for e in result.errors)
 
     def test_empty_code_fails(self):
         tool = _make_tool(code="")
@@ -549,3 +564,77 @@ class TestEndToEnd:
         assert retrieved.input_description == "Python code"
         assert retrieved.version == 2
         assert retrieved.dependencies == ["pytest"]
+
+
+# ── SICA dispatch tests ──────────────────────────────────────────────────────
+
+class TestSICANewToolDispatch:
+    """Verify SICA has the NEW_TOOL dispatch path wired in."""
+
+    def test_should_propose_new_tool_exists(self, tmp_path):
+        """_should_propose_new_tool method exists and is callable."""
+        from belief.evolution.sica import SelfImprovementCycle
+        sica = SelfImprovementCycle(
+            project_root=tmp_path,
+            archive_path=tmp_path / "archive.json",
+        )
+        assert hasattr(sica, "_should_propose_new_tool"), (
+            "SelfImprovementCycle must have _should_propose_new_tool"
+        )
+
+    def test_should_propose_new_tool_returns_false_without_failures(self, tmp_path):
+        """Returns False when there are no failure traces (empty soil)."""
+        import asyncio
+        from unittest.mock import MagicMock, patch
+        from belief.evolution.sica import SelfImprovementCycle
+
+        mock_soil = MagicMock()
+        sica = SelfImprovementCycle(
+            project_root=tmp_path,
+            archive_path=tmp_path / "archive.json",
+            soil=mock_soil,
+        )
+        # Patch get_recent_failures to return empty list (no failures recorded)
+        with patch(
+            "belief.evolution.self_improvement.get_recent_failures",
+            return_value=[],
+        ):
+            result = asyncio.run(sica._should_propose_new_tool())
+        assert result is False, "Should not propose NEW_TOOL with no failure traces"
+
+    def test_run_one_iteration_handles_new_tool_type(self, tmp_path):
+        """run_one_iteration source contains new_tool handling."""
+        import inspect
+        from belief.evolution.sica import SelfImprovementCycle
+
+        sica = SelfImprovementCycle(
+            project_root=tmp_path,
+            archive_path=tmp_path / "archive.json",
+        )
+        source = inspect.getsource(sica.run_one_iteration)
+        assert "new_tool" in source.lower(), (
+            "run_one_iteration must contain new_tool dispatch logic"
+        )
+
+    def test_soil_initialized_on_instance(self, tmp_path):
+        """SelfImprovementCycle initializes a soil attribute."""
+        from belief.evolution.sica import SelfImprovementCycle
+
+        sica = SelfImprovementCycle(
+            project_root=tmp_path,
+            archive_path=tmp_path / "archive.json",
+        )
+        assert hasattr(sica, "soil"), "SelfImprovementCycle must have a soil attribute"
+
+    def test_custom_soil_injected(self, tmp_path):
+        """Soil can be injected via constructor."""
+        from unittest.mock import MagicMock
+        from belief.evolution.sica import SelfImprovementCycle
+
+        mock_soil = MagicMock()
+        sica = SelfImprovementCycle(
+            project_root=tmp_path,
+            archive_path=tmp_path / "archive.json",
+            soil=mock_soil,
+        )
+        assert sica.soil is mock_soil

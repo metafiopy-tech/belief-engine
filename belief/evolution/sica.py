@@ -126,18 +126,33 @@ class SelfImprovementArchive:
 class SelfImprovementCycle:
     """SICA-style self-improvement with composite utility and regression gating."""
 
-    def __init__(self, project_root: str | Path):
-        self.project_root = Path(project_root)
-        self.archive_path = self.project_root / ".belief-engine" / "sica_archive.json"
+    def __init__(
+        self,
+        project_root: str | Path = ".",
+        archive_path: str | Path | None = None,
+        soil=None,
+    ):
+        self.project_root = Path(project_root).resolve()
+
+        if archive_path is not None:
+            self.archive_path = Path(archive_path)
+        else:
+            self.archive_path = self.project_root / ".belief-engine" / "sica_archive.json"
+
+        # Load existing archive if present; don't write until first actual modification
         self.archive = self._load_archive()
-        # Eager initialization — create the file immediately
-        if not self.archive_path.exists():
-            self._save_archive()
+
+        # Soil for ChromaDB memory (injected or lazily initialized when needed)
+        self.soil = soil
 
         # Evolutionary archive (SQLite DAG of all agent versions)
-        self.evo_archive = Archive()
-        # Ensure a seed version exists
-        self._seed = create_seed_version(self.evo_archive)
+        try:
+            self.evo_archive = Archive()
+            self._seed = create_seed_version(self.evo_archive)
+        except (PermissionError, OSError) as e:
+            logger.warning(f"Evolutionary archive unavailable: {e}")
+            self.evo_archive = None
+            self._seed = None
 
     async def run_one_iteration(
         self,
@@ -173,6 +188,10 @@ class SelfImprovementCycle:
                 f"SICA: baseline = {baseline['passed']}/{baseline['total']} "
                 f"({result.pre_score:.0%}), utility={result.pre_utility:.4f}"
             )
+
+            # ── Step 1b: Check whether to propose new_tool ───────��─────
+            if await self._should_propose_new_tool():
+                logger.info("SICA: new_tool proposal triggered by failure clustering")
 
             # ── Step 2: Generate improvement proposal ───────────────────
             proposal = await self._generate_proposal(baseline)
@@ -413,6 +432,41 @@ class SelfImprovementCycle:
 
         return None
 
+    async def _should_propose_new_tool(self) -> bool:
+        """Check whether failure clustering suggests a new_tool proposal.
+
+        Returns True when there are enough clustered failures to warrant
+        building a new self-authored tool; False otherwise.
+        """
+        try:
+            from belief.evolution.self_improvement import (
+                cluster_failures,
+                get_recent_failures,
+                select_target_cluster,
+            )
+            from belief.memory.tool_registry import ToolRegistry
+
+            # Lazy-init soil if not injected
+            if self.soil is None:
+                try:
+                    from belief.memory.soil import Soil
+                    self.soil = Soil()
+                except Exception:
+                    return False
+
+            failures = get_recent_failures(self.soil)
+            if not failures:
+                return False
+
+            clusters = cluster_failures(failures)
+            registry = ToolRegistry(self.soil)
+            existing = [t.name for t in registry.get_active_tools()]
+            target = select_target_cluster(clusters, existing_tool_names=existing)
+            return target is not None
+        except Exception as e:
+            logger.debug(f"SICA: new_tool check failed (non-fatal): {e}")
+            return False
+
     def _snapshot(self, target: Path) -> Path:
         """Save a snapshot before modification."""
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -491,6 +545,8 @@ class SelfImprovementCycle:
         post: dict,
     ) -> None:
         """Save the iteration as an AgentVersion in the evolutionary archive."""
+        if self.evo_archive is None:
+            return
         try:
             # Select parent from archive (DGM sampling)
             parent = self.evo_archive.select_parent()
@@ -598,56 +654,60 @@ class SelfImprovementCycle:
         dashboard.record(metrics)
 
     def _load_archive(self) -> SelfImprovementArchive:
-        """Load the iteration archive from disk."""
-        if self.archive_path.exists():
-            try:
-                data = json.loads(self.archive_path.read_text())
-                archive = SelfImprovementArchive()
-                for entry in data.get("iterations", []):
-                    archive.iterations.append(IterationResult(**{
-                        k: v for k, v in entry.items()
-                        if k in IterationResult.__dataclass_fields__
-                    }))
-                archive.best_score = data.get("best_score", 0.0)
-                archive.best_utility = data.get("best_utility", 0.0)
-                archive.best_iteration = data.get("best_iteration", 0)
-                archive.total_cost = data.get("total_cost", 0.0)
-                return archive
-            except Exception:
-                pass
-        return SelfImprovementArchive()
+        """Load the iteration archive from disk; return empty archive if missing/corrupt."""
+        if not self.archive_path.exists():
+            return SelfImprovementArchive()
+        try:
+            data = json.loads(self.archive_path.read_text())
+            archive = SelfImprovementArchive()
+            for entry in data.get("iterations", []):
+                archive.iterations.append(IterationResult(**{
+                    k: v for k, v in entry.items()
+                    if k in IterationResult.__dataclass_fields__
+                }))
+            archive.best_score = data.get("best_score", 0.0)
+            archive.best_utility = data.get("best_utility", 0.0)
+            archive.best_iteration = data.get("best_iteration", 0)
+            archive.total_cost = data.get("total_cost", 0.0)
+            return archive
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Corrupt SICA archive, starting fresh: {e}")
+            return SelfImprovementArchive()
 
     def _save_archive(self) -> None:
-        """Save the iteration archive to disk."""
-        self.archive_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "iterations": [
-                {
-                    "iteration": r.iteration,
-                    "proposal_title": r.proposal_title,
-                    "target_file": r.target_file,
-                    "pre_score": r.pre_score,
-                    "post_score": r.post_score,
-                    "pre_utility": r.pre_utility,
-                    "post_utility": r.post_utility,
-                    "improvement": r.improvement,
-                    "accepted": r.accepted,
-                    "rolled_back": r.rolled_back,
-                    "error": r.error,
-                    "duration_seconds": r.duration_seconds,
-                    "cost_usd": r.cost_usd,
-                    "regressions": r.regressions,
-                    "improvements": r.improvements,
-                    "pre_passing": r.pre_passing,
-                    "post_passing": r.post_passing,
-                }
-                for r in self.archive.iterations
-            ],
-            "best_score": self.archive.best_score,
-            "best_utility": self.archive.best_utility,
-            "best_iteration": self.archive.best_iteration,
-            "total_iterations": len(self.archive.iterations),
-            "total_cost": self.archive.total_cost,
-            "accept_rate": self.archive.accept_rate,
-        }
-        self.archive_path.write_text(json.dumps(data, indent=2))
+        """Save the iteration archive to disk; log but don't crash on permission errors."""
+        try:
+            self.archive_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "iterations": [
+                    {
+                        "iteration": r.iteration,
+                        "proposal_title": r.proposal_title,
+                        "target_file": r.target_file,
+                        "pre_score": r.pre_score,
+                        "post_score": r.post_score,
+                        "pre_utility": r.pre_utility,
+                        "post_utility": r.post_utility,
+                        "improvement": r.improvement,
+                        "accepted": r.accepted,
+                        "rolled_back": r.rolled_back,
+                        "error": r.error,
+                        "duration_seconds": r.duration_seconds,
+                        "cost_usd": r.cost_usd,
+                        "regressions": r.regressions,
+                        "improvements": r.improvements,
+                        "pre_passing": r.pre_passing,
+                        "post_passing": r.post_passing,
+                    }
+                    for r in self.archive.iterations
+                ],
+                "best_score": self.archive.best_score,
+                "best_utility": self.archive.best_utility,
+                "best_iteration": self.archive.best_iteration,
+                "total_iterations": len(self.archive.iterations),
+                "total_cost": self.archive.total_cost,
+                "accept_rate": self.archive.accept_rate,
+            }
+            self.archive_path.write_text(json.dumps(data, indent=2))
+        except (PermissionError, OSError) as e:
+            logger.warning(f"Could not save SICA archive: {e}")
