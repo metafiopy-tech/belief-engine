@@ -121,6 +121,44 @@ def enforce_all(
     return fixed, result
 
 
+def enforce_with_registry(
+    code_files: dict[str, str],
+    auto_fix: bool = True,
+    soil=None,
+) -> tuple[dict[str, str], EnforcementResult]:
+    """Run all covenants (static + dynamic) via the CovenantRegistry.
+
+    This extends enforce_all() by also firing dynamically discovered
+    covenants from the belief_covenants ChromaDB collection.
+
+    Falls back to enforce_all() if soil is not available.
+    """
+    # Always run the static enforcers first
+    fixed, result = enforce_all(code_files, auto_fix=auto_fix)
+
+    # Fire dynamic covenants via registry if soil is available
+    if soil is not None:
+        try:
+            from belief.validators.covenant_registry import CovenantRegistry
+            registry = CovenantRegistry(soil)
+            dynamic_results = registry.fire_all(fixed)
+
+            for dr in dynamic_results:
+                if dr.source == "dynamic" and not dr.passed:
+                    for v in dr.violations:
+                        result.violations.append(Violation(
+                            covenant=dr.name,
+                            file=v.get("file", ""),
+                            line=v.get("line", 0),
+                            message=v.get("message", ""),
+                            severity=v.get("severity", "warning"),
+                        ))
+        except Exception as e:
+            logger.debug(f"Dynamic covenant check skipped: {e}")
+
+    return fixed, result
+
+
 # ── Enforcer: No __future__ annotations with SQLAlchemy ──────────────────────
 
 def _enforce_no_future_with_sqlalchemy(

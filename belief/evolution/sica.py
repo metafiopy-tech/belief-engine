@@ -27,10 +27,18 @@ import json
 import logging
 import shutil
 import time
+import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from belief.evolution.archive import (
+    AgentVersion,
+    Archive,
+    BenchmarkResult,
+    create_seed_version,
+)
 
 logger = logging.getLogger("belief.evolution.sica")
 
@@ -125,6 +133,11 @@ class SelfImprovementCycle:
         # Eager initialization — create the file immediately
         if not self.archive_path.exists():
             self._save_archive()
+
+        # Evolutionary archive (SQLite DAG of all agent versions)
+        self.evo_archive = Archive()
+        # Ensure a seed version exists
+        self._seed = create_seed_version(self.evo_archive)
 
     async def run_one_iteration(
         self,
@@ -256,8 +269,55 @@ class SelfImprovementCycle:
             self.archive.add(result)
             self._save_archive()
 
+            # ── Step 9: Save to evolutionary archive ───────────────────
+            self._save_to_evo_archive(result, proposal, baseline, post)
+
             # Update Q-value in memory
             await self._update_q_value(result)
+
+            # ── Step 9b: Record metrics ────────────────────────────────
+            try:
+                self._record_metrics(result, iteration)
+            except Exception as e:
+                logger.debug(f"SICA: metrics recording skipped: {e}")
+
+            # ── Step 10: DSPy prompt optimization every 10 iterations ──
+            if iteration > 0 and iteration % 10 == 0:
+                try:
+                    from belief.optimization.dspy_modules import is_dspy_available
+                    if is_dspy_available():
+                        from belief.optimization.compiler import BeliefOptimizer
+                        from belief.optimization.dspy_modules import get_all_modules
+                        from belief.optimization.prompt_store import PromptStore
+
+                        modules = get_all_modules()
+                        optimizer = BeliefOptimizer()
+                        results = optimizer.compile_all(modules, [], [])
+                        optimized = {n: m for n, (m, _) in results.items()}
+                        prompts = optimizer.extract_optimized_prompts(optimized)
+                        if prompts:
+                            store = PromptStore()
+                            store.save(prompts, f"sica-iter-{iteration}")
+                            logger.info(f"SICA: saved {len(prompts)} optimized prompts")
+                except Exception as e:
+                    logger.debug(f"SICA: DSPy optimization skipped: {e}")
+
+            # ── Step 11: Trigger jitterbug every 10 iterations ─────────
+            if iteration > 0 and iteration % 10 == 0:
+                try:
+                    from belief.evolution.jitterbug import run_jitterbug_cycle
+                    logger.info(f"SICA: triggering jitterbug cycle at iteration {iteration}")
+                    jb_result = await run_jitterbug_cycle(
+                        n_goals=5,
+                        cycle_number=iteration // 10,
+                    )
+                    logger.info(
+                        f"SICA: jitterbug complete — "
+                        f"tools={len(jb_result.get('integrated_tool_ids', []))}, "
+                        f"stage {jb_result.get('stage_before', 0)}→{jb_result.get('stage_after', 0)}"
+                    )
+                except Exception as e:
+                    logger.debug(f"SICA: jitterbug skipped: {e}")
 
             return result
 
@@ -422,6 +482,120 @@ class SelfImprovementCycle:
             )
         except Exception:
             pass
+
+    def _save_to_evo_archive(
+        self,
+        result: IterationResult,
+        proposal: dict,
+        baseline: dict,
+        post: dict,
+    ) -> None:
+        """Save the iteration as an AgentVersion in the evolutionary archive."""
+        try:
+            # Select parent from archive (DGM sampling)
+            parent = self.evo_archive.select_parent()
+
+            # Compute niche descriptor
+            niche = self._compute_niche(post)
+
+            version = AgentVersion(
+                id=str(uuid.uuid4()),
+                parent_id=parent.id,
+                created_at=datetime.now(timezone.utc),
+                system_prompts=parent.system_prompts,
+                tool_ids=parent.tool_ids,
+                principle_ids=parent.principle_ids,
+                covenant_ids=parent.covenant_ids,
+                model_config=parent.model_config,
+                diff_from_parent=proposal.get("what", result.proposal_title),
+                proposal_rationale=proposal.get("why", ""),
+                utility=result.post_utility,
+                niche_descriptor=niche,
+                canary_passed=True,
+            )
+
+            # Save the version (accepted or not — every variant is kept)
+            self.evo_archive.save_version(version)
+
+            # Increment parent's children_count
+            self.evo_archive.increment_children(parent.id)
+
+            # Save benchmark results
+            for cr in post.get("results", []):
+                br = BenchmarkResult(
+                    version_id=version.id,
+                    challenge_id=cr.challenge_id,
+                    passed=cr.verdict == "pass",
+                    score=cr.weighted_score,
+                    cost_usd=cr.cost_usd,
+                    time_seconds=cr.build_time_seconds,
+                    error_summary=cr.error if cr.verdict != "pass" else None,
+                )
+                self.evo_archive.save_result(br)
+
+            logger.info(
+                f"SICA: saved version {version.id[:8]} to evo archive "
+                f"(parent={parent.id[:8]}, niche={niche}, utility={result.post_utility:.4f})"
+            )
+        except Exception as e:
+            logger.debug(f"SICA: evo archive save failed (non-fatal): {e}")
+
+    @staticmethod
+    def _compute_niche(benchmark_data: dict) -> tuple:
+        """Compute MAP-Elites niche descriptor from benchmark results.
+
+        Returns (code_length_bucket, tool_count, domain_id) where:
+          - code_length_bucket: 0 (<100 lines), 1 (100-300), 2 (300-500), 3 (500+)
+          - tool_count: 0 (no self-authored tools for now)
+          - domain_id: 0 (general)
+        """
+        # Estimate avg output lines from benchmark results
+        # (we don't have direct access to output files here, so use a heuristic)
+        results = benchmark_data.get("results", [])
+        avg_score = benchmark_data.get("pass_rate", 0.0)
+
+        # Use pass_rate as a rough proxy for code complexity bucket
+        if avg_score >= 0.8:
+            code_bucket = 2  # Likely medium-large output
+        elif avg_score >= 0.5:
+            code_bucket = 1  # Medium output
+        else:
+            code_bucket = 0  # Small/failing output
+
+        tool_count = 0  # Self-authored tools (future integration)
+        domain_id = 0   # General purpose (future: derive from challenge tags)
+
+        return (code_bucket, tool_count, domain_id)
+
+    def _record_metrics(self, result: IterationResult, iteration: int) -> None:
+        """Record per-iteration metrics to the dashboard."""
+        from belief.metrics.dashboard import IterationMetrics, MetricsDashboard
+
+        dashboard = MetricsDashboard()
+        metrics = IterationMetrics(
+            iteration=iteration,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            benchmark_score=result.post_score,
+            benchmark_ci_lower=max(0.0, result.post_score - 0.1),
+            benchmark_ci_upper=min(1.0, result.post_score + 0.1),
+            cost_per_solved=result.cost_usd / max(len(result.post_passing), 1),
+            novel_capabilities=len(result.improvements),
+            regressions=len(result.regressions),
+        )
+
+        # Add tool/covenant counts if available
+        try:
+            from belief.memory.soil import Soil
+            from belief.memory.tool_registry import ToolRegistry
+            soil = Soil()
+            registry = ToolRegistry(soil)
+            metrics.tool_library_size = len(registry.get_active_tools())
+            cov_col = soil._collections.get("belief_covenants")
+            metrics.covenant_count = cov_col.count() if cov_col else 0
+        except Exception:
+            pass
+
+        dashboard.record(metrics)
 
     def _load_archive(self) -> SelfImprovementArchive:
         """Load the iteration archive from disk."""

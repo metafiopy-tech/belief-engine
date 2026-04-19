@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "belief-engine"
-version = "2.6.0"
+version = "3.0.0"
 description = "Autonomous AI build system. Describe what you want. Belief builds it, tests it, deploys it, and learns."
 readme = "README.md"
 license = {text = "MIT"}
@@ -59,6 +59,9 @@ multiservice = [
     "python-on-whales>=0.70.0",
     "schemathesis>=3.0.0",
     "pyyaml>=6.0.0",
+]
+optimize = [
+    "dspy>=2.6.0",
 ]
 brownfield = [
     "networkx>=3.0",

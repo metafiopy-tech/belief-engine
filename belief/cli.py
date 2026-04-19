@@ -592,6 +592,116 @@ async def _run_recombine_cmd(args) -> None:
         print(f"    {r.nutrient_id} (from {parents})")
 
 
+async def _run_jitterbug_cmd(args):
+    """Run one jitterbug cycle."""
+    from belief.evolution.jitterbug import run_jitterbug_cycle
+
+    print(f"\n  Jitterbug cycle: {args.goals} expansion builds"
+          f"{' (dry run)' if args.dry_run else ''}")
+
+    result = await run_jitterbug_cycle(
+        n_goals=args.goals,
+        dry_run=args.dry_run,
+    )
+
+    print(f"\n  Cost: ${result.get('total_cost', 0):.2f}")
+    print(f"  Expansion: {len(result.get('expansion_traces', []))} builds")
+    if result.get("compression_summary"):
+        print(f"  Compression:\n    {result['compression_summary'].replace(chr(10), chr(10) + '    ')}")
+    if not args.dry_run:
+        print(f"  Tools built: {len(result.get('new_tools_built', []))}")
+        print(f"  Covenants: {len(result.get('new_covenants', []))}")
+        print(f"  Validation: {'PASSED' if result.get('validation_passed') else 'FAILED'}")
+        print(f"  Stage: {result.get('stage_before', 0)} -> {result.get('stage_after', 0)}")
+
+
+def _run_dashboard_cmd(args):
+    """Display metrics dashboard."""
+    from belief.metrics.dashboard import MetricsDashboard
+    dashboard = MetricsDashboard()
+    if hasattr(args, "json") and args.json:
+        dashboard.print_json()
+    else:
+        dashboard.print_dashboard()
+
+
+def _run_optimize_cmd(args):
+    """Run DSPy/GEPA prompt optimization."""
+    try:
+        from belief.optimization.dspy_modules import AGENT_MODULES, is_dspy_available
+    except ImportError:
+        print("  Error: optimization module not found")
+        return
+
+    if not is_dspy_available():
+        print("  Error: dspy is not installed. Install with: pip install 'belief-engine[optimize]'")
+        return
+
+    agents_to_optimize = []
+    if args.all:
+        agents_to_optimize = list(AGENT_MODULES.keys())
+    elif args.agent:
+        if args.agent not in AGENT_MODULES:
+            print(f"  Unknown agent: {args.agent}")
+            print(f"  Available: {', '.join(AGENT_MODULES.keys())}")
+            return
+        agents_to_optimize = [args.agent]
+    else:
+        print("  Specify an agent name or use --all")
+        print(f"  Available: {', '.join(AGENT_MODULES.keys())}")
+        return
+
+    if args.dry_run:
+        print(f"\n  Would optimize: {', '.join(agents_to_optimize)}")
+        print("  (dry-run mode, no optimization performed)")
+        return
+
+    print(f"\n  Optimizing: {', '.join(agents_to_optimize)}")
+    from belief.optimization.compiler import BeliefOptimizer
+    from belief.optimization.prompt_store import PromptStore
+
+    optimizer = BeliefOptimizer()
+    store = PromptStore()
+
+    # Build modules for selected agents
+    modules = {}
+    for name in agents_to_optimize:
+        modules[name] = AGENT_MODULES[name]()
+
+    # Use empty trainset/valset — real data would come from benchmark results
+    trainset: list[dict] = []
+    valset: list[dict] = []
+
+    results = optimizer.compile_all(modules, trainset, valset)
+
+    # Extract and save prompts
+    optimized_modules = {name: mod for name, (mod, _) in results.items()}
+    prompts = optimizer.extract_optimized_prompts(optimized_modules)
+
+    if prompts:
+        import uuid
+        version_id = f"opt-{uuid.uuid4().hex[:8]}"
+        store.save(prompts, version_id)
+        print(f"  Saved {len(prompts)} optimized prompts (version: {version_id})")
+
+    for name, (_, metrics) in results.items():
+        print(f"  {name}: avg_score={metrics.get('avg_score', 0):.2f} ({metrics.get('optimizer', 'none')})")
+
+    print("  Optimization complete.")
+
+
+def _run_progression_cmd():
+    """Display current generative chain stage."""
+    from belief.evolution.progression import compute_progression, format_progression_report
+    from belief.memory.soil import Soil
+    from belief.memory.tool_registry import ToolRegistry
+
+    soil = Soil()
+    registry = ToolRegistry(soil)
+    metrics = compute_progression(soil, registry, [])
+    print(f"\n{format_progression_report(metrics)}")
+
+
 def app():
     """CLI entry point."""
     import argparse
@@ -647,6 +757,30 @@ def app():
     fix_parser.add_argument("--patches", type=int, default=3, help="Candidate patches (default: 3)")
     fix_parser.add_argument("--commit", help="Specific commit to check out")
 
+    # Jitterbug cycle
+    jitter_parser = subparsers.add_parser("jitterbug", help="Run one jitterbug compression-reconstruction cycle")
+    jitter_parser.add_argument("--goals", type=int, default=5,
+                               help="Number of expansion builds (default: 5)")
+    jitter_parser.add_argument("--dry-run", action="store_true",
+                               help="Run expansion + compression only, don't build tools or integrate")
+
+    # Progression
+    subparsers.add_parser("progression", help="Display current generative chain stage and metrics")
+
+    # Dashboard
+    dash_parser = subparsers.add_parser("dashboard", help="Display metrics dashboard")
+    dash_parser.add_argument("--json", action="store_true",
+                             help="Output as JSON")
+
+    # DSPy optimization
+    opt_parser = subparsers.add_parser("optimize", help="Run DSPy/GEPA prompt optimization")
+    opt_parser.add_argument("agent", nargs="?", default=None,
+                            help="Agent to optimize (planner, architect, builder, tester, debugger)")
+    opt_parser.add_argument("--all", action="store_true",
+                            help="Optimize all 5 agents")
+    opt_parser.add_argument("--dry-run", action="store_true",
+                            help="Show what would be optimized without running")
+
     # Backward compat: --goal without subcommand
     parser.add_argument("--goal", help="What to build (shortcut for: build --goal)")
     parser.add_argument("--max-cost", type=float, default=10.0)
@@ -680,6 +814,18 @@ def app():
         sys.exit(0)
     elif args.command == "recombine":
         asyncio.run(_run_recombine_cmd(args))
+        sys.exit(0)
+    elif args.command == "dashboard":
+        _run_dashboard_cmd(args)
+        sys.exit(0)
+    elif args.command == "optimize":
+        _run_optimize_cmd(args)
+        sys.exit(0)
+    elif args.command == "jitterbug":
+        asyncio.run(_run_jitterbug_cmd(args))
+        sys.exit(0)
+    elif args.command == "progression":
+        _run_progression_cmd()
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)

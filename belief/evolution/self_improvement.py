@@ -24,8 +24,12 @@ import ast
 import copy
 import json
 import logging
+import re
 import shutil
+import uuid
+from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -292,6 +296,14 @@ class Mentor:
                 risk_assessment="low",
             )
 
+        if proposal.improvement_type == ImprovementType.NEW_TOOL:
+            return MentorVerdict(
+                approved=True,
+                reasoning="New tool proposals are validated separately by tool_validator",
+                conditions=["Must pass tool validation", "Must catch >= 30% of target failures"],
+                risk_assessment="low",
+            )
+
         # Default: approve with caution
         return MentorVerdict(
             approved=True,
@@ -465,3 +477,381 @@ def run_improvement_loop(
 
     result = patcher.apply(proposal, verdict, validate_fn=validate_fn)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Autocatalytic NEW_TOOL support
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FailureCluster:
+    """A cluster of similar failures identified from build traces."""
+
+    error_type: str                             # Normalized error category
+    count: int                                  # How many failures
+    example_errors: list[str] = field(default_factory=list)
+    failure_traces: list[dict] = field(default_factory=list)
+    suggested_tool_name: str = ""               # e.g. "fastapi_route_validator"
+    suggested_tool_description: str = ""
+    input_description: str = ""
+    output_description: str = ""
+    addressed_by_existing_tool: bool = False
+
+
+def get_recent_failures(soil, n: int = 20) -> list[dict]:
+    """Query the failures collection for recent failure traces."""
+    failures_col = soil._collections.get("belief_failures")
+    if failures_col is None or failures_col.count() == 0:
+        return []
+
+    count = min(n, failures_col.count())
+    results = failures_col.get(
+        include=["documents", "metadatas"],
+        limit=count,
+    )
+
+    traces: list[dict] = []
+    for i, doc_id in enumerate(results["ids"]):
+        meta = results["metadatas"][i] or {}
+        trace = dict(meta)
+        trace["trace_id"] = doc_id
+        trace["description"] = results["documents"][i] or ""
+        traces.append(trace)
+
+    return traces
+
+
+def cluster_failures(failures: list[dict]) -> list[FailureCluster]:
+    """Group failures by normalized error type.
+
+    Normalizes error messages by stripping specifics (file names,
+    line numbers, variable names) and grouping by pattern.
+    """
+    if not failures:
+        return []
+
+    # Normalize error content
+    error_groups: dict[str, list[dict]] = {}
+    for f in failures:
+        content = f.get("content", f.get("description", ""))
+        error_type = _normalize_error(content)
+        if error_type not in error_groups:
+            error_groups[error_type] = []
+        error_groups[error_type].append(f)
+
+    clusters: list[FailureCluster] = []
+    for error_type, traces in error_groups.items():
+        # Generate suggested tool metadata
+        tool_name = _suggest_tool_name(error_type)
+        tool_desc = _suggest_tool_description(error_type, traces)
+
+        clusters.append(FailureCluster(
+            error_type=error_type,
+            count=len(traces),
+            example_errors=[
+                t.get("content", t.get("description", ""))[:200]
+                for t in traces[:5]
+            ],
+            failure_traces=traces,
+            suggested_tool_name=tool_name,
+            suggested_tool_description=tool_desc,
+            input_description="Python source code as a string",
+            output_description="List of validation error strings",
+        ))
+
+    # Sort by count descending
+    clusters.sort(key=lambda c: c.count, reverse=True)
+    return clusters
+
+
+def select_target_cluster(
+    clusters: list[FailureCluster],
+    existing_tool_names: list[str],
+) -> Optional[FailureCluster]:
+    """Pick the most impactful cluster not already addressed by a tool."""
+    for cluster in clusters:
+        # Check if this cluster is addressed by an existing tool
+        if cluster.suggested_tool_name in existing_tool_names:
+            cluster.addressed_by_existing_tool = True
+            continue
+        if cluster.count >= 3:  # Minimum cluster size
+            return cluster
+    return None
+
+
+def formulate_tool_goal(cluster: FailureCluster) -> str:
+    """Generate a clear goal string for the engine to build a tool.
+
+    The goal should be specific enough for the engine's pipeline to
+    produce a self-contained Python module.
+    """
+    examples = "\n".join(f"  - {e}" for e in cluster.example_errors[:3])
+
+    return (
+        f"Build a Python module with a single function "
+        f"`{cluster.suggested_tool_name}(code: str) -> list[str]` "
+        f"that takes Python source code as input and returns a list of "
+        f"validation error strings.\n\n"
+        f"The function should detect and report: {cluster.suggested_tool_description}\n\n"
+        f"Examples of errors it should catch:\n{examples}\n\n"
+        f"Requirements:\n"
+        f"- Self-contained module (no external dependencies)\n"
+        f"- Use the `ast` module for code analysis where possible\n"
+        f"- Return an empty list if no errors are found\n"
+        f"- Include a module-level docstring\n"
+        f"- Include type hints on the function signature"
+    )
+
+
+def evaluate_tool_against_failures(
+    tool_code: str,
+    failure_traces: list[dict],
+) -> float:
+    """Execute the tool against historical failure code.
+
+    Returns the catch rate (fraction of failures where the tool
+    found at least one error).
+    """
+    if not failure_traces:
+        return 0.0
+
+    # Find the check function in the tool code
+    namespace: dict = {}
+    try:
+        exec(compile(tool_code, "<tool_test>", "exec"), namespace)  # noqa: S102
+    except Exception:
+        return 0.0
+
+    check_fn = None
+    for key, val in namespace.items():
+        if callable(val) and not key.startswith("_"):
+            check_fn = val
+            break
+
+    if check_fn is None:
+        return 0.0
+
+    caught = 0
+    tested = 0
+    for trace in failure_traces:
+        code = trace.get("code_sample", trace.get("content", ""))
+        if not code or len(code) < 10:
+            continue
+        tested += 1
+        try:
+            errors = check_fn(code)
+            if errors:
+                caught += 1
+        except Exception:
+            pass
+
+    return caught / max(tested, 1)
+
+
+async def execute_new_tool_proposal(
+    soil,
+    proposal_title: str = "",
+) -> PatchResult:
+    """The engine builds a tool for itself using its own pipeline.
+
+    This is the autocatalytic core: the engine uses graph.ainvoke()
+    to build a Python module that validates, extracts, or transforms
+    code — then validates and registers the result.
+
+    Args:
+        soil:           Soil instance for accessing failure traces and tool registry.
+        proposal_title: Optional title for logging.
+
+    Returns:
+        PatchResult with success=True and tool_id if the tool was registered.
+    """
+    from belief.evolution.tool_validator import validate_tool
+    from belief.memory.tool_registry import SelfAuthoredTool, ToolRegistry
+
+    # 1. Get recent failures and cluster them
+    failures = get_recent_failures(soil, n=20)
+    if not failures:
+        return PatchResult(
+            success=False,
+            file_path="",
+            error="No failure traces to analyze",
+        )
+
+    clusters = cluster_failures(failures)
+    if not clusters:
+        return PatchResult(
+            success=False,
+            file_path="",
+            error="No failure clusters identified",
+        )
+
+    # Check existing tools
+    registry = ToolRegistry(soil)
+    existing_names = [t.name for t in registry.get_active_tools()]
+
+    target = select_target_cluster(clusters, existing_names)
+    if target is None:
+        return PatchResult(
+            success=False,
+            file_path="",
+            error="All failure clusters already addressed by existing tools",
+        )
+
+    # 2. Formulate a build goal
+    tool_goal = formulate_tool_goal(target)
+
+    # 3. Run the engine's own pipeline to build the tool
+    try:
+        from belief.graph import build_graph
+        graph = build_graph()
+        result = await graph.ainvoke({
+            "user_goal": tool_goal,
+            "max_iterations": 2,
+            "max_cost_usd": 2.0,
+        })
+    except Exception as e:
+        return PatchResult(
+            success=False,
+            file_path="",
+            error=f"Engine pipeline failed: {e}",
+        )
+
+    # 4. Extract generated code
+    code_files = result.get("code_files", {})
+    if not code_files:
+        return PatchResult(
+            success=False,
+            file_path="",
+            error="Engine produced no code files",
+        )
+
+    # Get the main Python file's code
+    main_code = ""
+    for fname, content in code_files.items():
+        if fname.endswith(".py") and "test" not in fname.lower():
+            main_code = content
+            break
+    if not main_code:
+        main_code = list(code_files.values())[0]
+
+    # 5. Create a SelfAuthoredTool
+    tool = SelfAuthoredTool(
+        id=str(uuid.uuid4()),
+        name=target.suggested_tool_name,
+        description=target.suggested_tool_description,
+        code=main_code,
+        input_description=target.input_description,
+        output_description=target.output_description,
+        dependencies=[],
+        created_by="sica",
+    )
+
+    # 6. Validate
+    validation = validate_tool(tool)
+    if not validation.valid:
+        return PatchResult(
+            success=False,
+            file_path=f"tools/{tool.name}.py",
+            error=f"Tool validation failed: {'; '.join(validation.errors)}",
+        )
+
+    # 7. Test against historical failures
+    catch_rate = evaluate_tool_against_failures(main_code, target.failure_traces)
+    if catch_rate < 0.3:
+        return PatchResult(
+            success=False,
+            file_path=f"tools/{tool.name}.py",
+            error=f"Tool only catches {catch_rate:.0%} of target failures (need >= 30%)",
+        )
+
+    # 8. Register in tool registry
+    tool_id = registry.register_tool(tool)
+
+    logger.info(
+        f"NEW_TOOL: registered {tool.name} (id={tool_id}, "
+        f"catch_rate={catch_rate:.0%}, cluster_size={target.count})"
+    )
+
+    return PatchResult(
+        success=True,
+        file_path=f"tools/{tool.name}.py",
+        backup_path=tool_id,  # Store tool_id in backup_path for caller
+    )
+
+
+# ── Internal helpers ────────────────────────────────────────────────────────
+
+
+def _normalize_error(error_text: str) -> str:
+    """Normalize an error message to a category key."""
+    if not error_text:
+        return "unknown"
+
+    text = error_text.lower()
+
+    # Common error categories
+    if "import" in text and ("not found" in text or "no module" in text or "cannot import" in text):
+        return "missing_import"
+    if "syntax" in text:
+        return "syntax_error"
+    if "type" in text and "error" in text:
+        return "type_error"
+    if "indentation" in text:
+        return "indentation_error"
+    if "attribute" in text and "error" in text:
+        return "attribute_error"
+    if "name" in text and "not defined" in text:
+        return "name_error"
+    if "test" in text and ("fail" in text or "error" in text):
+        return "test_failure"
+    if "timeout" in text or "timed out" in text:
+        return "timeout"
+    if "docker" in text:
+        return "docker_error"
+    if "fastapi" in text or "route" in text or "endpoint" in text:
+        return "api_routing"
+    if "database" in text or "sqlalchemy" in text:
+        return "database_error"
+
+    # Strip specifics and use first meaningful word
+    words = re.sub(r'[^a-z_\s]', '', text).split()
+    if len(words) >= 2:
+        return f"{words[0]}_{words[1]}"
+    return "unknown"
+
+
+def _suggest_tool_name(error_type: str) -> str:
+    """Suggest a tool name from an error category."""
+    name_map = {
+        "missing_import": "import_checker",
+        "syntax_error": "syntax_validator",
+        "type_error": "type_checker",
+        "indentation_error": "indent_fixer",
+        "attribute_error": "attribute_validator",
+        "name_error": "name_resolver",
+        "test_failure": "test_structure_validator",
+        "timeout": "complexity_checker",
+        "docker_error": "dockerfile_validator",
+        "api_routing": "api_route_validator",
+        "database_error": "sqlalchemy_validator",
+    }
+    return name_map.get(error_type, f"{error_type}_validator")
+
+
+def _suggest_tool_description(error_type: str, traces: list[dict]) -> str:
+    """Generate a description of what the tool should check."""
+    desc_map = {
+        "missing_import": "missing or incorrect import statements in Python code",
+        "syntax_error": "Python syntax errors before they reach the interpreter",
+        "type_error": "type mismatches and incorrect type usage",
+        "indentation_error": "indentation inconsistencies in Python code",
+        "attribute_error": "references to non-existent attributes on objects",
+        "name_error": "undefined variable and function references",
+        "test_failure": "test file structure issues (missing fixtures, incorrect assertions)",
+        "timeout": "code patterns that indicate excessive complexity or infinite loops",
+        "docker_error": "Dockerfile syntax and best-practice violations",
+        "api_routing": "API route definition errors (duplicate paths, missing handlers)",
+        "database_error": "SQLAlchemy model and query issues",
+    }
+    return desc_map.get(error_type, f"issues related to {error_type.replace('_', ' ')}")

@@ -236,10 +236,19 @@ async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.warning(f"Decomposer: failed (non-fatal): {e}")
         result["extracted_nutrients"] = []
 
+    # Record build episode for crystallizer analysis
+    try:
+        from belief.memory.episode_recorder import record_episode
+        soil = _get_soil()
+        episode_id = record_episode(soil, state)
+        logger.debug(f"Decomposer: recorded episode {episode_id}")
+    except Exception as e:
+        logger.debug(f"Decomposer: episode recording skipped: {e}")
+
     # Every 10 builds, run one recombination to cross-pollinate the soil
     try:
         soil = _get_soil()
-        build_count = soil._collection.count()
+        build_count = soil.count()
         if build_count > 0 and build_count % 10 == 0:
             from belief.memory.recombination import RecombinationEngine
             engine = RecombinationEngine(soil)

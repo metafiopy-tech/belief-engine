@@ -1,3 +1,3 @@
-"""Belief Engine v2.0 — Incompleteness-driven multi-agent build system."""
+"""Belief Engine v3.0 — Autocatalytic multi-agent build system with self-improvement."""
 
-__version__ = "2.3.0"
+__version__ = "3.0.0"
