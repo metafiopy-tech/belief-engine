@@ -267,20 +267,45 @@ class TestSoilLineage:
         # 4 reps / (4 + 0) = 1.0 success_rate * 4 use_count = 4.0; n=1 → 4.0
         assert score == pytest.approx(4.0)
 
+    def _age_nutrient(
+        self, soil, collection_name: str, nid: str,
+        days_ago: float = 30.0, stability: float = 5.0,
+    ):
+        """Helper: retroactively set fsrs_last_review / fsrs_stability.
+
+        Freshly-deposited nutrients have ``fsrs_last_review=0`` which
+        makes ``elapsed=0`` and ``retrievability=1`` at review time —
+        and FSRS's success-growth formula multiplies by
+        ``e^((1-R)*0.9) - 1``, which is **zero** when R=1.  Without
+        this ageing the productivity weight has nothing to multiply
+        and stability can't move.  We simulate a 30-day-old nutrient
+        so the spacing-effect term fires and growth becomes visible.
+        """
+        past = (
+            datetime.now(timezone.utc) - timedelta(days=days_ago)
+        ).timestamp()
+        col = soil._collections[collection_name]
+        m = col.get(ids=[nid], include=["metadatas"])["metadatas"][0]
+        m["fsrs_last_review"] = past
+        m["fsrs_stability"] = stability
+        col.update(ids=[nid], metadatas=[m])
+
     def test_review_nutrient_passes_productivity(self, soil):
         """review_nutrient() computes clade productivity and weights growth.
 
-        We deposit a parent with several productive descendants, run a
-        successful review, and confirm the resulting stability exceeds
-        the one obtained from an identical review on a parent with no
-        descendants.
+        Deposit a parent with several high-use descendants (heavy clade)
+        and a parent with none (empty clade), age both so the FSRS
+        spacing-effect term fires, run a successful review on each,
+        and confirm the heavy-clade parent's stability grew more than
+        the empty-clade parent's.
         """
-        # Parent with productive descendant -> high productivity
+        col_name = "belief_principles"
+
+        # Parent with productive descendants → high clade productivity
         parent_a = Nutrient(
             nutrient_type=NutrientType.PATTERN,
             content="parent A",
             embedding_text="parent A distinct embedding text xyz",
-            stability=5.0,
         )
         soil.deposit(parent_a)
         for i in range(3):
@@ -293,16 +318,18 @@ class TestSoilLineage:
                 lapse_count=0,
             ))
 
-        # Parent with no descendants -> productivity = 0
+        # Parent with no descendants → productivity = 0
         parent_b = Nutrient(
             nutrient_type=NutrientType.PATTERN,
             content="parent B",
             embedding_text="parent B totally different wording qrs",
-            stability=5.0,
         )
         soil.deposit(parent_b)
 
-        col_name = "belief_principles"
+        # Age both parents so elapsed > 0 at review time.
+        self._age_nutrient(soil, col_name, parent_a.nutrient_id)
+        self._age_nutrient(soil, col_name, parent_b.nutrient_id)
+
         soil.review_nutrient(parent_a.nutrient_id, col_name, grade=3)
         soil.review_nutrient(parent_b.nutrient_id, col_name, grade=3)
 
@@ -312,26 +339,29 @@ class TestSoilLineage:
         b = soil._collections[col_name].get(
             ids=[parent_b.nutrient_id], include=["metadatas"]
         )["metadatas"][0]
+        # Both grew above 5.0 (classical FSRS), the heavy-clade parent
+        # grew further.
+        assert b["fsrs_stability"] > 5.0
         assert a["fsrs_stability"] > b["fsrs_stability"]
 
     def test_review_nutrient_productivity_override(self, soil):
-        """Callers can pass an explicit productivity (bypass the auto-compute)."""
+        """Callers can pass an explicit productivity (bypass auto-compute)."""
+        col_name = "belief_principles"
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
             content="solo",
             embedding_text="solo embedding text for override test",
-            stability=5.0,
         )
         soil.deposit(n)
-        # Override productivity to a high value — stability should grow
-        # more than it would under auto-computed 0.0.
-        soil.review_nutrient(n.nutrient_id, "belief_principles",
+        self._age_nutrient(soil, col_name, n.nutrient_id)
+
+        soil.review_nutrient(n.nutrient_id, col_name,
                              grade=3, productivity=8.0)
-        meta = soil._collections["belief_principles"].get(
+        meta = soil._collections[col_name].get(
             ids=[n.nutrient_id], include=["metadatas"]
         )["metadatas"][0]
-        # Re-run with productivity=0 on a parallel soil for comparison.
-        # (Here we just check the growth exceeds the classical bound.)
+        # With productivity=8.0 the weight is 2.6, so stability grows
+        # well above the aged starting value of 5.0.
         assert meta["fsrs_stability"] > 5.0
 
 
