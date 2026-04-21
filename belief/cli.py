@@ -852,6 +852,25 @@ def _run_models_cmd() -> None:
         print(f"{role:<15} {b:<8} {model:<40}")
 
 
+def _run_manifold_cmd(args):
+    """Show the domain-manifold summary — see belief/memory/manifold.py.
+
+    ``belief manifold``         plain-text render (default)
+    ``belief manifold --json``  machine-readable JSON
+    ``belief manifold --gap-threshold 10``  custom sparse-soil cutoff
+    """
+    from belief.memory.manifold import build_manifold, format_report
+    from belief.memory.soil import Soil
+
+    soil = Soil()
+    gap_threshold = getattr(args, "gap_threshold", None) or 5
+    report = build_manifold(soil, gap_threshold=gap_threshold)
+    if getattr(args, "json", False):
+        print(report.to_json())
+        return
+    print(format_report(report, gap_threshold=gap_threshold))
+
+
 def _run_progression_cmd():
     """Display current generative chain stage (per-domain + global)."""
     from belief.evolution.progression import (
@@ -938,6 +957,21 @@ def app():
 
     # Progression
     subparsers.add_parser("progression", help="Display current generative chain stage and metrics")
+
+    # Session 14: domain manifold — knowledge-topology summary
+    manifold_parser = subparsers.add_parser(
+        "manifold",
+        help="Show domain clusters, cross-domain links, and coverage gaps",
+    )
+    manifold_parser.add_argument(
+        "--json", action="store_true",
+        help="Emit machine-readable JSON instead of the text renderer",
+    )
+    manifold_parser.add_argument(
+        "--gap-threshold", type=int, default=5,
+        help="Active-nutrient count below which a domain is flagged as "
+             "a coverage gap (default: 5)",
+    )
 
     # Dashboard
     dash_parser = subparsers.add_parser("dashboard", help="Display metrics dashboard")
@@ -1086,6 +1120,9 @@ def app():
         sys.exit(0)
     elif args.command == "progression":
         _run_progression_cmd()
+        sys.exit(0)
+    elif args.command == "manifold":
+        _run_manifold_cmd(args)
         sys.exit(0)
     elif args.command == "models":
         _run_models_cmd()

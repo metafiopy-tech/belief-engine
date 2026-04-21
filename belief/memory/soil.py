@@ -442,6 +442,7 @@ class Soil:
         n: int = 10,
         nutrient_type: Optional[NutrientType] = None,
         min_retrievability: float = 0.3,
+        as_of: Optional[float] = None,
     ) -> list[Nutrient]:
         """Semantic search with metadata filtering and composite re-ranking.
 
@@ -451,6 +452,11 @@ class Soil:
 
         If *nutrient_type* is specified, queries only the relevant collection.
         Otherwise, queries all collections and merges results.
+
+        Session 14: filters out nutrients whose validity interval
+        doesn't cover *as_of* (defaults to "now" — live retrieval).
+        Passing a past timestamp reconstructs the soil as it was then,
+        including nutrients that have since been invalidated.
         """
         if nutrient_type is not None:
             collections_to_query = [self._route_collection(nutrient_type)]
@@ -504,6 +510,12 @@ class Soil:
                 similarity = 1.0 - distance
 
                 nutrient = Nutrient.from_chromadb(doc_id, doc, meta)
+
+                # Session 14: bi-temporal validity filter.  Skip
+                # nutrients whose validity interval doesn't cover the
+                # requested ``as_of`` time (defaults to "now").
+                if not nutrient.is_valid_at(as_of if as_of is not None else now):
+                    continue
 
                 # Filter by retrievability
                 r = nutrient.retrievability()
@@ -928,16 +940,33 @@ class Soil:
 
     # -- Lineage / clade productivity ---------------------------------------------
 
-    def iter_all_nutrients(self) -> Iterator[Nutrient]:
-        """Yield every active nutrient across the 5 collections.
+    def iter_all_nutrients(
+        self,
+        include_invalidated: bool = True,
+        as_of: Optional[float] = None,
+    ) -> Iterator[Nutrient]:
+        """Yield every nutrient across the 5 collections.
 
         Used by :func:`~belief.memory.fsrs.clade_productivity` to walk
-        the lineage DAG.  Archived nutrients are intentionally excluded
-        — their descendants no longer reflect live retention pressure.
+        the lineage DAG and by the Session-14 manifold analysis.
+        Archived nutrients are intentionally excluded — their
+        descendants no longer reflect live retention pressure.
         Duplicates (the same nutrient_id present in both a typed
         collection and the legacy ``nutrients`` mirror) are deduped by
         ID on the fly.
+
+        Args:
+            include_invalidated: When True (default) yield every
+                nutrient regardless of its ``valid_until``.  When
+                False, skip nutrients that were invalidated at or
+                before *as_of* — so callers like the manifold's
+                "active view" see only live knowledge.  Clade walks
+                default to True because descendants can outlive their
+                roots.
+            as_of: UTC timestamp used for validity checks.  Defaults
+                to "now".  Ignored when ``include_invalidated=True``.
         """
+        ts = as_of if as_of is not None else _now_ts()
         seen: set[str] = set()
         for col in self._collections.values():
             count = col.count()
@@ -956,13 +985,17 @@ class Soil:
                     continue
                 seen.add(doc_id)
                 try:
-                    yield Nutrient.from_chromadb(
+                    n = Nutrient.from_chromadb(
                         doc_id,
                         data["documents"][i],
                         data["metadatas"][i],
                     )
                 except Exception as e:
                     logger.debug(f"iter_all_nutrients: skip {doc_id} ({e})")
+                    continue
+                if not include_invalidated and not n.is_valid_at(ts):
+                    continue
+                yield n
 
     def get_descendants(self, nutrient_id: str) -> list[Nutrient]:
         """Return nutrients whose lineage includes ``nutrient_id``.
@@ -978,3 +1011,106 @@ class Soil:
             if nutrient_id in (n.lineage_parent_ids or ()):
                 result.append(n)
         return result
+
+    # -- Bi-temporal invalidation (Session 14) ------------------------------------
+
+    def retrieve_as_of(
+        self,
+        ts: float,
+        query: str = "",
+        n: int = 10,
+        nutrient_type: Optional[NutrientType] = None,
+        min_retrievability: float = 0.0,
+    ) -> list[Nutrient]:
+        """Reconstruct soil retrieval as it would have been at UTC *ts*.
+
+        Thin wrapper over :meth:`retrieve` that passes ``as_of=ts``.
+        Includes nutrients that were valid at ``ts`` even if they have
+        since been invalidated; excludes nutrients that didn't exist
+        yet at ``ts``.  Default ``min_retrievability=0.0`` because
+        historical reviews often want the raw snapshot rather than
+        the active-retrieval cutoff.
+        """
+        return self.retrieve(
+            query=query,
+            n=n,
+            nutrient_type=nutrient_type,
+            min_retrievability=min_retrievability,
+            as_of=ts,
+        )
+
+    def invalidate_nutrient(
+        self,
+        nutrient_id: str,
+        reason: str,
+        now: Optional[float] = None,
+    ) -> bool:
+        """Soft-delete a nutrient by marking it invalid from *now* onwards.
+
+        The record is NOT removed from ChromaDB — it stays so
+        historical queries (``retrieve_as_of``) can still see the soil
+        as it was before invalidation.  Sets ``valid_until`` to *now*
+        and stores *reason* for auditability.
+
+        Triggered by contradiction detection, superseded patterns,
+        manual corrections, etc.
+
+        Args:
+            nutrient_id: ID of the nutrient to invalidate.
+            reason:      Human-readable explanation (stored verbatim).
+            now:         UTC timestamp of the invalidation event.
+                         Defaults to the current time.
+
+        Returns:
+            True if the nutrient was found and marked invalid; False
+            if it didn't exist or was already invalidated.
+        """
+        ts = now if now is not None else _now_ts()
+        nutrient, col = self._find_nutrient(nutrient_id)
+        if nutrient is None or col is None:
+            logger.warning(
+                f"Soil: invalidate_nutrient -- {nutrient_id} not found"
+            )
+            return False
+        if nutrient.valid_until > 0 and ts >= nutrient.valid_until:
+            # Already invalidated — leave original reason / timestamp alone.
+            logger.info(
+                f"Soil: {nutrient_id} already invalidated "
+                f"(valid_until={nutrient.valid_until:.0f}); skipping"
+            )
+            return False
+
+        nutrient.valid_until = ts
+        nutrient.invalidation_reason = reason
+        metadata = nutrient.to_chromadb_metadata()
+        metadata = _add_fsrs_defaults(metadata)
+        col.update(ids=[nutrient_id], metadatas=[metadata])
+        # Mirror into the legacy collection so historical queries using
+        # the old code path stay consistent.
+        try:
+            self._collection.update(ids=[nutrient_id], metadatas=[metadata])
+        except Exception as e:
+            logger.debug(
+                f"Legacy collection invalidate mirror skipped for "
+                f"{nutrient_id}: {e}"
+            )
+        logger.info(
+            f"Soil: invalidated {nutrient_id} at {ts:.0f} ({reason!r})"
+        )
+        return True
+
+    def count_active(self, as_of: Optional[float] = None) -> int:
+        """Number of nutrients still in the active set at *as_of* (now)."""
+        ts = as_of if as_of is not None else _now_ts()
+        return sum(1 for n in self.iter_all_nutrients(
+            include_invalidated=False, as_of=ts,
+        ))
+
+    def count_invalidated(self) -> int:
+        """Number of nutrients with a non-zero ``valid_until`` in the past."""
+        now = _now_ts()
+        c = 0
+        for n in self.iter_all_nutrients(include_invalidated=True):
+            if n.valid_until > 0 and n.valid_until <= now:
+                c += 1
+        return c
