@@ -83,8 +83,16 @@ class TestProbeGatedEscalation:
         assert r.backend_for_call(ModelRole.INTAKE, confidence=0.01) is Backend.LOCAL
 
     def test_cloud_mode_ignores_escalation(self):
-        """Already-cloud calls aren't subject to further escalation."""
-        r = ModelRouter()  # defaults to CLOUD
+        """Already-cloud calls aren't subject to further escalation.
+
+        We set mode explicitly instead of trusting the constructor
+        default — a developer with ``BELIEF_MODEL_MODE=hybrid`` in
+        their shell would otherwise get a router in hybrid mode,
+        which routes INTAKE to local and legitimately fires the
+        escalation path.
+        """
+        r = ModelRouter()
+        r.set_mode(RouteMode.CLOUD)
         r.enable_probe_escalation()
         assert r.backend_for_call(ModelRole.INTAKE, confidence=0.01) is Backend.CLOUD
         assert r.escalation_count == 0
