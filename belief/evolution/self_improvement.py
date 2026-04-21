@@ -732,7 +732,7 @@ async def execute_new_tool_proposal(
 
     # 3. Run the engine's own pipeline to build the tool
     try:
-        from belief.graph import build_graph
+        from belief.graph import build_pipeline as build_graph
         graph = build_graph()
         result = await graph.ainvoke({
             "user_goal": tool_goal,

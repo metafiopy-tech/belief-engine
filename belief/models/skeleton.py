@@ -16,7 +16,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -184,9 +184,58 @@ class CLIContract(BaseModel):
     """A single CLI command contract."""
     name: str = Field(description="Command name, e.g. 'add'")
     description: str = Field(default="", description="What this command does")
-    arguments: list[str] = Field(default_factory=list, description="Required arguments")
-    options: list[str] = Field(default_factory=list, description="Optional flags, e.g. ['--verbose', '--output FILE']")
-    exit_codes: list[int] = Field(default_factory=lambda: [0], description="Expected exit codes")
+    arguments: list[str | dict] = Field(default_factory=list, description="Required arguments")
+    options: list[str | dict] = Field(default_factory=list, description="Optional flags, e.g. ['--verbose', '--output FILE']")
+    exit_codes: list[int | dict] = Field(default_factory=lambda: [0], description="Expected exit codes")
+
+    @field_validator("arguments", "options", mode="before")
+    @classmethod
+    def _normalize_str_items(cls, v):
+        """Accept list[str] or list[dict]; normalize every item to a string.
+
+        Architect output sometimes emits CLI arg/option specs as dicts like
+        ``{"name": "description", "type": "string"}``. Coerce those to the
+        canonical string form so downstream consumers see a flat list[str].
+        """
+        if not isinstance(v, list):
+            return v
+        result = []
+        for item in v:
+            if isinstance(item, dict):
+                result.append(item.get("name") or item.get("flag") or str(item))
+            else:
+                result.append(str(item))
+        return result
+
+    @field_validator("exit_codes", mode="before")
+    @classmethod
+    def _normalize_int_items(cls, v):
+        """Accept list[int] or list[dict]; normalize every item to an int.
+
+        Tolerate unparseable entries (they're dropped) so a single malformed
+        value from the architect doesn't fail the whole skeleton parse.
+        """
+        if not isinstance(v, list):
+            return v
+        result = []
+        for item in v:
+            if isinstance(item, dict):
+                code = item.get("code") or item.get("value") or item.get("exit_code")
+                if code is None:
+                    result.append(0)
+                else:
+                    try:
+                        result.append(int(code))
+                    except (ValueError, TypeError):
+                        pass
+            elif isinstance(item, int):
+                result.append(item)
+            else:
+                try:
+                    result.append(int(item))
+                except (ValueError, TypeError):
+                    pass
+        return result
 
 
 class APIContract(BaseModel):
