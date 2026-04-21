@@ -100,7 +100,20 @@ class Nutrient(BaseModel):
     created_at: float = Field(default_factory=_now_ts)
     last_reinforced: float = Field(default_factory=_now_ts)
 
-    @field_validator("created_at", "last_reinforced", mode="before")
+    # Session 14: bi-temporal validity.  ``valid_from`` is when the
+    # nutrient entered the knowledge graph (usually == created_at).
+    # ``valid_until`` is a soft-delete marker — when positive, it's the
+    # UTC timestamp at which this nutrient was invalidated (e.g. by a
+    # contradicting discovery).  ``0.0`` means "still valid, no end
+    # date".  Invalidated nutrients stay in the soil for historical
+    # queries but are excluded from active retrieval.
+    valid_from: float = Field(default_factory=_now_ts)
+    valid_until: float = 0.0
+    invalidation_reason: str = ""
+
+    @field_validator(
+        "created_at", "last_reinforced", "valid_from", "valid_until", mode="before"
+    )
     @classmethod
     def _parse_ts(cls, v):
         """Accept float | int | ISO-8601 string for stored timestamps.
@@ -194,6 +207,38 @@ class Nutrient(BaseModel):
         )
         self.stability = max(0.5, new_s)  # Floor at 0.5 days
 
+    def is_valid_at(self, ts: Optional[float] = None) -> bool:
+        """Whether this nutrient was part of the live knowledge graph at *ts*.
+
+        A nutrient is considered valid at time *ts* when it was already
+        created (``valid_from <= ts``) and was not yet invalidated
+        (``valid_until == 0`` or ``ts < valid_until``).  Used by
+        historical-reconstruction queries — "what did the engine
+        believe on date D?".
+
+        Args:
+            ts: UTC timestamp to check (defaults to now).
+
+        Returns:
+            True if the nutrient was in the active set at *ts*.
+        """
+        if ts is None:
+            ts = _now_ts()
+        if self.valid_from > ts:
+            return False
+        if self.valid_until > 0 and ts >= self.valid_until:
+            return False
+        return True
+
+    def is_active(self) -> bool:
+        """Whether this nutrient is currently in the active set.
+
+        Shortcut for :meth:`is_valid_at` with ``ts=now``.  Invalidated
+        nutrients return False; nutrients with ``valid_until=0`` are
+        active regardless of when they were created.
+        """
+        return self.valid_until == 0.0 or _now_ts() < self.valid_until
+
     def to_chromadb_metadata(self) -> dict:
         """Convert to flat dict for ChromaDB metadata storage.
 
@@ -201,6 +246,10 @@ class Nutrient(BaseModel):
         No nested objects. Timestamps as floats for range queries.
         The document field stores embedding_text (used for similarity search).
         The original content is stored in metadata for retrieval.
+
+        Session 14: adds ``valid_from`` / ``valid_until`` /
+        ``invalidation_reason``.  ``valid_until=0.0`` encodes "still
+        valid" (None isn't allowed in ChromaDB metadata).
         """
         meta = {
             "nutrient_type": self.nutrient_type.value,
@@ -212,6 +261,10 @@ class Nutrient(BaseModel):
             "lapse_count": self.lapse_count,
             "created_at": self.created_at,
             "last_reinforced": self.last_reinforced,
+            # Bi-temporal validity (Session 14)
+            "valid_from": self.valid_from,
+            "valid_until": self.valid_until,
+            "invalidation_reason": self.invalidation_reason,
             "source_build_id": self.source_build_id,
             "framework": self.framework or "",
             # ChromaDB rejects empty lists — use sentinel for empty
@@ -228,7 +281,12 @@ class Nutrient(BaseModel):
 
         document = embedding_text (what was embedded for similarity search)
         metadata["content"] = original content (what the nutrient says)
+
+        Session 14: back-fills bi-temporal fields for legacy records
+        written before v3.1 — ``valid_from`` defaults to ``created_at``
+        and ``valid_until`` defaults to ``0.0`` (still valid).
         """
+        created_at = metadata.get("created_at", _now_ts())
         return cls(
             nutrient_id=doc_id,
             nutrient_type=NutrientType(metadata.get("nutrient_type", "pattern")),
@@ -240,8 +298,11 @@ class Nutrient(BaseModel):
             difficulty=metadata.get("difficulty", 5.0),
             reinforcement_count=metadata.get("reinforcement_count", 0),
             lapse_count=metadata.get("lapse_count", 0),
-            created_at=metadata.get("created_at", _now_ts()),
+            created_at=created_at,
             last_reinforced=metadata.get("last_reinforced", _now_ts()),
+            valid_from=metadata.get("valid_from", created_at),
+            valid_until=metadata.get("valid_until", 0.0),
+            invalidation_reason=metadata.get("invalidation_reason", "") or "",
             source_build_id=metadata.get("source_build_id", ""),
             framework=metadata.get("framework", "") or None,
             tags=[t for t in metadata.get("tags", []) if t != "_none"],
