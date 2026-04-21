@@ -125,6 +125,16 @@ class PhotosynthesisDaemon:
             replace_existing=True,
         )
 
+        # Register the synthesis cycle (Session 4)
+        self.scheduler.add_job(
+            self._synthesis_cycle_entry,
+            trigger="interval",
+            seconds=self.config.cadences.synthesis_cycle_s,
+            id="synthesis_cycle",
+            name="synthesis_cycle",
+            replace_existing=True,
+        )
+
         # Error listeners
         self.scheduler.add_listener(
             self._on_job_error,
@@ -216,6 +226,31 @@ class PhotosynthesisDaemon:
             len(results),
             sum(1 for r in results if r.kept),
         )
+
+    # -------------------------------------------------------- synthesis glue
+    def _synthesis_cycle_entry(self) -> None:
+        """Sync APScheduler entry point for the async synthesis cycle.
+
+        Guarded by the Session-5 kill switch; for Session 4 the stub
+        allows every call through. See
+        belief.photosynthesis.synthesis.cycle.run_synthesis_cycle for
+        the actual pipeline.
+        """
+        try:
+            from belief.photosynthesis.safety import kill_switch
+            from belief.photosynthesis.synthesis.cycle import (
+                run_synthesis_cycle_sync,
+            )
+        except Exception:
+            logger.exception("synthesis cycle unavailable")
+            return
+
+        gated = kill_switch(tag="synthesis")(run_synthesis_cycle_sync)
+        try:
+            result = gated(self.state, self.config)
+            logger.info("synthesis_cycle: %s", result)
+        except Exception:
+            logger.exception("synthesis cycle failed")
 
     # --------------------------------------------------------- event listeners
     def _on_job_error(self, event: Any) -> None:

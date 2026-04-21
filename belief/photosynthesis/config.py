@@ -39,6 +39,7 @@ class Cadences:
     hackernews_s: int = 15 * 60            # 15 min
     arxiv_s: int = 6 * 3600                # 6h
     filter_pass_s: int = 30 * 60           # 30 min — cascade-run interval
+    synthesis_cycle_s: int = 2 * 3600      # 2h — Session 4 goal synthesis
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,14 @@ class PhotoConfig:
     @property
     def keywords_file(self) -> Path:
         return self.config_dir / "domain_keywords.yaml"
+
+    @property
+    def pending_sessions_dir(self) -> Path:
+        return self.state_dir / "pending_sessions"
+
+    @property
+    def archive_chroma_dir(self) -> Path:
+        return self.state_dir / "archive_chroma"
 
 
 def load_config() -> PhotoConfig:
