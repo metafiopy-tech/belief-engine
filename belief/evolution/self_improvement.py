@@ -583,25 +583,69 @@ def select_target_cluster(
 def formulate_tool_goal(cluster: FailureCluster) -> str:
     """Generate a clear goal string for the engine to build a tool.
 
-    The goal should be specific enough for the engine's pipeline to
-    produce a self-contained Python module.
-    """
-    examples = "\n".join(f"  - {e}" for e in cluster.example_errors[:3])
+    The goal embeds 2-3 concrete error messages pulled from the cluster's
+    failure_traces so the engine has something specific to check against,
+    instead of an abstract description like "resolves naming issues".
 
-    return (
-        f"Build a Python module with a single function "
-        f"`{cluster.suggested_tool_name}(code: str) -> list[str]` "
-        f"that takes Python source code as input and returns a list of "
-        f"validation error strings.\n\n"
-        f"The function should detect and report: {cluster.suggested_tool_description}\n\n"
-        f"Examples of errors it should catch:\n{examples}\n\n"
-        f"Requirements:\n"
-        f"- Self-contained module (no external dependencies)\n"
-        f"- Use the `ast` module for code analysis where possible\n"
-        f"- Return an empty list if no errors are found\n"
-        f"- Include a module-level docstring\n"
-        f"- Include type hints on the function signature"
+    Trace fields we try, in order: error_summary, errors[0], description,
+    content. Anything over 200 chars is skipped (pydantic validation
+    errors tend to balloon and drown out the goal).
+    """
+    # 1. Pull up to 3 concrete error examples from the richer trace dicts
+    example_errors: list[str] = []
+    for trace in cluster.failure_traces[:5]:
+        candidates = [
+            trace.get("error_summary", ""),
+            (trace.get("errors") or [""])[0] if isinstance(trace.get("errors"), list) else "",
+            trace.get("description", ""),
+            trace.get("content", ""),
+        ]
+        for err in candidates:
+            if isinstance(err, str) and 0 < len(err) < 200:
+                example_errors.append(err)
+                break
+        if len(example_errors) >= 3:
+            break
+
+    # 2. Fall back to example_errors if no trace yielded anything usable
+    if not example_errors and cluster.example_errors:
+        example_errors = [e for e in cluster.example_errors[:3] if e]
+
+    error_examples = (
+        "\n  ".join(example_errors)
+        if example_errors
+        else "No specific examples available"
     )
+
+    # 3. Pull any referenced files/modules for extra context (optional)
+    files: list[str] = []
+    for trace in cluster.failure_traces[:5]:
+        for key in ("file", "filepath", "module", "where"):
+            val = trace.get(key)
+            if isinstance(val, str) and val and val not in files:
+                files.append(val)
+    files_line = (
+        f"Files/modules where this recurs: {', '.join(files[:5])}\n\n"
+        if files
+        else ""
+    )
+
+    goal = (
+        f"Build a Python module with a single main function that addresses "
+        f"this recurring failure pattern in code generation:\n\n"
+        f"Error type: {cluster.error_type}\n"
+        f"Frequency: {cluster.count} occurrences in recent builds\n\n"
+        f"{files_line}"
+        f"Example errors:\n  {error_examples}\n\n"
+        f"The function should:\n"
+        f"- Accept the relevant code/config as input\n"
+        f"- Detect the error condition\n"
+        f"- Return a fixed/normalized version\n"
+        f"- Include type hints and a docstring\n"
+        f"- Be self-contained with no external dependencies beyond stdlib\n\n"
+        f"Include pytest tests that verify the function handles the example cases above."
+    )
+    return goal
 
 
 def evaluate_tool_against_failures(

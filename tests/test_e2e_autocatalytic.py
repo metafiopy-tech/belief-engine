@@ -171,7 +171,10 @@ class TestAutocatalyticCore:
         assert target is not None
 
         goal = formulate_tool_goal(target)
-        assert "list[str]" in goal
+        # Session 2: goal is signature-agnostic. Instead check that it
+        # embeds the cluster's error type and a real error example.
+        assert target.error_type in goal
+        assert "ImportError" in goal or "click" in goal
         assert len(goal) > 50
 
 

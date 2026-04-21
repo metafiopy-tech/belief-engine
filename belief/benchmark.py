@@ -375,6 +375,133 @@ CHALLENGES = [
         timeout_seconds=600,
         tags=["typescript", "express5", "zod", "validation", "esm"],
     ),
+
+    # ── Session 2: Expanded verticals (8 new challenges) ──
+    # Added to broaden coverage beyond FastAPI/Click — MCP, WebSocket, data
+    # pipelines, SDKs, config, async queues, log analytics, schema validation.
+    Challenge(
+        id="t2-mcp-server",
+        tier=2,
+        goal="Build an MCP server using FastMCP that exposes a weather lookup tool. The tool accepts a city name and returns mock weather data (temperature, conditions, humidity).",
+        acceptance_criteria=[
+            "FastMCP server defined",
+            "Weather tool registered by name",
+            "Tool returns temperature, conditions, humidity fields",
+            "Unknown cities handled (no crash)",
+        ],
+        verify_commands=["python -c 'import importlib, sys; sys.path.insert(0, \".\"); importlib.import_module(\"main\")'"],
+        timeout_seconds=300,
+        tags=["mcp", "fastmcp", "tool"],
+    ),
+    Challenge(
+        id="t2-websocket-echo",
+        tier=2,
+        goal="Build a WebSocket echo server with FastAPI. Accept connections at /ws, echo back any received message with a timestamp prefix. Include a /health endpoint.",
+        acceptance_criteria=[
+            "FastAPI app with websocket route at /ws",
+            "Echoes each received message",
+            "Echo response includes an ISO-8601 timestamp prefix",
+            "GET /health returns 200",
+        ],
+        verify_commands=["curl localhost:8000/health"],
+        timeout_seconds=300,
+        tags=["websocket", "fastapi", "realtime"],
+    ),
+    Challenge(
+        id="t3-data-pipeline",
+        tier=3,
+        goal="Build a Python data pipeline that reads a CSV file, validates rows against a Pydantic schema, transforms valid rows (normalize dates, uppercase names), and writes results to a new CSV. Log invalid rows to a separate error file.",
+        acceptance_criteria=[
+            "Reads CSV from input path",
+            "Validates each row with a Pydantic model",
+            "Normalizes dates and uppercases name fields",
+            "Writes valid rows to output CSV",
+            "Writes invalid rows with errors to a separate file",
+        ],
+        verify_commands=[
+            "printf 'name,date\\nalice,2024-01-02\\n' > /tmp/in.csv && python main.py /tmp/in.csv /tmp/out.csv && test -f /tmp/out.csv"
+        ],
+        timeout_seconds=600,
+        tags=["data", "pipeline", "pydantic", "csv"],
+    ),
+    Challenge(
+        id="t3-api-wrapper",
+        tier=3,
+        goal="Build a Python SDK that wraps a REST API. Create a client class with methods for GET/POST/PUT/DELETE, automatic retry with exponential backoff, response validation with Pydantic models, and a CLI interface using Click to call each method.",
+        acceptance_criteria=[
+            "Client class exposes get/post/put/delete methods",
+            "Retries failed requests with exponential backoff",
+            "Responses are validated against Pydantic models",
+            "Click CLI exposes each HTTP verb as a subcommand",
+        ],
+        verify_commands=["python -m main --help"],
+        timeout_seconds=600,
+        tags=["sdk", "api-wrapper", "httpx", "click"],
+    ),
+    Challenge(
+        id="t3-config-manager",
+        tier=3,
+        goal="Build a configuration management library that loads config from YAML files, environment variables, and CLI arguments (in that priority order). Support nested keys, type validation with Pydantic, hot-reload on file change, and a CLI to get/set/list config values.",
+        acceptance_criteria=[
+            "Loads YAML config from a file path",
+            "Env var overrides YAML values",
+            "CLI arg overrides env values",
+            "Nested key access works (e.g. db.host)",
+            "CLI exposes get/set/list subcommands",
+        ],
+        verify_commands=["python -m main --help"],
+        timeout_seconds=600,
+        tags=["config", "yaml", "pydantic", "cli"],
+    ),
+    Challenge(
+        id="t3-task-queue",
+        tier=3,
+        goal="Build an in-process async task queue with Python asyncio. Support: enqueue tasks with priority, max concurrency limit, retry with backoff on failure, task timeout, and a /status endpoint showing queue depth and active tasks.",
+        acceptance_criteria=[
+            "Enqueue accepts a callable and a priority",
+            "Higher-priority tasks run before lower-priority ones",
+            "Max concurrency limit is enforced",
+            "Failed tasks retry with backoff",
+            "Per-task timeout cancels long-running work",
+            "GET /status reports queue depth and active task count",
+        ],
+        verify_commands=["curl localhost:8000/status"],
+        timeout_seconds=600,
+        tags=["async", "queue", "asyncio", "fastapi"],
+    ),
+    Challenge(
+        id="t3-log-analyzer",
+        tier=3,
+        goal="Build a CLI tool that analyzes structured JSON log files. Parse log entries, compute statistics (errors/min, top error types, p50/p95 latency), detect anomalies (sudden error spike), and output a summary report as formatted text or JSON.",
+        acceptance_criteria=[
+            "Parses newline-delimited JSON log entries",
+            "Reports errors-per-minute rate",
+            "Reports top error types by count",
+            "Reports p50/p95 latency when latency field present",
+            "Detects and flags anomalous error spikes",
+            "Supports --format text|json output",
+        ],
+        verify_commands=[
+            "printf '{\"level\":\"ERROR\",\"ts\":\"2024-01-01T00:00:00Z\",\"msg\":\"boom\"}\\n' | python main.py --format json"
+        ],
+        timeout_seconds=600,
+        tags=["cli", "logging", "analytics", "json"],
+    ),
+    Challenge(
+        id="t3-schema-validator",
+        tier=3,
+        goal="Build a JSON Schema validator library with a CLI. Load schemas from files, validate JSON documents against them, report all errors with JSONPath locations, support $ref resolution for composed schemas, and provide both a Python API and a Click CLI.",
+        acceptance_criteria=[
+            "Python API exposes a validate(doc, schema) function",
+            "Reports every validation error with a JSONPath location",
+            "Resolves $ref references across composed schemas",
+            "Click CLI validates a file against a schema file",
+            "Exits non-zero when validation fails",
+        ],
+        verify_commands=["python -m main --help"],
+        timeout_seconds=600,
+        tags=["json-schema", "validation", "click", "library"],
+    ),
 ]
 
 
