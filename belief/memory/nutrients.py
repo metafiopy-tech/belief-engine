@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class NutrientType(str, Enum):
@@ -99,6 +99,30 @@ class Nutrient(BaseModel):
     # Timestamps (stored as UTC floats for FSRS math)
     created_at: float = Field(default_factory=_now_ts)
     last_reinforced: float = Field(default_factory=_now_ts)
+
+    @field_validator("created_at", "last_reinforced", mode="before")
+    @classmethod
+    def _parse_ts(cls, v):
+        """Accept float | int | ISO-8601 string for stored timestamps.
+
+        Legacy nutrients in ChromaDB may have been written with ISO-8601
+        strings instead of UTC floats; coerce those on read so FSRS math
+        keeps working. Unparseable strings fall back to 0.0 rather than
+        raising (a bad timestamp shouldn't poison the whole recomposer).
+        """
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v).timestamp()
+            except ValueError:
+                return 0.0
+        if v is None:
+            return 0.0
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
 
     # Provenance
     source_build_id: str = ""
