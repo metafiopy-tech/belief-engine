@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "belief-engine"
-version = "3.0.0"
-description = "Autonomous AI build system. Describe what you want. Belief builds it, tests it, deploys it, and learns."
+version = "3.1.0"
+description = "Autonomous AI build system. Describe what you want. Belief builds it, tests it, deploys it, and learns — on your laptop, no API key required."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -97,6 +97,39 @@ photosynthesis-test = [
     "pybreaker>=1.0",
     "feedparser>=6.0",
     "respx>=0.21",
+]
+# Session 18: single extras spec that pulls everything a fresh install
+# needs for the "full v3.1 experience" — local Ollama routing,
+# Photosynthesis harvester, DSPy prompt optimisation, brownfield
+# patcher, search fetchers, multi-service deployment, and API
+# verification.  Explicitly re-lists the inner groups' packages
+# (rather than using `belief-engine[...]` self-refs) so `pip install
+# belief-engine[full]` works from PyPI without circular metadata.
+full = [
+    # local
+    "ollama>=0.3.0",
+    # search
+    "duckduckgo-search>=6.0.0",
+    # optimize
+    "dspy>=2.6.0",
+    # brownfield
+    "networkx>=3.0",
+    "gitpython>=3.1.0",
+    "unidiff>=0.7.0",
+    "pytest-testmon>=2.0.0",
+    # photosynthesis
+    "apscheduler>=3.11,<4.0",
+    "tenacity>=9.0",
+    "pybreaker>=1.0",
+    "feedparser>=6.0",
+    "arxiv>=2.0",
+    "pybloom-live>=4.0",
+    "scikit-learn>=1.5",
+    "sentence-transformers>=3.0",
+    # verification
+    "schemathesis>=3.0.0",
+    "hypothesis>=6.0.0",
+    "hypothesis-jsonschema>=0.23.0",
 ]
 
 [project.scripts]
