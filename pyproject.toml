@@ -75,6 +75,29 @@ verification = [
     "hypothesis-jsonschema>=0.23.0",
     "mypy>=1.0.0",
 ]
+photosynthesis = [
+    # Scheduler + resilience
+    "apscheduler>=3.11,<4.0",   # NOT 4.x per design note
+    "tenacity>=9.0",
+    "pybreaker>=1.0",
+    # HTTP / feeds
+    "feedparser>=6.0",
+    "arxiv>=2.0",
+    # Filter cascade (stage 0/2/3)
+    "pybloom-live>=4.0",
+    "scikit-learn>=1.5",
+    "sentence-transformers>=3.0",
+]
+photosynthesis-test = [
+    # Lightweight test subset: everything except heavy ML models, so
+    # CI or contributor machines can run test_state / test_sources_offline
+    # without pulling PyTorch.
+    "apscheduler>=3.11,<4.0",
+    "tenacity>=9.0",
+    "pybreaker>=1.0",
+    "feedparser>=6.0",
+    "respx>=0.21",
+]
 
 [project.scripts]
 belief = "belief.cli:app"

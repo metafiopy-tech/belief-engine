@@ -1,0 +1,198 @@
+# Domain keyword allowlist for Photosynthesis stage-1 filter.
+#
+# Each list entry is a bare term. Case-insensitive; compiled once into a
+# \b-bounded regex at boot time. Hyphen variants (e.g. sentence-transformers
+# and sentence_transformers) matter — keep both where applicable.
+#
+# Design guidance: ~200 terms total. Narrow enough to be meaningful, wide
+# enough that every plausibly-relevant trending repo / PyPI release / HN
+# post has at least one match. Signals with zero matches fail stage 1 and
+# are dropped before they touch TF-IDF. Tune over time; the weekly drift
+# report (Session 5) will surface terms that should be added or removed.
+
+keywords:
+  # LLM runtimes and orchestration
+  - langgraph
+  - langchain
+  - anthropic
+  - claude
+  - openai
+  - gpt
+  - dspy
+  - instructor
+  - guidance
+  - llamaindex
+  - llama-index
+  - autogen
+  - crewai
+  - semantic-kernel
+
+  # Agents / autonomous systems
+  - autonomous-agent
+  - agent-framework
+  - autocatalytic
+  - self-improving
+  - self-authored
+  - metacognition
+  - active-inference
+  - agentic
+  - multi-agent
+  - tool-use
+
+  # MCP ecosystem
+  - mcp
+  - model-context-protocol
+  - fastmcp
+  - modelcontextprotocol
+  - mcp-server
+  - mcp-client
+  - mcp-tool
+  - streamable-http
+
+  # Memory / embeddings / vector stores
+  - chromadb
+  - pinecone
+  - weaviate
+  - qdrant
+  - milvus
+  - lancedb
+  - faiss
+  - sentence-transformers
+  - voyage-ai
+  - voyage-embeddings
+  - embedding
+  - rag
+  - retrieval-augmented
+
+  # Spaced repetition / memory science
+  - fsrs
+  - spaced-repetition
+  - flashcard
+  - anki
+
+  # Web frameworks / API / runtime
+  - fastapi
+  - starlette
+  - pydantic
+  - pydantic-v2
+  - flask
+  - django
+  - uvicorn
+  - hypercorn
+  - asgi
+  - wsgi
+  - httpx
+  - httpcore
+  - websocket
+
+  # CLI / typer / click
+  - click
+  - typer
+  - rich
+  - textual
+
+  # Testing / verification
+  - pytest
+  - hypothesis
+  - schemathesis
+  - testcontainers
+  - playwright
+
+  # Packaging / build
+  - uv
+  - poetry
+  - pdm
+  - hatch
+  - setuptools
+  - pyproject
+  - ruff
+  - mypy
+  - pyright
+
+  # Data / scientific computing
+  - polars
+  - duckdb
+  - pandas
+  - sqlalchemy
+  - alembic
+  - pydantic-settings
+
+  # Research frontiers relevant to the engine
+  - voyager
+  - omni-epic
+  - accel
+  - babyagi
+  - reflexion
+  - tree-of-thoughts
+  - sakana
+  - swe-bench
+  - ridges-ai
+  - ridges
+  - polyglot
+
+  # Bittensor ecosystem (future goal synthesis biasing)
+  - bittensor
+  - subnet
+  - tao
+
+  # Code generation / generation infrastructure
+  - code-generation
+  - code-synthesis
+  - greenfield
+  - brownfield
+  - ast-rewrite
+  - codemod
+
+  # Safety / interp / alignment
+  - constitutional-ai
+  - alignment
+  - interpretability
+  - circuit-breaker
+  - goodhart
+  - specification-gaming
+
+  # Evolutionary / search
+  - map-elites
+  - novelty-search
+  - quality-diversity
+  - evolutionary
+  - genetic-algorithm
+
+  # Local inference
+  - ollama
+  - llama-cpp
+  - llama.cpp
+  - exllama
+  - mlx
+  - candle
+
+  # DevOps-ish relevant to deployments
+  - docker
+  - docker-compose
+  - kubernetes
+  - traefik
+  - nginx
+  - systemd
+  - apscheduler
+  - celery
+
+  # TypeScript ecosystem (engine targets TS too)
+  - express5
+  - hono
+  - fastify
+  - vitest
+  - zod
+  - trpc
+  - esbuild
+  - tsx
+
+  # Streaming / realtime
+  - server-sent-events
+  - sse
+  - webrtc
+  - websockets
+
+  # Observability (spec notes Grafana/OTel-adjacent terms aid relevance)
+  - opentelemetry
+  - prometheus
+  - structlog
