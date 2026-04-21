@@ -40,6 +40,16 @@ class Cadences:
     arxiv_s: int = 6 * 3600                # 6h
     filter_pass_s: int = 30 * 60           # 30 min — cascade-run interval
     synthesis_cycle_s: int = 2 * 3600      # 2h — Session 4 goal synthesis
+    # Session 5 jobs
+    anomaly_watchdog_s: int = 15 * 60      # 15 min
+    audit_anchor_s: int = 24 * 3600        # 1/day
+    subnet_snapshot_s: int = 60 * 60       # 1/h
+    swebench_refresh_s: int = 7 * 24 * 3600  # 1/week
+    budget_reconcile_s: int = 24 * 3600    # 1/day
+    domain_profile_rebuild_s: int = 7 * 24 * 3600  # 1/week
+    threshold_calibrate_s: int = 7 * 24 * 3600     # 1/week
+    dead_letter_retry_s: int = 10 * 60     # 6/h
+    skill_library_compact_s: int = 24 * 3600       # 1/day
 
 
 @dataclass(frozen=True)

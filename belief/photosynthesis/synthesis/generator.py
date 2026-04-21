@@ -139,6 +139,7 @@ async def synthesize(
     embedder: Callable[[str], Any],
     generator_client: Callable[..., Awaitable[str]],
     bittensor_cosine: Optional[float] = None,
+    bittensor_bias_cutoff: float = 0.70,
     k: int = DEFAULT_SAMPLES,
     temperature: float = DEFAULT_TEMPERATURE,
 ) -> GeneratorResult:
@@ -196,6 +197,18 @@ async def synthesize(
 
     parsed.sort(key=lambda t: t[1].value, reverse=True)
     best_spec, best_ranker, best_json = parsed[0]
+
+    # Bittensor biasing (Session 5): when the seed is close enough to the
+    # SWE-Bench centroid, require the canonical validator-friendly
+    # acceptance criteria so every promoted goal practices the exact
+    # shapes SN62 scores on. This is a post-generation augmentation —
+    # it doesn't alter the LLM's original output beyond adding required
+    # criteria.
+    if (
+        bittensor_cosine is not None
+        and bittensor_cosine >= bittensor_bias_cutoff
+    ):
+        best_spec = _inject_bittensor_constraints(best_spec)
 
     if not best_ranker.accepted:
         return GeneratorResult(
@@ -305,6 +318,59 @@ def _slugify(text: str) -> str:
     lowered = text.lower().strip()
     slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
     return slug[:60]
+
+
+# ---------------------------------------------------------------------------
+# Session 5: Bittensor-biased spec augmentation
+# ---------------------------------------------------------------------------
+
+
+BITTENSOR_CONSTRAINT_LINE = (
+    "Agent must complete in <=25 minutes wallclock; "
+    "inference budget <=$2; no outbound network except proxy endpoint."
+)
+BITTENSOR_DIFF_AC = {
+    "kind": "artifact",
+    "spec": "output matches `diff --git` unified-diff format",
+}
+BITTENSOR_PYTEST_AC = {
+    "kind": "test",
+    "spec": "pytest runs inside sandbox with all repo tests passing",
+}
+
+
+def _inject_bittensor_constraints(spec: GoalSpec) -> GoalSpec:
+    """Return a copy of `spec` augmented for SN62 validator scoring.
+
+    Adds two required acceptance criteria (unified-diff output + pytest
+    in sandbox) and an operational constraint line embedded in the
+    novelty_rationale (the spec .md renderer pulls constraints from the
+    spec's fields + a fixed tail). Idempotent — re-running on a spec
+    that's already been augmented is a no-op.
+    """
+    already_has_diff = any(
+        ac.kind == "artifact" and "diff --git" in ac.spec for ac in spec.acceptance_criteria
+    )
+    already_has_pytest = any(
+        ac.kind == "test" and "sandbox" in ac.spec for ac in spec.acceptance_criteria
+    )
+
+    new_acs = list(spec.acceptance_criteria)
+    if not already_has_diff:
+        new_acs.append(AcceptanceCriterion.model_validate(BITTENSOR_DIFF_AC))
+    if not already_has_pytest:
+        new_acs.append(AcceptanceCriterion.model_validate(BITTENSOR_PYTEST_AC))
+
+    new_rel = spec.relevance_rationale
+    if BITTENSOR_CONSTRAINT_LINE not in new_rel:
+        new_rel = (new_rel.rstrip() + " " + BITTENSOR_CONSTRAINT_LINE).strip()
+
+    return spec.model_copy(
+        update={
+            "acceptance_criteria": new_acs,
+            "relevance_rationale": new_rel,
+        }
+    )
 
 
 __all__ = [

@@ -1,26 +1,36 @@
-"""Safety subsystem: cost budgets, kill switches, anomaly detection.
+"""Safety subsystem: cost budgets, kill switches, anomaly, audit, HITL, rate limits.
 
-Session 4 lands MINIMAL STUBS so synthesis modules can import safety
-primitives without Session 5 being complete. Every stub is permissive:
-
-  - CostTracker.under_budget() always True
-  - @kill_switch(tag=...) is a pass-through decorator
-
-Session 5 replaces these with real implementations (SQLite-backed
-cost log, per-tag kill-switch control table, Discord webhook, etc.).
-No public API changes expected — Session 4 modules already call the
-stubs by the name they'll have post-Session-5.
+Session 5 fills in the real implementations. Stubs from Session 4 are
+gone; the public surface (import paths, function/class names) is the
+same, so Session-4 callers keep working.
 """
 
 from belief.photosynthesis.safety.cost_tracker import (
+    BreakerAnthropic,
+    BreakerConfig,
     BudgetExceeded,
     CostTracker,
+    PRICING,
+    Usage,
+    price_usd,
 )
-from belief.photosynthesis.safety.kill_switch import kill_switch, KillSwitchTripped
+from belief.photosynthesis.safety.kill_switch import (
+    ControlStatus,
+    KillSwitchTripped,
+    KillSwitchState,
+    kill_switch,
+)
 
 __all__ = [
+    "BreakerAnthropic",
+    "BreakerConfig",
     "BudgetExceeded",
+    "ControlStatus",
     "CostTracker",
+    "KillSwitchState",
     "KillSwitchTripped",
+    "PRICING",
+    "Usage",
     "kill_switch",
+    "price_usd",
 ]
