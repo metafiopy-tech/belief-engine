@@ -64,6 +64,35 @@ CREATE TABLE IF NOT EXISTS watermarks (
     last_cursor TEXT,
     updated_at  INTEGER NOT NULL
 ) WITHOUT ROWID;
+
+-- Session 4: ACCEL-style bounded priority heap for synthesis candidates.
+-- Capacity is enforced by the heap class, not a SQL constraint. Each row
+-- is a single pushed seed with its current computed value; the generator
+-- pops the top and writes a goal spec.
+CREATE TABLE IF NOT EXISTS synthesis_heap (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    seed_json TEXT    NOT NULL,
+    value     REAL    NOT NULL,
+    added_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_synthesis_heap_value
+    ON synthesis_heap(value);
+
+-- Session 4: rolling log of per-cycle min-value samples used by the heap's
+-- saturation detector. 3 consecutive cycles with min(recent 20) > 0.70 is
+-- the signal to pause upstream.
+CREATE TABLE IF NOT EXISTS synthesis_cycle_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_ts     INTEGER NOT NULL,
+    min_value    REAL,
+    mean_value   REAL,
+    pushed_count INTEGER NOT NULL DEFAULT 0,
+    saturation   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_synthesis_cycle_log_ts
+    ON synthesis_cycle_log(cycle_ts);
 """
 
 
@@ -224,6 +253,40 @@ class PhotosynthesisState:
                 (stage_reached, filter_score, status, signal_id),
             )
             c.execute("COMMIT;")
+
+    def set_signal_status(self, signal_id: int, status: str) -> None:
+        """Transition a raw_signal row to a new terminal status.
+
+        Used by the synthesis cycle to mark rows 'promoted' (written to
+        pending_sessions) or 'rejected' (failed novelty/ZPD gates).
+        """
+        with self.conn() as c:
+            c.execute("BEGIN IMMEDIATE;")
+            c.execute(
+                "UPDATE raw_signals SET status = ? WHERE id = ?;",
+                (status, signal_id),
+            )
+            c.execute("COMMIT;")
+
+    def survivors_for_synthesis(self, limit: int = 20) -> list[sqlite3.Row]:
+        """Top-k stage-3 survivors ranked by filter_score, newest first.
+
+        Only rows that are still 'kept' (haven't been promoted or rejected)
+        are returned — makes the synthesis cycle idempotent: re-running
+        on the same raw_signals won't re-produce duplicate goals.
+        """
+        with self.conn() as c:
+            return list(
+                c.execute(
+                    "SELECT id, source, source_id, title, summary, raw_excerpt, "
+                    "       filter_score, captured_at "
+                    "FROM raw_signals "
+                    "WHERE status = 'kept' AND stage_reached = 3 "
+                    "ORDER BY filter_score DESC, captured_at DESC "
+                    "LIMIT ?;",
+                    (limit,),
+                )
+            )
 
     # ------------------------------------------------------------------ diagnostics
     def count_by_source(self) -> dict[str, int]:
