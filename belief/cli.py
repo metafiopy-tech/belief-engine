@@ -691,6 +691,71 @@ def _run_optimize_cmd(args):
     print("  Optimization complete.")
 
 
+def _run_probe_cmd(args) -> None:
+    """Session 10: belief probe train|test."""
+    from belief.metrics.trace_collector import TraceCollector
+    from belief.safety.confidence_probe import (
+        ConfidenceProbe,
+        DEFAULT_PROBE_PATH,
+    )
+
+    action = getattr(args, "probe_action", None) or "test"
+    traces_path = getattr(args, "traces", None)
+    probe_path = Path(getattr(args, "probe", None) or DEFAULT_PROBE_PATH)
+
+    if action == "train":
+        out_path = Path(getattr(args, "out", None) or DEFAULT_PROBE_PATH)
+        min_samples = int(getattr(args, "min_samples", 200))
+        tc_path = traces_path or str(
+            Path("~/.belief-engine/traces.db").expanduser()
+        )
+        tc = TraceCollector(tc_path, start_writer=False)
+        rows = tc.get_training_data(min_builds=0)
+        probe = ConfidenceProbe(out_path)
+        meta = probe.train(rows, min_samples=min_samples)
+        if probe.model is None:
+            print(
+                f"probe.train: refused (n_samples={meta.n_samples}, "
+                f"min_samples={meta.min_samples_required})"
+            )
+            return
+        print(
+            f"probe trained: n={meta.n_samples} positives={meta.n_positive} "
+            f"calibrated={meta.calibrated} feature_dim={meta.feature_dim}"
+        )
+        print(f"saved to: {out_path}")
+        return
+
+    if action == "test":
+        tc_path = traces_path or str(
+            Path("~/.belief-engine/traces.db").expanduser()
+        )
+        tc = TraceCollector(tc_path, start_writer=False)
+        rows = tc.get_training_data(min_builds=0)
+        probe = ConfidenceProbe(probe_path)
+        report = probe.evaluate(rows)
+        if not report.get("trained"):
+            print(
+                f"probe.test: probe not trained (reason: {report.get('reason', 'unknown')})"
+            )
+            return
+        if "error" in report:
+            print(f"probe.test: error {report['error']}")
+            return
+        print(
+            f"n={report.get('n', 0)} accuracy={report.get('accuracy', 0):.3f} "
+            f"brier={report.get('brier', 0):.3f}"
+        )
+        cm = report.get("confusion_matrix", [])
+        if cm:
+            print(f"confusion_matrix (rows=actual, cols=predicted):")
+            for row in cm:
+                print("  " + " ".join(f"{int(v):5d}" for v in row))
+        return
+
+    print("unknown probe action; try: train / test")
+
+
 def _run_grinder_cmd(args) -> None:
     """Session 8: belief grinder start|status|pause|resume."""
     action = getattr(args, "grinder_action", None) or "status"
@@ -893,6 +958,30 @@ def app():
         "--ids", nargs="+", help="Specific challenge IDs",
     )
 
+    # `belief probe` — Session 10: confidence probe training + eval
+    probe_parser = subparsers.add_parser(
+        "probe", help="Confidence probe commands"
+    )
+    probe_sub = probe_parser.add_subparsers(dest="probe_action")
+    pt = probe_sub.add_parser("train", help="Train the probe on collected traces")
+    pt.add_argument(
+        "--traces", default=None, help="Path to traces.db (default: ~/.belief-engine/traces.db)",
+    )
+    pt.add_argument(
+        "--min-samples", type=int, default=200,
+        help="Refuse to train on fewer than N labeled step rows (default: 200)",
+    )
+    pt.add_argument(
+        "--out", default=None, help="Where to save the trained probe (default: ~/.belief-engine/probe.pkl)",
+    )
+    pe = probe_sub.add_parser("test", help="Evaluate the trained probe on traces")
+    pe.add_argument(
+        "--traces", default=None, help="Path to traces.db to evaluate against",
+    )
+    pe.add_argument(
+        "--probe", default=None, help="Path to a saved probe (default: ~/.belief-engine/probe.pkl)",
+    )
+
     # `belief grinder` — Session 8: autonomous build loop
     grinder_parser = subparsers.add_parser(
         "grinder", help="Grinder daemon commands"
@@ -966,6 +1055,9 @@ def app():
         sys.exit(0)
     elif args.command == "grinder":
         _run_grinder_cmd(args)
+        sys.exit(0)
+    elif args.command == "probe":
+        _run_probe_cmd(args)
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)

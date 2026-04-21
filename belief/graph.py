@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from langgraph.graph import END, StateGraph
 
@@ -69,7 +69,66 @@ def _error_hash(error: str) -> str:
     return hashlib.md5(_normalize_error(error).encode()).hexdigest()[:12]
 
 
+def _maybe_apply_confidence_probe(state: dict[str, Any]) -> Optional[str]:
+    """Session 10: consult the confidence probe before normal routing.
+
+    Returns a next-node name ONLY when the probe wants to circuit-break;
+    otherwise None (caller proceeds with the normal routing logic).
+    Also sets state['escalate_to_cloud'] when running local and
+    confidence is in the mid-band. No-op unless the probe file exists
+    and BELIEF_ENABLE_PROBE env var is set, so default routing is
+    unchanged.
+    """
+    try:
+        from belief.safety.confidence_probe import (
+            get_default_probe,
+            is_probe_routing_enabled,
+        )
+    except Exception:
+        return None
+    if not is_probe_routing_enabled():
+        return None
+
+    probe = get_default_probe()
+    # Feature-row from the most-recently-traced step. The probe wants a
+    # dict that matches TraceCollector's row shape; we synthesize one
+    # from current state.
+    budget = state.get("budget")
+    cost = float(getattr(budget, "spent_usd", 0.0) or 0.0) if budget else 0.0
+    row = {
+        "agent_name": state.get("_last_agent", "gap_analyst"),
+        "iteration": int(state.get("iteration", 0) or 0),
+        "cost_so_far": cost,
+        "output_summary": str(state.get("last_agent_output") or "")[:500],
+        "step_index": int(state.get("_step_index", 0) or 0),
+        "build_passed": None,
+    }
+    try:
+        confidence = probe.predict_confidence(row)
+    except Exception:
+        return None
+
+    if confidence < 0.4:
+        logger.warning(
+            "confidence probe: low confidence (%.2f) — circuit-breaking to synthesizer",
+            confidence,
+        )
+        return "synthesizer"
+    # Mid-band with local mode: flag for escalation
+    if (
+        confidence < 0.8
+        and str(state.get("model_mode") or "").lower() == "local"
+    ):
+        state["escalate_to_cloud"] = True
+    return None
+
+
 def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "builder", "synthesizer"]:
+    # Session 10: probe-driven circuit-break. No-op unless enabled + trained.
+    probe_decision = _maybe_apply_confidence_probe(state)
+    if probe_decision == "synthesizer":
+        return "synthesizer"
+
     iteration = state.get("iteration", 0)
     max_iter = state.get("max_iterations", 3)
 
