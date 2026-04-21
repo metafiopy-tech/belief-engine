@@ -23,6 +23,52 @@ from typing import Optional
 logger = logging.getLogger("belief.evolution.progression")
 
 
+# ---------------------------------------------------------------------------
+# Session 7: per-domain (vertical) progression tracking
+# ---------------------------------------------------------------------------
+
+
+# Keyword -> domain dictionary. Matched as a substring against the goal
+# text (case-insensitive). First domain with a hit wins; falls back to
+# "general". Deliberately simple — no LLM in the hot path (spec).
+DOMAINS: dict[str, list[str]] = {
+    "fastapi": ["fastapi", "api", "rest", "crud", "endpoint", "route"],
+    "cli":     ["click", "cli", "command-line", "command line", "typer"],
+    "mcp":     ["mcp", "fastmcp", "tool-server", "tool server"],
+    "data":    ["csv", "pipeline", "etl", "data pipeline"],
+    "async":   ["asyncio", "websocket", "queue", "async "],
+    "library": ["sdk", "wrapper", "library", "package"],
+    "script":  ["script", "fizzbuzz", "fibonacci"],
+}
+
+GENERAL_DOMAIN = "general"
+
+# Stable ordering for display (matches the spec's example).
+DOMAIN_DISPLAY_ORDER: tuple[str, ...] = (
+    "fastapi", "cli", "mcp", "data", "async", "library", "script", GENERAL_DOMAIN,
+)
+
+
+def detect_domain(goal: str, tags: Optional[list[str]] = None) -> str:
+    """Classify a goal into one of the DOMAINS buckets.
+
+    Keyword-match only. Checks the goal text first, then falls back to
+    any supplied tags. Returns "general" when nothing matches.
+    """
+    goal_lower = (goal or "").lower()
+    for domain, keywords in DOMAINS.items():
+        if any(kw in goal_lower for kw in keywords):
+            return domain
+    if tags:
+        tag_set = {str(t).lower() for t in tags}
+        for domain, keywords in DOMAINS.items():
+            if tag_set.intersection({kw.replace(" ", "-") for kw in keywords}):
+                return domain
+            if tag_set.intersection(keywords):
+                return domain
+    return GENERAL_DOMAIN
+
+
 @dataclass
 class ProgressionMetrics:
     """Current position in the generative chain."""
@@ -37,12 +83,16 @@ class ProgressionMetrics:
     archetype_reuse: float = 0.0        # Stage 5: reuse on novel tasks
     current_stage: int = 0              # 0-5
     total_tool_count: int = 0
+    # Session 7: which domain this snapshot represents. "general" means
+    # the cross-domain view; otherwise one of DOMAINS.
+    domain: str = GENERAL_DOMAIN
 
 
 def compute_progression(
     soil,
     tool_registry,
     build_traces: list[dict],
+    domain: str = GENERAL_DOMAIN,
 ) -> ProgressionMetrics:
     """Compute current generative chain stage.
 
@@ -55,6 +105,13 @@ def compute_progression(
         ProgressionMetrics with current_stage set to 0-5.
     """
     all_tools = tool_registry.get_active_tools()
+
+    # Session 7: if a specific domain was requested, filter tools and
+    # build_traces whose tags/goal overlap that domain. "general"
+    # keeps the cross-domain behavior (no filter).
+    if domain != GENERAL_DOMAIN:
+        all_tools = [t for t in all_tools if _tool_in_domain(t, domain)]
+        build_traces = [tr for tr in build_traces if _trace_in_domain(tr, domain)]
 
     # Stage 0: Seed — count hand-authored vs self-authored
     seed_count = len([t for t in all_tools if t.created_by == "human"])
@@ -102,7 +159,137 @@ def compute_progression(
         archetype_reuse=reuse,
         current_stage=stage,
         total_tool_count=total_count,
+        domain=domain,
     )
+
+
+# ---------------------------------------------------------------------------
+# Session 7: per-domain helpers + reporting
+# ---------------------------------------------------------------------------
+
+
+def _tool_in_domain(tool, domain: str) -> bool:
+    """Is this tool relevant to the domain?
+
+    Matches tag overlap and name/description substrings. Defensive to
+    tools with minimal metadata (accepts missing fields).
+    """
+    if domain == GENERAL_DOMAIN:
+        return True
+    keywords = DOMAINS.get(domain, [])
+    tags = [str(t).lower() for t in (getattr(tool, "tags", []) or [])]
+    name = (getattr(tool, "name", "") or "").lower()
+    desc = (getattr(tool, "description", "") or "").lower()
+    for kw in keywords:
+        if kw in tags or kw in name or kw in desc:
+            return True
+        if kw.replace(" ", "-") in tags:
+            return True
+    return False
+
+
+def _trace_in_domain(trace: dict, domain: str) -> bool:
+    """Is this build-trace dict relevant to the domain?"""
+    if domain == GENERAL_DOMAIN:
+        return True
+    goal = str(trace.get("goal", "") or trace.get("user_goal", "")).lower()
+    tags = [str(t).lower() for t in (trace.get("tags") or [])]
+    if detect_domain(goal, tags) == domain:
+        return True
+    # Trace may store domain explicitly
+    if str(trace.get("domain", "")).lower() == domain:
+        return True
+    return False
+
+
+def compute_all_domains(
+    soil,
+    tool_registry,
+    build_traces: list[dict],
+    *,
+    include_general: bool = True,
+) -> dict[str, ProgressionMetrics]:
+    """Compute per-domain progression for every entry in DOMAINS.
+
+    Returns {domain_name: ProgressionMetrics}. When include_general is
+    True (default) the cross-domain view is also included under the key
+    "general".
+    """
+    out: dict[str, ProgressionMetrics] = {}
+    for domain in DOMAINS:
+        out[domain] = compute_progression(
+            soil, tool_registry, build_traces, domain=domain
+        )
+    if include_general:
+        out[GENERAL_DOMAIN] = compute_progression(
+            soil, tool_registry, build_traces, domain=GENERAL_DOMAIN
+        )
+    return out
+
+
+def format_all_domains_report(
+    by_domain: dict[str, ProgressionMetrics],
+    *,
+    bar_width: int = 10,
+) -> str:
+    """Render the spec's per-domain stage bar chart.
+
+    Each row: "  fastapi:  Stage 2 (Tessellation) ████████░░ 85% coverage"
+    """
+    stage_names = {
+        0: "Seed",
+        1: "Cluster",
+        2: "Tessellation",
+        3: "Basis",
+        4: "Connectivity",
+        5: "Archetypes",
+    }
+
+    lines = ["Generative Chain Stages:", ""]
+    # Stable ordering
+    ordered = [d for d in DOMAIN_DISPLAY_ORDER if d in by_domain]
+    # Any unknown domains tacked on alphabetically
+    for extra in sorted(by_domain.keys() - set(ordered)):
+        ordered.append(extra)
+
+    for domain in ordered:
+        m = by_domain[domain]
+        stage_label = stage_names.get(m.current_stage, "?")
+        fraction = _progress_fraction(m)
+        filled = round(bar_width * max(0.0, min(1.0, fraction)))
+        bar = "█" * filled + "░" * (bar_width - filled)
+        note = _progress_note(m)
+        lines.append(
+            f"  {domain:<9} Stage {m.current_stage} ({stage_label:<12}) {bar} {note}"
+        )
+    return "\n".join(lines)
+
+
+def _progress_fraction(metrics: ProgressionMetrics) -> float:
+    """A 0..1 "how much progress" signal for the bar.
+
+    Uses coverage when we're past stage 1, else fraction-of-cluster-target
+    (3 clusters), else fraction-of-seed-target (10 seeds). Degenerate
+    empty domains produce 0.0 — no builds yet.
+    """
+    if metrics.total_tool_count == 0:
+        return 0.0
+    if metrics.current_stage >= 2:
+        return max(metrics.coverage_fraction, 0.5)
+    if metrics.current_stage == 1:
+        return min(1.0, metrics.cluster_count / 5.0)
+    return min(1.0, metrics.total_tool_count / 10.0)
+
+
+def _progress_note(metrics: ProgressionMetrics) -> str:
+    """Short right-side annotation: most informative stat for this stage."""
+    if metrics.total_tool_count == 0:
+        return "no builds"
+    if metrics.current_stage >= 2:
+        return f"{metrics.coverage_fraction:.0%} coverage"
+    if metrics.current_stage == 1:
+        return f"{metrics.cluster_count} clusters"
+    return f"{metrics.total_tool_count} tool{'s' if metrics.total_tool_count != 1 else ''}"
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

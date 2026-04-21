@@ -39,6 +39,11 @@ class IterationMetrics:
     covenant_count: int = 0
     covenant_discovery_rate: float = 0.0     # New covenants in last 10 builds
     canary_score: Optional[float] = None
+    # Session 7: soil lift = warm_score - cold_score for a sampled build
+    # pair, measuring how much accumulated nutrients improve local-model
+    # output. 0.0 is the "untested" sentinel — the metric is only
+    # meaningful after at least one hot/cold benchmark pair has run.
+    soil_lift: float = 0.0
 
 
 class MetricsDashboard:
@@ -60,6 +65,10 @@ class MetricsDashboard:
             return []
 
         metrics: list[IterationMetrics] = []
+        # Session 7: filter unknown keys so forward/backward compatible reads
+        # succeed. An install that predates the soil_lift field can still
+        # read rows written after the field was added (and vice-versa).
+        known_keys = {f for f in IterationMetrics.__dataclass_fields__}
         with open(self.db_path) as f:
             for line in f:
                 line = line.strip()
@@ -67,7 +76,8 @@ class MetricsDashboard:
                     continue
                 try:
                     d = json.loads(line)
-                    metrics.append(IterationMetrics(**d))
+                    filtered = {k: v for k, v in d.items() if k in known_keys}
+                    metrics.append(IterationMetrics(**filtered))
                 except (json.JSONDecodeError, TypeError):
                     continue
         return metrics

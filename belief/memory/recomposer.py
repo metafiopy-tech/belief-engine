@@ -29,6 +29,59 @@ from belief.memory.nutrients import NutrientType
 
 logger = logging.getLogger("belief.memory.recomposer")
 
+
+# ---------------------------------------------------------------------------
+# Session 7: domain-aware re-ranking
+# ---------------------------------------------------------------------------
+
+
+def _nutrient_domain_score(nutrient, target_domain: str) -> int:
+    """Rank a nutrient against the current build's domain.
+
+    Score ladder:
+      3  same domain as the build
+      2  "general" domain  (neutral prior — safe to promote)
+      1  any other explicit domain
+      0  no domain information at all (least-specific)
+    """
+    from belief.evolution.progression import (
+        GENERAL_DOMAIN,
+        detect_domain,
+    )
+
+    tags = [str(t).lower() for t in (getattr(nutrient, "tags", []) or [])]
+    # A nutrient may encode its domain directly as a tag or via framework
+    framework = (getattr(nutrient, "framework", "") or "").lower()
+    content = (getattr(nutrient, "content", "") or "").lower()
+    blob = " ".join([framework] + tags)
+    if not blob.strip() and not content:
+        return 0
+    nutrient_domain = detect_domain(blob or content, tags=tags)
+    if nutrient_domain == target_domain:
+        return 3
+    if nutrient_domain == GENERAL_DOMAIN:
+        return 2
+    return 1
+
+
+def reorder_by_domain(nutrients: list, target_domain: str) -> list:
+    """Stable re-sort: same-domain first, general next, others after.
+
+    Returns a new list; input is not mutated. When target_domain is
+    "general" the input list is returned unchanged (no preference).
+    """
+    from belief.evolution.progression import GENERAL_DOMAIN
+
+    if target_domain == GENERAL_DOMAIN or not nutrients:
+        return list(nutrients)
+    scored = [
+        (_nutrient_domain_score(n, target_domain), i, n)
+        for i, n in enumerate(nutrients)
+    ]
+    # Higher score first; stable by original index on ties
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return [n for _, _, n in scored]
+
 # ── Soil accessor (shared with decomposer) ───────────────────────────────────
 
 _soil_instance = None
@@ -120,6 +173,18 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
         profile.patterns = _fsrs_filter(profile.patterns, now_ts)
         profile.skeletons = _fsrs_filter(profile.skeletons, now_ts)
 
+        # Session 7: domain-aware re-ranking. Detect the current build's
+        # domain from the goal, then reorder each nutrient list so
+        # same-domain > general > other. This keeps e.g. FastAPI patterns
+        # from being crowded out by CLI nutrients on a CRUD build.
+        from belief.evolution.progression import detect_domain
+
+        build_domain = detect_domain(goal, tags=state.get("tags") or [])
+        profile.covenants = reorder_by_domain(profile.covenants, build_domain)
+        profile.antipatterns = reorder_by_domain(profile.antipatterns, build_domain)
+        profile.patterns = reorder_by_domain(profile.patterns, build_domain)
+        profile.skeletons = reorder_by_domain(profile.skeletons, build_domain)
+
         if profile.is_empty:
             logger.info("Recomposer: all nutrients filtered by FSRS — proceeding without context")
             result["nutrient_context"] = ""
@@ -137,6 +202,7 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
             "skeletons": len(profile.skeletons),
             "total": profile.total_nutrients,
             "context_chars": len(context_block),
+            "domain": build_domain,
         }
 
         result["nutrient_context"] = context_block
