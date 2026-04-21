@@ -135,6 +135,35 @@ class PhotosynthesisDaemon:
             replace_existing=True,
         )
 
+        # Session 5 jobs. Each is best-effort: their callbacks catch
+        # their own exceptions so a single failure doesn't stop the
+        # scheduler. Implementations that need live external services
+        # (Admin API, Discord webhook, bittensor SDK) gracefully no-op
+        # when the deps aren't wired up.
+        s5_jobs = (
+            ("anomaly_watchdog", self._anomaly_watchdog, self.config.cadences.anomaly_watchdog_s),
+            ("audit_anchor", self._audit_anchor, self.config.cadences.audit_anchor_s),
+            ("subnet_snapshot", self._subnet_snapshot, self.config.cadences.subnet_snapshot_s),
+            ("swebench_refresh", self._swebench_refresh, self.config.cadences.swebench_refresh_s),
+            ("budget_reconcile", self._budget_reconcile, self.config.cadences.budget_reconcile_s),
+            ("domain_profile_rebuild", self._domain_profile_rebuild, self.config.cadences.domain_profile_rebuild_s),
+            ("threshold_calibrate", self._threshold_calibrate, self.config.cadences.threshold_calibrate_s),
+            ("dead_letter_retry", self._dead_letter_retry, self.config.cadences.dead_letter_retry_s),
+            ("skill_library_compact", self._skill_library_compact, self.config.cadences.skill_library_compact_s),
+        )
+        for job_id, callback, seconds in s5_jobs:
+            self.scheduler.add_job(
+                callback,
+                trigger="interval",
+                seconds=seconds,
+                id=job_id,
+                name=job_id,
+                replace_existing=True,
+            )
+
+        # control_table_init runs once on startup (fires ~5s after start)
+        self._control_table_init()
+
         # Error listeners
         self.scheduler.add_listener(
             self._on_job_error,
@@ -251,6 +280,94 @@ class PhotosynthesisDaemon:
             logger.info("synthesis_cycle: %s", result)
         except Exception:
             logger.exception("synthesis cycle failed")
+
+    # --------------------------------------------------------- Session 5 jobs
+    def _anomaly_watchdog(self) -> None:
+        """Run the cost-series anomaly detectors; pause on alert."""
+        try:
+            from belief.photosynthesis.safety.anomaly import run_watchdog
+            from belief.photosynthesis.safety.cost_tracker import CostTracker
+            from belief.photosynthesis.safety.kill_switch import get_default_state
+
+            tracker = CostTracker()
+            result = run_watchdog(tracker, get_default_state())
+            if result.alerts:
+                logger.warning("anomaly_watchdog: %d alerts, paused=%s",
+                               len(result.alerts), result.flipped_to_paused)
+        except Exception:
+            logger.exception("anomaly_watchdog failed")
+
+    def _audit_anchor(self) -> None:
+        """Post the current audit head hash to an external sink."""
+        try:
+            from belief.photosynthesis.safety.audit import AuditLog
+
+            head = AuditLog().head_hash()
+            # Real deployment wires a Discord webhook here; log-only for now.
+            logger.info("audit anchor: head=%s", head)
+        except Exception:
+            logger.exception("audit_anchor failed")
+
+    def _subnet_snapshot(self) -> None:
+        try:
+            from belief.photosynthesis.bittensor.subnet_watcher import SubnetWatcher
+
+            SubnetWatcher().snapshot_once()
+        except Exception:
+            logger.exception("subnet_snapshot failed")
+
+    def _swebench_refresh(self) -> None:
+        try:
+            from belief.photosynthesis.bittensor.swebench_mirror import SwebenchMirror
+
+            m = SwebenchMirror()
+            m.ingest_swebench_verified(limit=500)
+            m.ingest_polyglot(limit=200)
+            logger.info("swebench_refresh: %d total tasks cached", m.count())
+        except Exception:
+            logger.exception("swebench_refresh failed")
+
+    def _budget_reconcile(self) -> None:
+        """Spec: hit Anthropic Admin /cost_report; compare to CostTracker.
+
+        The real Admin API call needs ADMIN_API_KEY. Session 5 ships
+        the scheduler hook; the actual HTTP call is a follow-up when
+        ops grants the admin scope. Until then, log the local total.
+        """
+        try:
+            from belief.photosynthesis.safety.cost_tracker import CostTracker
+
+            local = CostTracker().spent("1 day")
+            logger.info("budget_reconcile: local_24h=$%.4f (Admin API not wired)", local)
+        except Exception:
+            logger.exception("budget_reconcile failed")
+
+    def _domain_profile_rebuild(self) -> None:
+        """Spec: k-means recompute over the last week of promoted goals."""
+        logger.info("domain_profile_rebuild: (placeholder — needs ChromaDB env)")
+
+    def _threshold_calibrate(self) -> None:
+        """Spec: p95 analysis + Haiku label loop on filter boundary."""
+        logger.info("threshold_calibrate: (placeholder — needs Haiku client)")
+
+    def _dead_letter_retry(self) -> None:
+        """Spec: retry items stuck in failed_gen with different prompts."""
+        logger.info("dead_letter_retry: (placeholder — needs Sonnet client)")
+
+    def _skill_library_compact(self) -> None:
+        """Spec: compact the skill library (dedup near-duplicate skills)."""
+        logger.info("skill_library_compact: (placeholder — needs skill library)")
+
+    def _control_table_init(self) -> None:
+        """Ensure the kill-switch control table row exists on startup."""
+        try:
+            from belief.photosynthesis.safety.kill_switch import get_default_state
+
+            state = get_default_state()
+            state.install_signal_handlers()
+            logger.info("control_table_init: status=%s", state.current_status().value)
+        except Exception:
+            logger.exception("control_table_init failed")
 
     # --------------------------------------------------------- event listeners
     def _on_job_error(self, event: Any) -> None:
