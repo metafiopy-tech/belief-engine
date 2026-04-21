@@ -630,6 +630,68 @@ async def _refinement_node(state: dict[str, Any]) -> dict[str, Any]:
 
 # ── Build the graph ───────────────────────────────────────────────────────────
 
+def _traced(node: Any, agent_name: str) -> Any:
+    """Session 9: wrap a graph node with per-step trace recording.
+
+    Does nothing when BELIEF_ENABLE_TRACE is unset (the default) — so
+    existing tests and builds see no behavior change. When the env var
+    is truthy, the wrapper calls record_step_from_state after the node
+    returns, capturing agent_name, cost_so_far, iteration, and a short
+    output summary.
+
+    Handles both sync functions AND LangGraph-compatible agent
+    instances (whose __call__ is async). Exceptions from the trace
+    recorder are always swallowed — tracing must never fail a build.
+    """
+    try:
+        from belief.metrics.trace_collector import (
+            is_tracing_enabled,
+            record_step_from_state,
+        )
+    except Exception:
+        return node
+    if not is_tracing_enabled():
+        return node
+
+    import asyncio as _asyncio
+    import functools as _functools
+
+    call_target = node if callable(node) else getattr(node, "__call__", node)
+    is_async = _asyncio.iscoroutinefunction(call_target) or (
+        hasattr(node, "__call__")
+        and _asyncio.iscoroutinefunction(node.__call__)
+    )
+
+    if is_async:
+        @_functools.wraps(call_target)
+        async def _async_wrapper(state: Any) -> Any:
+            result = await node(state)
+            try:
+                record_step_from_state(
+                    result if isinstance(result, dict) else state,
+                    agent_name=agent_name,
+                )
+            except Exception:
+                pass
+            return result
+
+        return _async_wrapper
+
+    @_functools.wraps(call_target)
+    def _sync_wrapper(state: Any) -> Any:
+        result = node(state)
+        try:
+            record_step_from_state(
+                result if isinstance(result, dict) else state,
+                agent_name=agent_name,
+            )
+        except Exception:
+            pass
+        return result
+
+    return _sync_wrapper
+
+
 def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     """Construct and compile the Belief Engine pipeline."""
     if router is None:
@@ -650,26 +712,27 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
 
     graph = StateGraph(dict)
 
-    # Nodes
-    graph.add_node("intake", intake)
-    graph.add_node("research", research)
-    graph.add_node("planner", planner)
-    graph.add_node("architect", architect)
-    graph.add_node("skeleton_pass1", skeleton_pass1_node)
-    graph.add_node("builder", builder)
-    graph.add_node("tester", tester)
-    graph.add_node("executor", executor)
-    graph.add_node("debugger", debugger)
-    graph.add_node("gap_analyst", gap_analyst)
-    graph.add_node("increment_iteration", _increment_iteration)
-    graph.add_node("synthesizer", synthesizer)
-    graph.add_node("validator", validator)
-    graph.add_node("polarity_check", _polarity_check_node)
-    graph.add_node("decomposer", decomposer_node)
-    graph.add_node("recomposer", recomposer_node)
-    graph.add_node("refinement", _refinement_node)
-    graph.add_node("import_fix", _import_fix_node)
-    graph.add_node("covenant_enforce", _covenant_enforce_node)
+    # Nodes — each wrapped with _traced so BELIEF_ENABLE_TRACE=1 captures
+    # a StepTrace after the node runs. Default (env unset): no-op.
+    graph.add_node("intake", _traced(intake, "intake"))
+    graph.add_node("research", _traced(research, "research"))
+    graph.add_node("planner", _traced(planner, "planner"))
+    graph.add_node("architect", _traced(architect, "architect"))
+    graph.add_node("skeleton_pass1", _traced(skeleton_pass1_node, "skeleton_pass1"))
+    graph.add_node("builder", _traced(builder, "builder"))
+    graph.add_node("tester", _traced(tester, "tester"))
+    graph.add_node("executor", _traced(executor, "executor"))
+    graph.add_node("debugger", _traced(debugger, "debugger"))
+    graph.add_node("gap_analyst", _traced(gap_analyst, "gap_analyst"))
+    graph.add_node("increment_iteration", _traced(_increment_iteration, "increment_iteration"))
+    graph.add_node("synthesizer", _traced(synthesizer, "synthesizer"))
+    graph.add_node("validator", _traced(validator, "validator"))
+    graph.add_node("polarity_check", _traced(_polarity_check_node, "polarity_check"))
+    graph.add_node("decomposer", _traced(decomposer_node, "decomposer"))
+    graph.add_node("recomposer", _traced(recomposer_node, "recomposer"))
+    graph.add_node("refinement", _traced(_refinement_node, "refinement"))
+    graph.add_node("import_fix", _traced(_import_fix_node, "import_fix"))
+    graph.add_node("covenant_enforce", _traced(_covenant_enforce_node, "covenant_enforce"))
 
     # Entry — recomposer runs first (retrieves nutrients from soil)
     graph.set_entry_point("recomposer")
