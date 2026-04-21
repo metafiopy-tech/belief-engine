@@ -1,0 +1,68 @@
+#
+# Photosynthesis research daemon — systemd unit.
+#
+# Install:
+#
+#   # 1. Create the service user and state/log dirs
+#   sudo useradd -r -s /usr/sbin/nologin photo
+#   sudo install -d -o photo -g photo -m 0755 /var/lib/photosynthesis
+#   sudo install -d -o photo -g photo -m 0755 /var/log/photosynthesis
+#
+#   # 2. Place secrets (never commit these!)
+#   sudo install -d -o root -g photo -m 0750 /etc/photosynthesis
+#   sudo install -o root -g photo -m 0640 photosynthesis.env /etc/photosynthesis/env
+#   # /etc/photosynthesis/env holds ANTHROPIC_API_KEY, GH_TOKEN,
+#   # STACKEX_KEY, REDDIT_* — each KEY=value on its own line.
+#
+#   # 3. Copy this unit and enable
+#   sudo cp deploy/photosynthesis.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now photosynthesis.service
+#
+#   # 4. Verify
+#   systemd-analyze verify /etc/systemd/system/photosynthesis.service
+#   journalctl -u photosynthesis -f
+#
+# Assumes the project is installed into a virtualenv at
+# /opt/belief_engine/.venv. Adjust ExecStart if yours lives elsewhere.
+#
+
+[Unit]
+Description=Belief Engine: Photosynthesis Research Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=photo
+Group=photo
+WorkingDirectory=/opt/belief_engine
+EnvironmentFile=/etc/photosynthesis/env
+ExecStart=/opt/belief_engine/.venv/bin/python -m belief.photosynthesis.daemon
+Restart=on-failure
+RestartSec=10s
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# Resource caps — the target footprint is <300 MB RSS after 24h.
+MemoryHigh=384M
+MemoryMax=512M
+CPUQuota=75%
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# The daemon needs to write to its own state and log dirs only.
+ReadWritePaths=/var/lib/photosynthesis /var/log/photosynthesis
+
+[Install]
+WantedBy=multi-user.target
