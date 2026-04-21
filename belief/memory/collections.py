@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
+from typing import Optional, Union
 
 import chromadb
 from chromadb.api.types import EmbeddingFunction
@@ -73,26 +73,43 @@ DEFAULT_COLLECTION = "belief_episodes"
 
 def get_or_create_collections(
     client: chromadb.Client,
-    embedding_fn: Optional[EmbeddingFunction] = None,
+    embedding_fn: Optional[
+        Union[EmbeddingFunction, dict[str, EmbeddingFunction]]
+    ] = None,
 ) -> dict[str, chromadb.Collection]:
     """Create or retrieve all 5 collections with cosine distance.
 
     Args:
         client:       A chromadb.Client (persistent or ephemeral).
-        embedding_fn: Optional embedding function.  If *None*, ChromaDB
-                      uses its built-in default.  In practice the caller
-                      passes ``_HashEmbeddingFunction`` from soil.py.
+        embedding_fn: Optional embedding function.  Three shapes are
+                      accepted:
+
+                      * ``None`` — ChromaDB uses its built-in default.
+                      * A single :class:`EmbeddingFunction` — applied to
+                        every collection (legacy behaviour).
+                      * A ``dict[name, EmbeddingFunction]`` — each named
+                        collection uses its own EF (Session 13: enables
+                        per-collection routing such as ``voyage-code-3``
+                        for code collections and ``voyage-3-large`` for
+                        text collections).  Names missing from the dict
+                        fall back to the ChromaDB default.
 
     Returns:
         Dict mapping collection name → chromadb.Collection.
     """
     collections: dict[str, chromadb.Collection] = {}
 
-    kwargs = {}
-    if embedding_fn is not None:
-        kwargs["embedding_function"] = embedding_fn
+    is_per_collection_map = isinstance(embedding_fn, dict)
 
     for name, cfg in COLLECTION_CONFIGS.items():
+        kwargs = {}
+        if is_per_collection_map:
+            ef = embedding_fn.get(name)  # type: ignore[union-attr]
+            if ef is not None:
+                kwargs["embedding_function"] = ef
+        elif embedding_fn is not None:
+            kwargs["embedding_function"] = embedding_fn
+
         col = client.get_or_create_collection(
             name=name,
             metadata={"hnsw:space": cfg["hnsw_space"]},

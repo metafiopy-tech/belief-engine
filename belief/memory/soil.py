@@ -23,11 +23,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import struct
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Iterator, Optional
 
 import chromadb
 from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
@@ -41,6 +42,7 @@ from belief.memory.nutrients import (
 )
 from belief.memory.fsrs import (
     FSRSState,
+    clade_productivity,
     review as fsrs_review,
     retrievability as fsrs_retrievability,
     schedule_next_review,
@@ -59,27 +61,37 @@ logger = logging.getLogger("belief.memory.soil")
 class _HashEmbeddingFunction(EmbeddingFunction[Documents]):
     """Deterministic n-gram hash embedding that works fully offline.
 
-    Produces 384-dimensional vectors from character trigram hashes.
-    Not as semantically rich as a neural embedding model, but:
+    Produces ``dim``-dimensional vectors (default 384) from character
+    trigram hashes.  Not as semantically rich as a neural embedding
+    model, but:
+
     - Zero network dependency (no model download)
     - Deterministic (same text -> same embedding)
     - Decent for dedup detection (similar text -> similar vectors)
     - Swappable: pass a real EmbeddingFunction to Soil() for production
 
     For production use, swap to voyage-code-3 or all-MiniLM-L6-v2.
+
+    Session 13 note: ``VoyageEmbeddingFunction`` uses this class as a
+    fallback when the voyageai package isn't importable.  To keep the
+    fallback dimension-compatible with the collection (voyage models
+    are 1024-dim), :class:`VoyageEmbeddingFunction` constructs its
+    fallback with ``dim=1024`` — the two EFs remain exchangeable at
+    runtime without corrupting the ChromaDB HNSW index.
     """
 
-    DIM = 384
+    DIM = 384  # Historical default — preserved for legacy callers.
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, dim: int = 384) -> None:
+        self.dim = int(dim)
 
     def __call__(self, input: Documents) -> Embeddings:
         return [self._embed_one(text) for text in input]
 
     def _embed_one(self, text: str) -> list[float]:
         text = text.lower().strip()
-        vec = [0.0] * self.DIM
+        dim = self.dim
+        vec = [0.0] * dim
         if not text:
             return vec
 
@@ -88,7 +100,7 @@ class _HashEmbeddingFunction(EmbeddingFunction[Documents]):
             trigram = text[i : i + 3]
             h = hashlib.md5(trigram.encode()).digest()
             # Map hash to a dimension index and a value
-            idx = struct.unpack("<H", h[:2])[0] % self.DIM
+            idx = struct.unpack("<H", h[:2])[0] % dim
             val = struct.unpack("<h", h[2:4])[0] / 32768.0
             vec[idx] += val
 
@@ -97,7 +109,7 @@ class _HashEmbeddingFunction(EmbeddingFunction[Documents]):
             if len(word) < 2:
                 continue
             h = hashlib.md5(word.encode()).digest()
-            idx = struct.unpack("<H", h[:2])[0] % self.DIM
+            idx = struct.unpack("<H", h[:2])[0] % dim
             val = struct.unpack("<h", h[2:4])[0] / 32768.0
             vec[idx] += val * 2.0  # Words weighted more than trigrams
 
@@ -107,6 +119,110 @@ class _HashEmbeddingFunction(EmbeddingFunction[Documents]):
             vec = [v / magnitude for v in vec]
 
         return vec
+
+class VoyageEmbeddingFunction(EmbeddingFunction[Documents]):
+    """ChromaDB EmbeddingFunction wrapping Voyage AI's embedding API.
+
+    Lazily imports ``voyageai`` so the module stays importable when the
+    package isn't installed.  When the import or an API call fails, the
+    function falls back to :class:`_HashEmbeddingFunction` for the
+    current batch and logs a warning — this keeps build pipelines from
+    crashing when Voyage is unavailable.
+
+    Set ``VOYAGE_API_KEY`` to enable real embeddings.  Use
+    ``voyage-code-3`` (1024-dim, code-specialised) for tool/failure/
+    covenant collections and ``voyage-3-large`` (1024-dim, general) for
+    episode/principle collections — see :func:`_get_embedding_function`.
+    """
+
+    # voyage-code-3 and voyage-3-large are both 1024-dim per Voyage docs.
+    _VOYAGE_DIM = 1024
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "voyage-3-large",
+        input_type: str = "document",
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._input_type = input_type
+        self._client = None  # Lazy-initialised on first call
+        # Match the voyage model's native dimension so a runtime
+        # fallback doesn't corrupt the ChromaDB HNSW index.
+        self._fallback = _HashEmbeddingFunction(dim=self._VOYAGE_DIM)
+
+    def _ensure_client(self) -> None:
+        """Import voyageai and construct a client on first use."""
+        if self._client is not None:
+            return
+        try:
+            import voyageai  # type: ignore
+            self._client = voyageai.Client(api_key=self._api_key)
+        except Exception as exc:  # ImportError or client construction error
+            logger.warning(
+                f"VoyageEmbeddingFunction: could not initialise voyageai ({exc}); "
+                f"falling back to hash embeddings"
+            )
+            self._client = False  # Sentinel: permanently failed
+
+    def __call__(self, input: Documents) -> Embeddings:
+        self._ensure_client()
+        if not self._client:
+            return self._fallback(input)
+        try:
+            result = self._client.embed(
+                texts=list(input),
+                model=self._model,
+                input_type=self._input_type,
+            )
+            return list(result.embeddings)
+        except Exception as exc:
+            logger.warning(
+                f"VoyageEmbeddingFunction: embed call failed ({exc}); "
+                f"falling back to hash embeddings for this batch"
+            )
+            return self._fallback(input)
+
+
+# Collections whose documents are primarily source code / structured
+# artefacts — these benefit from the code-specialised voyage-code-3
+# model.  Other collections (episodes, principles) hold natural-language
+# traces and use voyage-3-large for better text retrieval.
+_CODE_COLLECTION_TYPES = frozenset({"tools", "failures", "covenants"})
+
+# Mapping from ChromaDB collection name to the logical "collection_type"
+# consumed by :func:`_get_embedding_function`.
+_COLLECTION_NAME_TO_TYPE = {
+    "belief_tools": "tools",
+    "belief_failures": "failures",
+    "belief_covenants": "covenants",
+    "belief_episodes": "episodes",
+    "belief_principles": "principles",
+}
+
+
+def _get_embedding_function(collection_type: str) -> EmbeddingFunction:
+    """Return the embedding function to use for a given collection type.
+
+    Routing rules (Session 13):
+
+    * ``VOYAGE_API_KEY`` set and ``collection_type`` is code-flavoured
+      (``tools``/``failures``/``covenants``) → ``voyage-code-3``
+    * ``VOYAGE_API_KEY`` set otherwise → ``voyage-3-large``
+    * No API key → :class:`_HashEmbeddingFunction` (offline-safe default)
+
+    The spec (COMPLETE_CLAUDE_CODE_SESSIONS.md, Session 13 Task 2) names
+    this helper exactly; tests consume it directly so keep the signature
+    stable.
+    """
+    voyage_key = os.environ.get("VOYAGE_API_KEY")
+    if voyage_key and collection_type in _CODE_COLLECTION_TYPES:
+        return VoyageEmbeddingFunction(api_key=voyage_key, model="voyage-code-3")
+    if voyage_key:
+        return VoyageEmbeddingFunction(api_key=voyage_key, model="voyage-3-large")
+    return _HashEmbeddingFunction()
+
 
 # Deduplication threshold -- nutrients with cosine similarity above this
 # are considered duplicates (reinforce existing instead of creating new)
@@ -161,16 +277,39 @@ class Soil:
             path=str(self._persist_dir)
         )
 
-        # Default to hash-based embeddings (works offline, no model download)
-        # For production: pass voyage-code-3 or all-MiniLM-L6-v2
-        self._ef = embedding_fn or _HashEmbeddingFunction()
+        # Session 13: per-collection embedding routing.  When the caller
+        # passes an explicit ``embedding_fn`` we honour it (one EF for
+        # every collection — the legacy contract).  When they don't, we
+        # consult ``_get_embedding_function`` per collection so code
+        # collections can use ``voyage-code-3`` while text collections
+        # use ``voyage-3-large`` (both gated on ``VOYAGE_API_KEY`` —
+        # absent the key we still fall back to the hash EF everywhere).
+        self._explicit_ef = embedding_fn is not None
+        if embedding_fn is not None:
+            self._ef = embedding_fn
+            per_collection_ef: dict[str, EmbeddingFunction] = {
+                name: embedding_fn for name in _COLLECTION_NAME_TO_TYPE
+            }
+        else:
+            per_collection_ef = {
+                name: _get_embedding_function(logical_type)
+                for name, logical_type in _COLLECTION_NAME_TO_TYPE.items()
+            }
+            # Archive + legacy collections use the "episodes" routing —
+            # neutral text embeddings that won't mix dimensions with
+            # code collections.
+            self._ef = _get_embedding_function("episodes")
+
+        self._per_collection_ef = per_collection_ef
 
         if collections is not None:
             # Caller provided pre-created collections
             self._collections = collections
         else:
-            # Create the 5 new collections
-            self._collections = get_or_create_collections(self._client, self._ef)
+            # Create the 5 new collections with per-collection EFs
+            self._collections = get_or_create_collections(
+                self._client, per_collection_ef
+            )
 
         # Archive collection -- decayed nutrients preserved for diagnostics
         # (review correction #4: archive, never delete)
@@ -201,8 +340,13 @@ class Soil:
                 f"Auto-migrating {legacy_count} nutrients from legacy collection"
             )
             migrate_from_legacy(self._client, "nutrients", self._ef)
-            # Re-fetch collections to pick up migrated data
-            self._collections = get_or_create_collections(self._client, self._ef)
+            # Re-fetch collections to pick up migrated data.  Pass the
+            # per-collection EF map so routing (voyage-code-3 for code
+            # collections, voyage-3-large for text) is preserved after
+            # migration (Session 13).
+            self._collections = get_or_create_collections(
+                self._client, self._per_collection_ef
+            )
 
     def _route_collection(self, nutrient_type: NutrientType) -> chromadb.Collection:
         """Return the correct collection for a given nutrient type."""
@@ -481,6 +625,7 @@ class Soil:
         nutrient_id: str,
         collection_name: str,
         grade: int,
+        productivity: Optional[float] = None,
     ) -> None:
         """Update FSRS state for a nutrient after review.
 
@@ -488,6 +633,11 @@ class Soil:
             nutrient_id:     ID of the nutrient to review.
             collection_name: Name of the collection containing it.
             grade:           1=again, 2=hard, 3=good, 4=easy.
+            productivity:    Optional override for clade productivity
+                             (used by batch maintenance loops that
+                             pre-compute the full productivity map).
+                             When ``None`` the score is computed on the
+                             fly via :func:`clade_productivity`.
         """
         col = self._collections.get(collection_name)
         if col is None:
@@ -516,7 +666,19 @@ class Soil:
         )
 
         now = datetime.now(timezone.utc)
-        new_state = fsrs_review(state, grade, now)
+        # Session 13: weight stability growth by clade productivity so
+        # nutrients whose descendants keep succeeding retain longer.
+        # Failures ignore productivity (see review()).
+        if productivity is None:
+            try:
+                productivity = clade_productivity(nutrient_id, self)
+            except Exception as e:
+                logger.debug(
+                    f"review_nutrient: clade_productivity failed for "
+                    f"{nutrient_id} ({e}); falling back to 0.0"
+                )
+                productivity = 0.0
+        new_state = fsrs_review(state, grade, now, productivity=productivity)
 
         # Write back
         meta["fsrs_stability"] = new_state.stability
@@ -763,3 +925,56 @@ class Soil:
     def get_profile(self, goal: str, complexity: int = 3) -> NutrientProfile:
         """Alias for retrieve_profile for backward compatibility."""
         return self.retrieve_profile(goal, complexity)
+
+    # -- Lineage / clade productivity ---------------------------------------------
+
+    def iter_all_nutrients(self) -> Iterator[Nutrient]:
+        """Yield every active nutrient across the 5 collections.
+
+        Used by :func:`~belief.memory.fsrs.clade_productivity` to walk
+        the lineage DAG.  Archived nutrients are intentionally excluded
+        — their descendants no longer reflect live retention pressure.
+        Duplicates (the same nutrient_id present in both a typed
+        collection and the legacy ``nutrients`` mirror) are deduped by
+        ID on the fly.
+        """
+        seen: set[str] = set()
+        for col in self._collections.values():
+            count = col.count()
+            if count == 0:
+                continue
+            try:
+                data = col.get(
+                    include=["documents", "metadatas"],
+                    limit=count,
+                )
+            except Exception as e:
+                logger.debug(f"iter_all_nutrients: {col.name} skipped ({e})")
+                continue
+            for i, doc_id in enumerate(data["ids"]):
+                if doc_id in seen:
+                    continue
+                seen.add(doc_id)
+                try:
+                    yield Nutrient.from_chromadb(
+                        doc_id,
+                        data["documents"][i],
+                        data["metadatas"][i],
+                    )
+                except Exception as e:
+                    logger.debug(f"iter_all_nutrients: skip {doc_id} ({e})")
+
+    def get_descendants(self, nutrient_id: str) -> list[Nutrient]:
+        """Return nutrients whose lineage includes ``nutrient_id``.
+
+        One level of lineage is checked (direct children).  Transitive
+        descendants are computed by repeatedly calling this method — or
+        more efficiently by ``clade_productivity`` which builds its own
+        parent→children index from a single pass over
+        :meth:`iter_all_nutrients`.
+        """
+        result: list[Nutrient] = []
+        for n in self.iter_all_nutrients():
+            if nutrient_id in (n.lineage_parent_ids or ()):
+                result.append(n)
+        return result
