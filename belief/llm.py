@@ -20,7 +20,8 @@ from typing import Any, Type, TypeVar
 import httpx
 from pydantic import BaseModel
 
-from belief.config.models import ModelRole, ModelRouter
+from belief.config.models import Backend, ModelRole, ModelRouter
+from belief.config.local_cost_tracker import LocalCostTracker
 from belief.models.artifacts import TokenUsage, _cost_usd
 
 logger = logging.getLogger("belief.llm")
@@ -33,6 +34,124 @@ _usage_ctx: ContextVar[TokenUsage | None] = ContextVar("_usage_ctx", default=Non
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
+
+# ---------------------------------------------------------------------------
+# Session 6: Ollama backend
+# ---------------------------------------------------------------------------
+
+
+# Shared tracker so callers can read fallback count + per-model breakdown.
+# Exposed module-level so the CLI `belief models` command can inspect it.
+LOCAL_TRACKER = LocalCostTracker()
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate — Ollama's /api/chat doesn't return usage by default.
+
+    Anthropic tokenization averages ~4 chars/token for English. We use the
+    same heuristic for Ollama outputs so the fallback-counter and efficiency
+    metrics stay comparable between backends.
+    """
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+class AsyncOllamaClient:
+    """Async Ollama backend. Matches the path LLMClient already uses.
+
+    Session 6 Task 1 shows a sync OllamaClient — we keep the same public
+    surface (generate / is_available) but use httpx.AsyncClient because
+    the rest of belief.llm is already async. LLMClient._call_with_role
+    is the dispatch point.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str = "qwen2.5-coder:14b",
+        base_url: str = "http://localhost:11434",
+        timeout: float = 300.0,
+    ) -> None:
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self._timeout = timeout
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url, timeout=self._timeout
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
+    async def generate(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        """POST /api/chat. Returns an Anthropic-shaped response dict.
+
+        Shape matches what LLMClient._call returns, so
+        generate_text / generate_structured can unwrap uniformly:
+
+          {"content": [{"text": "..."}],
+           "usage": {"input_tokens": int, "output_tokens": int,
+                     "cache_read_input_tokens": 0,
+                     "cache_creation_input_tokens": 0}}
+        """
+        client = self._get_client()
+        payload = {
+            "model": model or self.model,
+            "messages": [
+                {"role": "system", "content": system or ""},
+                {"role": "user", "content": user},
+            ],
+            "stream": False,
+            "options": {
+                "temperature": float(temperature),
+                "num_predict": int(max_tokens),
+            },
+        }
+        resp = await client.post("/api/chat", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        # Ollama returns {"message": {"role": "assistant", "content": "..."}}
+        text = (data.get("message") or {}).get("content", "") or ""
+
+        # Ollama sends prompt_eval_count + eval_count when available; fall
+        # back to character-based estimates.
+        in_tokens = int(data.get("prompt_eval_count") or _estimate_tokens(f"{system} {user}"))
+        out_tokens = int(data.get("eval_count") or _estimate_tokens(text))
+        return {
+            "content": [{"type": "text", "text": text}],
+            "usage": {
+                "input_tokens": in_tokens,
+                "output_tokens": out_tokens,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            },
+            "_backend": "ollama",
+        }
+
+    async def is_available(self) -> bool:
+        """True iff Ollama's HTTP endpoint responds to /api/tags."""
+        try:
+            client = self._get_client()
+            r = await client.get("/api/tags")
+            return r.status_code == 200
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
+            return False
+        except Exception:
+            return False
 
 
 class LLMClient:
@@ -48,6 +167,9 @@ class LLMClient:
     def __init__(self, router: ModelRouter) -> None:
         self.router = router
         self._client: httpx.AsyncClient | None = None
+        # Session 6: lazy Ollama client. Built only when a call actually
+        # needs it, so cloud-mode callers never pay the connection cost.
+        self._ollama: AsyncOllamaClient | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -66,6 +188,77 @@ class LLMClient:
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
+        if self._ollama is not None:
+            await self._ollama.close()
+
+    def _get_ollama(self) -> AsyncOllamaClient:
+        if self._ollama is None:
+            self._ollama = AsyncOllamaClient(
+                model=self.router.local_model,
+                base_url=self.router.ollama_base_url,
+            )
+        return self._ollama
+
+    async def _call_with_role(
+        self,
+        role: ModelRole | str,
+        system: str,
+        messages: list[dict],
+        *,
+        max_tokens: int,
+        temperature: float,
+        complexity: int,
+    ) -> tuple[dict, str, str]:
+        """Dispatch to Ollama or Anthropic based on the router's mode.
+
+        Returns (response_dict, model_name_used, backend_used).
+        Falls back to cloud with a logged warning if the local backend
+        is chosen but isn't available.
+        """
+        role_str = role.value if isinstance(role, ModelRole) else role
+        backend = self.router.backend_for(role)
+        cloud_model = self.router.get_model(role, complexity)
+
+        if backend is Backend.LOCAL:
+            ollama = self._get_ollama()
+            if not await ollama.is_available():
+                logger.warning(
+                    "Ollama not available for role=%s; falling back to cloud",
+                    role_str,
+                )
+                self.router.record_fallback()
+                LOCAL_TRACKER.record_fallback()
+                backend = Backend.CLOUD  # fall through to cloud below
+            else:
+                user_prompt = ""
+                for msg in messages:
+                    if msg.get("role") == "user":
+                        user_prompt = msg.get("content", "")
+                        break
+                data = await ollama.generate(
+                    system=system,
+                    user=user_prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                usage = data.get("usage", {})
+                LOCAL_TRACKER.record_call(
+                    model=self.router.local_model,
+                    prompt_tokens=int(usage.get("input_tokens", 0)),
+                    completion_tokens=int(usage.get("output_tokens", 0)),
+                    role=role_str,
+                )
+                return data, self.router.local_model, "local"
+
+        # Cloud path (default or fallback)
+        data = await self._call(
+            model=cloud_model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return data, cloud_model, "cloud"
 
     def _record_usage(self, role: str, model: str,
                       prompt_tokens: int, completion_tokens: int,
@@ -145,26 +338,29 @@ class LLMClient:
     ) -> str:
         """Generate free-form text. Returns the response string."""
         role_str = role.value if isinstance(role, ModelRole) else role
-        model = self.router.get_model(role, complexity)
 
-        data = await self._call(
-            model=model,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
+        data, model, backend = await self._call_with_role(
+            role, system,
+            [{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=temperature,
+            complexity=complexity,
         )
 
         text = data["content"][0]["text"]
 
-        usage = data.get("usage", {})
-        self._record_usage(
-            role_str, model,
-            usage.get("input_tokens", 0),
-            usage.get("output_tokens", 0),
-            usage.get("cache_read_input_tokens", 0),
-            usage.get("cache_creation_input_tokens", 0),
-        )
+        # Local-backend responses are already booked against LOCAL_TRACKER
+        # inside _call_with_role; only cloud responses go through
+        # the Anthropic-cost accounting path.
+        if backend == "cloud":
+            usage = data.get("usage", {})
+            self._record_usage(
+                role_str, model,
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
+                usage.get("cache_read_input_tokens", 0),
+                usage.get("cache_creation_input_tokens", 0),
+            )
 
         return text
 
@@ -184,7 +380,6 @@ class LLMClient:
         The response is parsed from the first JSON object found.
         """
         role_str = role.value if isinstance(role, ModelRole) else role
-        model = self.router.get_model(role, complexity)
 
         schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
         augmented_system = (
@@ -194,24 +389,25 @@ class LLMClient:
             f"Schema:\n{schema_json}"
         )
 
-        data = await self._call(
-            model=model,
-            system=augmented_system,
-            messages=[{"role": "user", "content": prompt}],
+        data, model, backend = await self._call_with_role(
+            role, augmented_system,
+            [{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=temperature,
+            complexity=complexity,
         )
 
         raw_text = data["content"][0]["text"]
 
-        usage = data.get("usage", {})
-        self._record_usage(
-            role_str, model,
-            usage.get("input_tokens", 0),
-            usage.get("output_tokens", 0),
-            usage.get("cache_read_input_tokens", 0),
-            usage.get("cache_creation_input_tokens", 0),
-        )
+        if backend == "cloud":
+            usage = data.get("usage", {})
+            self._record_usage(
+                role_str, model,
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
+                usage.get("cache_read_input_tokens", 0),
+                usage.get("cache_creation_input_tokens", 0),
+            )
 
         return _parse_structured(raw_text, response_schema)
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 import uuid
@@ -690,6 +691,29 @@ def _run_optimize_cmd(args):
     print("  Optimization complete.")
 
 
+def _run_models_cmd() -> None:
+    """Print the active model routing table.
+
+    Respects BELIEF_MODEL_MODE / BELIEF_LOCAL_MODEL / BELIEF_OLLAMA_URL
+    env vars and the --mode / --local-model / --ollama-url CLI flags.
+    Format is a three-column table: role / backend / model.
+    """
+    from belief.config.models import Backend, ModelRouter
+
+    router = ModelRouter()
+    rows = router.routing_table()
+
+    print(f"mode:          {router.mode.value}")
+    print(f"local_model:   {router.local_model}")
+    print(f"ollama_url:    {router.ollama_base_url}")
+    print()
+    print(f"{'role':<15} {'backend':<8} {'model':<40}")
+    print("-" * 64)
+    for role, backend, model in rows:
+        b = backend.value if isinstance(backend, Backend) else str(backend)
+        print(f"{role:<15} {b:<8} {model:<40}")
+
+
 def _run_progression_cmd():
     """Display current generative chain stage."""
     from belief.evolution.progression import compute_progression, format_progression_report
@@ -788,7 +812,34 @@ def app():
     parser.add_argument("--deploy", choices=["railway", "docker_local"])
     parser.add_argument("--deploy-name")
 
+    # Session 6: model-routing flags (set env before ModelRouter loads).
+    # Applied to every subcommand; equivalent to exporting the env vars.
+    parser.add_argument(
+        "--mode",
+        choices=["cloud", "hybrid", "local"],
+        help="Backend routing: cloud (Anthropic only), hybrid (mechanical->local), local (all local)",
+    )
+    parser.add_argument(
+        "--local-model",
+        help="Ollama model name when --mode is hybrid/local (default: qwen2.5-coder:14b)",
+    )
+    parser.add_argument(
+        "--ollama-url",
+        help="Ollama base URL (default: http://localhost:11434)",
+    )
+
+    # `belief models` — print the active routing table
+    subparsers.add_parser("models", help="Show active model routing table")
+
     args = parser.parse_args()
+
+    # Session 6: apply routing CLI flags to env so ModelRouter picks them up
+    if getattr(args, "mode", None):
+        os.environ["BELIEF_MODEL_MODE"] = args.mode
+    if getattr(args, "local_model", None):
+        os.environ["BELIEF_LOCAL_MODEL"] = args.local_model
+    if getattr(args, "ollama_url", None):
+        os.environ["BELIEF_OLLAMA_URL"] = args.ollama_url
 
     # Route to correct handler
     if args.command == "benchmark":
@@ -826,6 +877,9 @@ def app():
         sys.exit(0)
     elif args.command == "progression":
         _run_progression_cmd()
+        sys.exit(0)
+    elif args.command == "models":
+        _run_models_cmd()
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)

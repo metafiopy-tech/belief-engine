@@ -3,6 +3,15 @@
 Maps agent roles to LLM models. Supports complexity-based upgrades
 (e.g., use Opus for planning when complexity >= 4).
 
+Session 6 adds a `mode` dimension on top of the per-role model map:
+
+    mode="cloud"   All agents call Anthropic (v3.0 default; unchanged).
+    mode="hybrid"  Mechanical agents route to local (Ollama); reasoning
+                   agents stay on Anthropic. HYBRID_ROUTING owns the
+                   per-role mapping.
+    mode="local"   All agents route to the local backend. Anything
+                   marked 'none' in HYBRID_ROUTING stays deterministic.
+
 Source: forge/config/models.py + brain.py classify_complexity()
 """
 
@@ -59,6 +68,47 @@ _UPGRADE_AT_COMPLEXITY_4: set[str] = {
 OPUS_MODEL = "claude-opus-4-6"
 
 
+# ---------------------------------------------------------------------------
+# Session 6: hybrid routing
+# ---------------------------------------------------------------------------
+
+
+class RouteMode(str, Enum):
+    CLOUD = "cloud"
+    HYBRID = "hybrid"
+    LOCAL = "local"
+
+
+class Backend(str, Enum):
+    CLOUD = "cloud"       # Anthropic
+    LOCAL = "local"       # Ollama
+    NONE = "none"         # deterministic path (no LLM)
+
+
+# Per-role intent under mode="hybrid". Mechanical tasks go local,
+# reasoning tasks stay on Anthropic, deterministic paths declare 'none'
+# so callers don't spin up either client.
+HYBRID_ROUTING: dict[str, Backend] = {
+    # Mechanical — local is fine
+    ModelRole.INTAKE.value: Backend.LOCAL,
+    ModelRole.GAP_ANALYST.value: Backend.LOCAL,
+    ModelRole.SYNTHESIZER.value: Backend.LOCAL,
+    ModelRole.TESTER.value: Backend.LOCAL,
+    ModelRole.EXECUTOR.value: Backend.LOCAL,
+    ModelRole.LATIOS.value: Backend.LOCAL,
+    ModelRole.VALIDATOR.value: Backend.LOCAL,
+    # Reasoning — Claude stays
+    ModelRole.RESEARCH.value: Backend.CLOUD,
+    ModelRole.PLANNER.value: Backend.CLOUD,
+    ModelRole.ARCHITECT.value: Backend.CLOUD,
+    ModelRole.BUILDER.value: Backend.CLOUD,
+    ModelRole.DEBUGGER.value: Backend.CLOUD,
+}
+
+DEFAULT_LOCAL_MODEL = "qwen2.5-coder:14b"
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+
+
 class ModelRouter(BaseModel):
     """Routes agent roles to specific LLM models.
 
@@ -66,9 +116,19 @@ class ModelRouter(BaseModel):
       BELIEF_MODEL_INTAKE=claude-haiku-4-5-20251001
       BELIEF_MODEL_BUILDER=claude-sonnet-4-6
       etc.
+
+    Session 6 additions:
+      BELIEF_MODEL_MODE=cloud|hybrid|local   (default: cloud)
+      BELIEF_LOCAL_MODEL=qwen2.5-coder:14b   (default: see DEFAULT_LOCAL_MODEL)
+      BELIEF_OLLAMA_URL=http://host:11434    (default: localhost)
     """
     backend: str = Field(default="anthropic")
     overrides: dict[str, str] = Field(default_factory=dict)
+    mode: RouteMode = Field(default=RouteMode.CLOUD)
+    local_model: str = Field(default=DEFAULT_LOCAL_MODEL)
+    ollama_base_url: str = Field(default=DEFAULT_OLLAMA_BASE_URL)
+    # Per-router counter: how many times a local call fell back to cloud.
+    fallback_count: int = Field(default=0)
 
     def model_post_init(self, __context) -> None:
         # Load overrides from environment
@@ -78,8 +138,54 @@ class ModelRouter(BaseModel):
             if env_val:
                 self.overrides[role.value] = env_val
 
+        # Session 6 env overrides
+        env_mode = os.environ.get("BELIEF_MODEL_MODE", "").strip().lower()
+        if env_mode in {m.value for m in RouteMode}:
+            self.mode = RouteMode(env_mode)
+        env_local = os.environ.get("BELIEF_LOCAL_MODEL", "").strip()
+        if env_local:
+            self.local_model = env_local
+        env_url = os.environ.get("BELIEF_OLLAMA_URL", "").strip()
+        if env_url:
+            self.ollama_base_url = env_url
+
+    # ---------------------------------------------------------- mode API
+    def set_mode(self, mode: str | RouteMode) -> None:
+        """Switch mode at runtime; resets the fallback counter."""
+        m = RouteMode(mode.value) if isinstance(mode, RouteMode) else RouteMode(str(mode))
+        self.mode = m
+        self.fallback_count = 0
+
+    def backend_for(self, role: ModelRole | str) -> Backend:
+        """Return which backend serves `role` under the current mode.
+
+        - cloud mode  : always Backend.CLOUD (unchanged from v3.0)
+        - hybrid mode : HYBRID_ROUTING table
+        - local mode  : Backend.LOCAL (unless HYBRID_ROUTING says 'none')
+        """
+        role_str = role.value if isinstance(role, ModelRole) else role
+        if self.mode is RouteMode.CLOUD:
+            return Backend.CLOUD
+        table_entry = HYBRID_ROUTING.get(role_str, Backend.CLOUD)
+        if self.mode is RouteMode.HYBRID:
+            return table_entry
+        # LOCAL
+        if table_entry is Backend.NONE:
+            return Backend.NONE
+        return Backend.LOCAL
+
+    def record_fallback(self) -> None:
+        """Increment the counter when a local call degrades to cloud."""
+        self.fallback_count += 1
+
+    # ---------------------------------------------------------- model API
     def get_model(self, role: ModelRole | str, complexity: int = 1) -> str:
-        """Get the model name for a given role and complexity."""
+        """Get the model name for a given role and complexity.
+
+        Cloud-side model name (Haiku / Sonnet / Opus) — unchanged from
+        v3.0. The mode/backend decision is a separate axis; callers
+        that dispatch to Ollama use `router.local_model` directly.
+        """
         role_str = role.value if isinstance(role, ModelRole) else role
 
         # Check explicit override first
@@ -91,3 +197,32 @@ class ModelRouter(BaseModel):
             return OPUS_MODEL
 
         return _DEFAULTS.get(role_str, "claude-sonnet-4-6")
+
+    def routing_table(self) -> list[tuple[str, Backend, str]]:
+        """Snapshot the effective routing per role — used by `belief models`.
+
+        Each row: (role_name, backend, model_name_or_note).
+        """
+        out: list[tuple[str, Backend, str]] = []
+        for role in ModelRole:
+            backend = self.backend_for(role)
+            if backend is Backend.LOCAL:
+                model = self.local_model
+            elif backend is Backend.CLOUD:
+                model = self.get_model(role)
+            else:
+                model = "(deterministic)"
+            out.append((role.value, backend, model))
+        return out
+
+
+__all__ = [
+    "Backend",
+    "DEFAULT_LOCAL_MODEL",
+    "DEFAULT_OLLAMA_BASE_URL",
+    "HYBRID_ROUTING",
+    "ModelRole",
+    "ModelRouter",
+    "OPUS_MODEL",
+    "RouteMode",
+]
