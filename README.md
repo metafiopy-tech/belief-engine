@@ -105,6 +105,30 @@ belief --goal "Build a REST API" --deploy docker_local --deploy-name myapi
 belief benchmark --tiers 1 2 3 4 5
 ```
 
+### Local-only quick start (v3.1)
+
+No API key, no cloud calls, no per-build cost. Everything runs on
+your laptop against [Ollama](https://ollama.com). Requires ~16 GB
+of RAM for the default model.
+
+```bash
+# One-command setup (installs Ollama, pulls qwen2.5-coder, runs a smoke build):
+curl -fsSL https://raw.githubusercontent.com/metafiopy-tech/belief-engine/main/scripts/belief-setup.sh | bash
+
+# Or, step by step:
+curl -fsSL https://ollama.ai/install.sh | sh     # one-off
+ollama pull qwen2.5-coder:14b                    # ~8 GB download
+pip install "belief-engine[full]"
+
+# Point every agent at the local model:
+export BELIEF_MODEL_MODE=local
+belief --goal "Build a Python script that prints hello world"
+```
+
+Hybrid mode (mix local + Claude) is one env var away — see
+[Adding Claude for hard tasks](#adding-claude-for-hard-tasks-hybrid-mode)
+below.
+
 ### From Source
 
 ```bash
@@ -112,6 +136,81 @@ git clone https://github.com/metafiopy-tech/belief-engine.git
 cd belief-engine
 pip install -e ".[dev]"
 ```
+
+### How the soil compounds over time
+
+Every build deposits knowledge — patterns, antipatterns, skeletons,
+covenants — into the ChromaDB soil at `~/.belief-engine/soil`. The
+soil is the engine's working memory. Build N is smarter than
+build N-1 because build N-1 left behind what worked, what didn't,
+and why.
+
+Decay is FSRS-4.5 spaced repetition with **clade-productivity
+weighting** (v3.1): a nutrient's retention is proportional to how
+often its descendants succeed in later builds. Nutrients whose
+downstream uses keep working stay sharp; orphans fade. Contradicted
+nutrients are soft-deleted with a `valid_until` timestamp, never
+purged — `belief manifold` can show the soil as it was on any
+historical date.
+
+You can watch this happen:
+
+```bash
+belief dashboard        # metrics: pass rate, cost, nutrients, covenants
+belief manifold         # clusters by domain + coverage gaps (v3.1)
+```
+
+### Checking progression per vertical
+
+The generative-chain progression tracker (Session 7) scores each of
+eight verticals independently — `fastapi`, `cli`, `mcp`, `data`,
+`async`, `library`, `script`, `general` — so you can see which
+domains the engine has matured in and which it hasn't touched yet.
+
+```bash
+belief progression
+```
+
+Output lists every domain and its current stage (Seed → Cluster →
+Tessellation → Basis → Connectivity → Archetypes). Domains stuck at
+Seed are the ones to target with the next round of builds.
+
+### Adding Photosynthesis for autonomous goal generation
+
+The Grinder daemon (Session 8) picks goals out of a queue and
+builds them continuously. The Photosynthesis daemon (Sessions 3–5)
+populates that queue by harvesting candidate build goals from
+GitHub, PyPI, HN, Stack Overflow, RSS feeds, and ArXiv, then
+filtering them through a four-stage cascade (novelty band → ACCEL
+heap → LLM judge). Together they turn the engine into a
+self-running research workshop:
+
+```bash
+# Background the grinder (drains the goal queue):
+belief grinder start --max-builds 100
+
+# Photosynthesis lives in its own package extras:
+pip install "belief-engine[photosynthesis]"
+```
+
+### Adding Claude for hard tasks (hybrid mode)
+
+Hybrid mode routes mechanical agents (intake, tester, synthesizer,
+validator) to the local model and keeps reasoning agents (research,
+planner, architect, builder, debugger) on Claude — the same
+quality ceiling as cloud mode at roughly 1/4 the cost.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export BELIEF_MODEL_MODE=hybrid
+belief --goal "Build a distributed task queue with priority lanes"
+```
+
+v3.1 additionally introduces a **confidence-probe-gated
+escalation** path: when the Session-10 probe judges the local model
+unlikely to succeed on a given call (confidence < 0.4), that single
+call escalates to Claude automatically. Local-first; Claude is only
+paid for when needed.
 
 ## CLI Commands
 
@@ -122,10 +221,15 @@ pip install -e ".[dev]"
 | `belief sica --iterations N` | Run SICA self-improvement |
 | `belief jitterbug` | Run compression-reconstruction cycle |
 | `belief jitterbug --dry-run` | Expansion + compression only |
-| `belief progression` | Display generative chain stage |
+| `belief progression` | Per-domain generative-chain stage |
+| `belief manifold` | Knowledge topology: clusters, cross-links, gaps (v3.1) |
+| `belief manifold --json` | Manifold as machine-readable JSON |
 | `belief optimize [agent]` | DSPy/GEPA prompt optimization |
 | `belief dashboard` | Metrics dashboard |
 | `belief dashboard --json` | Metrics as JSON |
+| `belief library` | Named library of promoted tools (v3.0) |
+| `belief grinder start` | Autonomous build loop |
+| `belief models` | Show active model routing table |
 | `belief fix --repo PATH --issue "..."` | Fix an issue in existing code |
 
 ## Architecture
