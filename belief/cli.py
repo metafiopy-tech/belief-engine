@@ -691,6 +691,34 @@ def _run_optimize_cmd(args):
     print("  Optimization complete.")
 
 
+def _run_grinder_cmd(args) -> None:
+    """Session 8: belief grinder start|status|pause|resume."""
+    action = getattr(args, "grinder_action", None) or "status"
+    from belief.grinder.daemon import GrinderDaemon, DEFAULT_PENDING_DIR
+    from belief.grinder.status import format_status, read_status
+    from belief.photosynthesis.safety.kill_switch import (
+        ControlStatus,
+        get_default_state,
+    )
+
+    if action == "start":
+        pending = getattr(args, "pending_dir", None) or DEFAULT_PENDING_DIR
+        daemon = GrinderDaemon(pending_dir=Path(pending))
+        daemon.install_signal_handlers()
+        asyncio.run(daemon.run_forever(max_builds=getattr(args, "max_builds", None)))
+        return
+    if action == "status":
+        print(format_status(read_status()))
+        return
+    if action in {"pause", "resume"}:
+        target = ControlStatus.PAUSED if action == "pause" else ControlStatus.RUNNING
+        state = get_default_state()
+        state.set_status(target, reason=f"cli:{action}")
+        print(f"grinder control: {state.current_status().value}")
+        return
+    print("unknown grinder action; try: start / status / pause / resume")
+
+
 async def _run_benchmark_compare_cmd(args) -> None:
     """Run cloud + local benchmark and print the comparison table."""
     from belief.benchmark_compare import format_report, run_benchmark_compare
@@ -865,6 +893,24 @@ def app():
         "--ids", nargs="+", help="Specific challenge IDs",
     )
 
+    # `belief grinder` — Session 8: autonomous build loop
+    grinder_parser = subparsers.add_parser(
+        "grinder", help="Grinder daemon commands"
+    )
+    grinder_sub = grinder_parser.add_subparsers(dest="grinder_action")
+    gs_start = grinder_sub.add_parser("start", help="Run the grinder in foreground")
+    gs_start.add_argument(
+        "--max-builds", type=int, default=None,
+        help="Stop after N completed builds (default: run forever)",
+    )
+    gs_start.add_argument(
+        "--pending-dir", default=None,
+        help="Override pending_sessions directory",
+    )
+    grinder_sub.add_parser("status", help="Show the last-persisted status")
+    grinder_sub.add_parser("pause", help="Pause the grinder (control table)")
+    grinder_sub.add_parser("resume", help="Resume the grinder (control table)")
+
     args = parser.parse_args()
 
     # Session 6: apply routing CLI flags to env so ModelRouter picks them up
@@ -917,6 +963,9 @@ def app():
         sys.exit(0)
     elif args.command == "benchmark-compare":
         asyncio.run(_run_benchmark_compare_cmd(args))
+        sys.exit(0)
+    elif args.command == "grinder":
+        _run_grinder_cmd(args)
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)

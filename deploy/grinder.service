@@ -1,0 +1,62 @@
+#
+# Belief Engine Grinder — Autonomous Build Loop.
+#
+# Install / enable / verify:
+#
+#   sudo useradd -r -s /usr/sbin/nologin belief
+#   sudo install -d -o belief -g belief -m 0755 /var/lib/grinder
+#   sudo install -d -o belief -g belief -m 0755 /var/log/grinder
+#   sudo install -d -o root -g belief -m 0750 /etc/grinder
+#   sudo install -o root -g belief -m 0640 grinder.env /etc/grinder/env
+#   sudo cp deploy/grinder.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now grinder.service
+#   systemd-analyze verify /etc/systemd/system/grinder.service
+#   journalctl -u grinder -f
+#
+# /etc/grinder/env holds:
+#   BELIEF_MODEL_MODE=hybrid     # cloud | hybrid | local
+#   ANTHROPIC_API_KEY=sk-...
+#   BELIEF_LOCAL_MODEL=qwen2.5-coder:14b   # optional
+#
+
+[Unit]
+Description=Belief Engine Grinder — Autonomous Build Loop
+After=network-online.target photosynthesis.service
+Wants=network-online.target
+# Don't require photosynthesis — grinder has fallback templates so it
+# can feed itself when photosynthesis isn't deployed.
+
+[Service]
+Type=simple
+User=belief
+Group=belief
+WorkingDirectory=/opt/belief-engine
+EnvironmentFile=/etc/grinder/env
+ExecStart=/opt/belief-engine/.venv/bin/python -m belief.grinder.daemon
+Restart=on-failure
+RestartSec=30s
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Resource caps (spec defaults)
+MemoryHigh=1G
+MemoryMax=2G
+CPUQuota=200%
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Grinder writes generated code into state dirs + pending/completed/failed.
+ReadWritePaths=/var/lib/grinder /var/log/grinder /var/lib/photosynthesis
+
+[Install]
+WantedBy=multi-user.target
