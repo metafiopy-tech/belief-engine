@@ -191,9 +191,16 @@ async def run_refinement_loop(
     test_files: dict[str, str],
     initial_test_output: str,
     max_cycles: int = 3,
+    router=None,
 ) -> dict[str, Any]:
     """Run the water cycle refinement loop.
-    
+
+    Args:
+        router: Optional ModelRouter from the calling pipeline. When None a
+                fresh one is created (which still reads BELIEF_MODEL_MODE from
+                the environment). Callers that have a configured router should
+                pass it so local-mode builds stay fully local.
+
     Returns dict with:
         code_files: refined code
         verdict: "pass" or "fail_fixable"
@@ -204,8 +211,9 @@ async def run_refinement_loop(
     """
     from belief.config import ModelRouter
     from belief.llm import LLMClient
-    
-    router = ModelRouter()
+
+    if router is None:
+        router = ModelRouter()
     llm = LLMClient(router)
     
     state = RefinementState(

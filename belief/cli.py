@@ -60,10 +60,15 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
     _configure_logging()
     logger = logging.getLogger("belief.cli")
 
-    if not settings.anthropic_api_key:
+    _active_mode = os.environ.get("BELIEF_MODEL_MODE", "cloud").strip().lower()
+    if not settings.anthropic_api_key and _active_mode != "local":
         print("\n  ERROR: ANTHROPIC_API_KEY not set.")
         print("  Copy .env.template to .env and add your key.\n")
+        print("  (To run fully locally without an API key, set BELIEF_MODEL_MODE=local)\n")
         sys.exit(1)
+
+    if _active_mode == "local":
+        logger.info("Model mode: LOCAL (Ollama) — no Anthropic API calls will be made")
 
     project_root = _get_project_root()
     run_id = f"belief-{uuid.uuid4().hex[:8]}"

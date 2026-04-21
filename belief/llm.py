@@ -219,6 +219,13 @@ class LLMClient:
         backend = self.router.backend_for(role)
         cloud_model = self.router.get_model(role, complexity)
 
+        logger.info(
+            "Dispatch: role=%s backend=%s mode=%s",
+            role_str,
+            backend.value,
+            self.router.mode.value,
+        )
+
         if backend is Backend.LOCAL:
             ollama = self._get_ollama()
             if not await ollama.is_available():

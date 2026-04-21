@@ -323,14 +323,24 @@ def _route_after_polarity(state: dict[str, Any]) -> Literal["planner", "__end__"
 
 # ── Polarity check node ──────────────────────────────────────────────────────
 
-async def _polarity_check_node(state: dict[str, Any]) -> dict[str, Any]:
+def _make_polarity_check_node(router: ModelRouter):
+    """Factory: returns a _polarity_check_node that closes over the pipeline router.
+
+    Using a closure keeps the router consistent with the rest of the pipeline so
+    BELIEF_MODEL_MODE=local routes the Latios call to Ollama instead of cloud.
+    """
+    async def _polarity_check_node(state: dict[str, Any]) -> dict[str, Any]:
+        return await _polarity_check_impl(state, router)
+    return _polarity_check_node
+
+
+async def _polarity_check_impl(state: dict[str, Any], router: ModelRouter) -> dict[str, Any]:
     """Post-validation Latios gap check.
 
     OVERRIDE: When tests pass AND validator says pass, skip the LLM call entirely.
     Latios hallucinates "no code provided" on passing builds, wasting tokens
     and triggering unnecessary rebuild iterations.
     """
-    from belief.config.settings import settings
     from belief.llm import LLMClient
     from belief.prompts import LATIOS_SYSTEM, LATIOS_PROMPT
 
@@ -378,7 +388,6 @@ async def _polarity_check_node(state: dict[str, Any]) -> dict[str, Any]:
         else:
             validator_summary = getattr(validation, "summary", "")
 
-    router = ModelRouter()
     llm = LLMClient(router)
     try:
         prompt = LATIOS_PROMPT.format(
@@ -570,14 +579,21 @@ async def _import_fix_node(state: dict[str, Any]) -> dict[str, Any]:
 
 # ── Water Cycle refinement node ──────────────────────────────────────────────
 
-async def _refinement_node(state: dict[str, Any]) -> dict[str, Any]:
+def _make_refinement_node(router: ModelRouter):
+    """Factory: returns a _refinement_node that closes over the pipeline router."""
+    async def _refinement_node(state: dict[str, Any]) -> dict[str, Any]:
+        return await _refinement_impl(state, router)
+    return _refinement_node
+
+
+async def _refinement_impl(state: dict[str, Any], router: ModelRouter) -> dict[str, Any]:
     """Water Cycle: targeted polishing of working code via test-driven refinement.
-    
+
     Runs up to 3 cycles of analyze→fix→revalidate.
     Deposits refinement lessons into ChromaDB soil.
     """
     result = dict(state)
-    
+
     try:
         from belief.refinement.runner import run_refinement_loop, store_refinement_lessons
         
@@ -621,12 +637,13 @@ async def _refinement_node(state: dict[str, Any]) -> dict[str, Any]:
                 test_output, _, _, _ = _run_tests(code_files, test_files)
                 logger.info("Refinement: ran baseline tests to get initial output")
         
-        # Run the water cycle
+        # Run the water cycle (pass router so refinement uses the same backend)
         refinement = await run_refinement_loop(
             code_files=code_files,
             test_files=test_files,
             initial_test_output=test_output,
             max_cycles=3,
+            router=router,
         )
         
         # Update state with refined code
@@ -786,10 +803,10 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_node("increment_iteration", _traced(_increment_iteration, "increment_iteration"))
     graph.add_node("synthesizer", _traced(synthesizer, "synthesizer"))
     graph.add_node("validator", _traced(validator, "validator"))
-    graph.add_node("polarity_check", _traced(_polarity_check_node, "polarity_check"))
+    graph.add_node("polarity_check", _traced(_make_polarity_check_node(router), "polarity_check"))
     graph.add_node("decomposer", _traced(decomposer_node, "decomposer"))
     graph.add_node("recomposer", _traced(recomposer_node, "recomposer"))
-    graph.add_node("refinement", _traced(_refinement_node, "refinement"))
+    graph.add_node("refinement", _traced(_make_refinement_node(router), "refinement"))
     graph.add_node("import_fix", _traced(_import_fix_node, "import_fix"))
     graph.add_node("covenant_enforce", _traced(_covenant_enforce_node, "covenant_enforce"))
 
