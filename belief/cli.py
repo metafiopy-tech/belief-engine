@@ -691,6 +691,17 @@ def _run_optimize_cmd(args):
     print("  Optimization complete.")
 
 
+async def _run_benchmark_compare_cmd(args) -> None:
+    """Run cloud + local benchmark and print the comparison table."""
+    from belief.benchmark_compare import format_report, run_benchmark_compare
+
+    report = await run_benchmark_compare(
+        challenge_ids=getattr(args, "ids", None),
+        tiers=getattr(args, "tiers", None),
+    )
+    print(format_report(report))
+
+
 def _run_models_cmd() -> None:
     """Print the active model routing table.
 
@@ -715,15 +726,25 @@ def _run_models_cmd() -> None:
 
 
 def _run_progression_cmd():
-    """Display current generative chain stage."""
-    from belief.evolution.progression import compute_progression, format_progression_report
+    """Display current generative chain stage (per-domain + global)."""
+    from belief.evolution.progression import (
+        compute_all_domains,
+        compute_progression,
+        format_all_domains_report,
+        format_progression_report,
+    )
     from belief.memory.soil import Soil
     from belief.memory.tool_registry import ToolRegistry
 
     soil = Soil()
     registry = ToolRegistry(soil)
+
+    # Session 7: per-domain view first, then the existing global report
+    by_domain = compute_all_domains(soil, registry, [])
+    print("\n" + format_all_domains_report(by_domain))
+    print()
     metrics = compute_progression(soil, registry, [])
-    print(f"\n{format_progression_report(metrics)}")
+    print(format_progression_report(metrics))
 
 
 def app():
@@ -831,6 +852,19 @@ def app():
     # `belief models` — print the active routing table
     subparsers.add_parser("models", help="Show active model routing table")
 
+    # `belief benchmark-compare` — Session 7: cloud vs local side-by-side
+    bc_parser = subparsers.add_parser(
+        "benchmark-compare",
+        help="Run benchmark in cloud and local modes; print a comparison table",
+    )
+    bc_parser.add_argument(
+        "--tiers", type=int, nargs="+", default=[1, 2, 3],
+        help="Tiers to run (default: 1-3)",
+    )
+    bc_parser.add_argument(
+        "--ids", nargs="+", help="Specific challenge IDs",
+    )
+
     args = parser.parse_args()
 
     # Session 6: apply routing CLI flags to env so ModelRouter picks them up
@@ -880,6 +914,9 @@ def app():
         sys.exit(0)
     elif args.command == "models":
         _run_models_cmd()
+        sys.exit(0)
+    elif args.command == "benchmark-compare":
+        asyncio.run(_run_benchmark_compare_cmd(args))
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)
