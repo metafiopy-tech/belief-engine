@@ -349,6 +349,59 @@ class NutrientProfile(BaseModel):
         """Return token budget for nutrient context based on project complexity."""
         return _TOKEN_BUDGET_BY_TIER.get(complexity, 4000)
 
+    def compact(
+        self,
+        *,
+        max_patterns: int = 3,
+        max_antipatterns: int = 3,
+        max_skeletons: int = 1,
+        max_covenants: Optional[int] = None,
+    ) -> "NutrientProfile":
+        """Return a trimmed copy with per-category caps (Session 17).
+
+        Local models have 8K-32K token windows versus Claude's 200K,
+        so the architect's context block has to shed mass before it
+        fits.  Rather than dropping sections outright — covenants
+        carry hard-earned invariants the local model still needs to
+        respect — we trim each category to its top-N most relevant
+        nutrients.  The retrieve() call upstream has already sorted
+        by composite score, so "top N" is "keep the first N".
+
+        Args:
+            max_patterns:     Cap on proven patterns (default 3, the
+                              spec's local-mode target).
+            max_antipatterns: Cap on antipatterns to avoid.
+            max_skeletons:    Cap on skeletons (usually 1 is enough —
+                              one worked starting point per build).
+            max_covenants:    Cap on covenants; ``None`` keeps them
+                              all (covenants are small text, and
+                              dropping them lets the model violate
+                              rules that crashed prior builds).
+
+        Returns:
+            A new :class:`NutrientProfile`.  The source profile is
+            not mutated.
+        """
+        covenants = list(self.covenants)
+        if max_covenants is not None:
+            covenants = covenants[:max(0, int(max_covenants))]
+        return NutrientProfile(
+            covenants=covenants,
+            antipatterns=list(self.antipatterns[:max(0, int(max_antipatterns))]),
+            patterns=list(self.patterns[:max(0, int(max_patterns))]),
+            skeletons=list(self.skeletons[:max(0, int(max_skeletons))]),
+        )
+
+    def format_context_block_compact(self, complexity: int = 3) -> str:
+        """Short-form context block for local-mode callers (Session 17).
+
+        Equivalent to ``self.compact().format_context_block(complexity)``
+        with the spec defaults — a single call the builder / architect
+        can use when routing to a local backend without having to
+        remember the compaction parameters.
+        """
+        return self.compact().format_context_block(complexity=complexity)
+
     def format_context_block(self, complexity: int = 3) -> str:
         """Format nutrients into a context block for the architect's prompt.
 
