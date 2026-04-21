@@ -236,12 +236,17 @@ class TestGoalFormulation:
         )
         goal = formulate_tool_goal(cluster)
 
-        # Should contain the function name
-        assert "import_checker" in goal
-        # Should contain the return type hint
-        assert "list[str]" in goal
-        # Should mention self-contained
+        # Session 2: goals are signature-agnostic but must embed
+        # enough cluster context to be buildable.
+        # 1. Error type anchors the "what are we fixing" context.
+        assert "missing_import" in goal
+        # 2. At least one concrete example error should make it in
+        #    (pulled from failure_traces or example_errors).
+        assert "ImportError" in goal
+        # 3. Self-contained stdlib-only constraint still holds.
         assert "self-contained" in goal.lower() or "Self-contained" in goal
+        # 4. Spec requires "Include pytest tests that verify..."
+        assert "test" in goal.lower()
 
     def test_goal_includes_examples(self):
         cluster = FailureCluster(
