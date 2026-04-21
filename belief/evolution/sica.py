@@ -31,7 +31,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional, Tuple
 
 from belief.evolution.archive import (
     AgentVersion,
@@ -131,6 +131,7 @@ class SelfImprovementCycle:
         project_root: str | Path = ".",
         archive_path: str | Path | None = None,
         soil=None,
+        danger_gate: Optional[Callable[[str], Tuple[bool, str]]] = None,
     ):
         self.project_root = Path(project_root).resolve()
 
@@ -144,6 +145,12 @@ class SelfImprovementCycle:
 
         # Soil for ChromaDB memory (injected or lazily initialized when needed)
         self.soil = soil
+
+        # Session 16: optional danger-theory gate.  Callable that takes
+        # a target file path and returns ``(should_apply, reason)``.
+        # When ``None`` (the default) SICA behaves exactly as before
+        # — the gate is advisory and off by default per the spec.
+        self.danger_gate = danger_gate
 
         # Evolutionary archive (SQLite DAG of all agent versions)
         try:
@@ -250,6 +257,30 @@ class SelfImprovementCycle:
                 self.archive.add(result)
                 self._save_archive()
                 return result
+
+            # ── Step 3b: Session 16 danger-theory gate (advisory) ──────
+            # Callable returns (should_apply, reason).  The spec says
+            # "defer — don't reject", so when the gate denies we skip
+            # the apply/benchmark cycle but keep the proposal in the
+            # archive with a ``deferred`` marker instead of an error.
+            if self.danger_gate is not None:
+                try:
+                    permitted, reason = self.danger_gate(result.target_file)
+                except Exception as exc:
+                    logger.warning(
+                        f"SICA: danger_gate raised ({exc}); proceeding "
+                        f"as if permitted"
+                    )
+                    permitted, reason = True, f"gate-error: {exc}"
+                if not permitted:
+                    logger.info(
+                        f"SICA: deferred {result.target_file} — {reason}"
+                    )
+                    result.error = f"deferred: {reason}"
+                    result.duration_seconds = time.time() - t0
+                    self.archive.add(result)
+                    self._save_archive()
+                    return result
 
             # ── Step 4: Apply with snapshot ──────────────────────────────
             target_path = self.project_root / result.target_file
