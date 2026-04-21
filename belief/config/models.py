@@ -108,6 +108,14 @@ HYBRID_ROUTING: dict[str, Backend] = {
 DEFAULT_LOCAL_MODEL = "qwen2.5-coder:14b"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 
+# Session 17: confidence-probe escalation threshold.  In local mode,
+# when a per-call confidence score is supplied and falls below this
+# value, the router escalates that single call to Backend.CLOUD.
+# The threshold matches the spec ("< 0.4") and the shape of the
+# ConfidenceProbe output from Session 10 (calibrated probability
+# that the local model will succeed on this input).
+DEFAULT_ESCALATION_THRESHOLD = 0.4
+
 
 class ModelRouter(BaseModel):
     """Routes agent roles to specific LLM models.
@@ -129,6 +137,15 @@ class ModelRouter(BaseModel):
     ollama_base_url: str = Field(default=DEFAULT_OLLAMA_BASE_URL)
     # Per-router counter: how many times a local call fell back to cloud.
     fallback_count: int = Field(default=0)
+    # Session 17: probe-gated escalation.  Per-router counter tracking
+    # how many calls the confidence probe escalated from local to cloud.
+    # Distinct from ``fallback_count`` which tracks *error* fallbacks.
+    escalation_count: int = Field(default=0)
+    # Threshold below which a probe score triggers cloud escalation.
+    # ``None`` disables probe-based escalation entirely (the default —
+    # callers must opt in by setting this, usually when the
+    # ConfidenceProbe from Session 10 is loaded).
+    escalation_threshold: Optional[float] = Field(default=None)
 
     def model_post_init(self, __context) -> None:
         # Load overrides from environment
@@ -177,6 +194,56 @@ class ModelRouter(BaseModel):
     def record_fallback(self) -> None:
         """Increment the counter when a local call degrades to cloud."""
         self.fallback_count += 1
+
+    def enable_probe_escalation(
+        self,
+        threshold: float = DEFAULT_ESCALATION_THRESHOLD,
+    ) -> None:
+        """Turn on probe-gated local→cloud escalation (Session 17).
+
+        Callers that have a trained :class:`~belief.safety.confidence_probe`
+        can invoke this once at startup; every subsequent call to
+        :meth:`backend_for_call` that passes a ``confidence`` below
+        the threshold will escalate to :data:`Backend.CLOUD`.
+        """
+        self.escalation_threshold = float(threshold)
+
+    def disable_probe_escalation(self) -> None:
+        """Return to the plain routing-table behaviour."""
+        self.escalation_threshold = None
+
+    def backend_for_call(
+        self,
+        role: ModelRole | str,
+        confidence: Optional[float] = None,
+    ) -> Backend:
+        """Per-call backend decision with optional probe escalation.
+
+        Starts from :meth:`backend_for` (the standard routing-table
+        decision).  When that says :data:`Backend.LOCAL` *and* the
+        caller supplies a ``confidence`` score below
+        :attr:`escalation_threshold`, the call is escalated to
+        :data:`Backend.CLOUD` and :attr:`escalation_count` is
+        incremented.  Otherwise the original decision stands.
+
+        Args:
+            role:       Agent role (mirrors ``backend_for``).
+            confidence: Optional confidence-probe output in ``[0, 1]``.
+                        ``None`` skips the escalation check — useful
+                        for roles that don't have a probe wired up yet.
+
+        Returns:
+            The :class:`Backend` the caller should dispatch to.
+        """
+        base = self.backend_for(role)
+        if base is not Backend.LOCAL:
+            return base
+        if self.escalation_threshold is None or confidence is None:
+            return base
+        if confidence < self.escalation_threshold:
+            self.escalation_count += 1
+            return Backend.CLOUD
+        return base
 
     # ---------------------------------------------------------- model API
     def get_model(self, role: ModelRole | str, complexity: int = 1) -> str:
