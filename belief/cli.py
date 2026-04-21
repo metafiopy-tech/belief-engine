@@ -691,6 +691,40 @@ def _run_optimize_cmd(args):
     print("  Optimization complete.")
 
 
+def _run_library_cmd(args) -> None:
+    """Session 12: list tools that were promoted from apex-predator nutrients.
+
+    Reads the belief_tools ChromaDB collection via ToolRegistry and
+    filters for tools whose `created_by` is 'jitterbug' (the marker
+    Session 12's library_inductor sets). Prints a compact table.
+    """
+    from belief.memory.soil import Soil
+    from belief.memory.tool_registry import ToolRegistry
+
+    soil = Soil()
+    registry = ToolRegistry(soil)
+    tools = []
+    try:
+        tools = registry.get_active_tools()
+    except Exception as exc:
+        print(f"library: could not load tool registry: {exc}")
+        return
+
+    promoted = [t for t in tools if getattr(t, "created_by", "") == "jitterbug"]
+    if not promoted:
+        print("library: no promoted tools yet")
+        return
+
+    print(f"{'name':<32} {'uses':<5} {'quality':<8} parent")
+    print("-" * 72)
+    for tool in promoted:
+        parent = (getattr(tool, "parent_id", "") or "-")[:24]
+        print(
+            f"{tool.name[:32]:<32} {int(tool.use_count):<5} "
+            f"{float(tool.quality_score):<8.2f} {parent}"
+        )
+
+
 def _run_probe_cmd(args) -> None:
     """Session 10: belief probe train|test."""
     from belief.metrics.trace_collector import TraceCollector
@@ -958,6 +992,12 @@ def app():
         "--ids", nargs="+", help="Specific challenge IDs",
     )
 
+    # `belief library` — Session 12: list promoted library tools
+    subparsers.add_parser(
+        "library",
+        help="List promoted library functions (apex predators)",
+    )
+
     # `belief probe` — Session 10: confidence probe training + eval
     probe_parser = subparsers.add_parser(
         "probe", help="Confidence probe commands"
@@ -1058,6 +1098,9 @@ def app():
         sys.exit(0)
     elif args.command == "probe":
         _run_probe_cmd(args)
+        sys.exit(0)
+    elif args.command == "library":
+        _run_library_cmd(args)
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)
