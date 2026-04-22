@@ -25,17 +25,14 @@ from belief.tools.deployment_generator import (
     generate_requirements_txt,
     generate_github_actions,
     generate_railway_toml,
-    generate_dockerignore,
     generate_all_deployment_artifacts,
 )
 from belief.tools.composition_planner import (
     PackageCandidate,
-    PackageSource,
     ComponentStrategy,
     evaluate_package,
     decide_component_strategy,
     plan_composition,
-    CompositionPlan,
     WELL_KNOWN_PACKAGES,
 )
 from belief.evolution.self_improvement import (
@@ -45,7 +42,6 @@ from belief.evolution.self_improvement import (
     ImprovementProposal,
     ImprovementType,
     MentorVerdict,
-    PatchResult,
     run_improvement_loop,
 )
 

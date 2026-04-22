@@ -588,7 +588,7 @@ async def run_benchmark(
 
     # Print summary
     print(f"\n\n{'═' * 60}")
-    print(f"  BENCHMARK RESULTS")
+    print("  BENCHMARK RESULTS")
     print(f"{'═' * 60}\n")
 
     total = len(results)
@@ -603,7 +603,7 @@ async def run_benchmark(
     print(f"  Avg weighted:  {avg_score:.2f}")
     print(f"  Total cost:    ${total_cost:.2f}")
     if total_cost == 0.0 and total > 0:
-        print(f"  ⚠️  Cost is $0.00 — check token_usage tracking")
+        print("  ⚠️  Cost is $0.00 — check token_usage tracking")
     print(f"  Total time:    {total_time:.0f}s ({total_time/60:.1f}min)")
     print()
 

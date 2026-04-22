@@ -18,7 +18,6 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 from pydantic import BaseModel, Field
 

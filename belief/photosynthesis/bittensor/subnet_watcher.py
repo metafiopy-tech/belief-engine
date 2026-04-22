@@ -115,7 +115,7 @@ class SubnetWatcher:
             return []
 
         try:
-            sub = bt.Subtensor(network)
+            bt.Subtensor(network)
         except Exception as exc:
             logger.warning("bt.Subtensor(%s) failed: %s", network, exc)
             return []

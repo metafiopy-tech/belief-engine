@@ -112,7 +112,6 @@ class BuilderAgent(BaseAgent):
     async def run(self, state: UnifiedState) -> UnifiedState:
         state.phase = Phase.BUILDING
         manifest = state.file_manifest
-        spec = state.requirement_spec
 
         if not manifest or not manifest.files:
             state.errors.append("Builder: no file manifest")
@@ -330,7 +329,7 @@ class BuilderAgent(BaseAgent):
             # Inject protocol skeleton as reference for TypeScript builds
             if file_spec.filename.endswith((".ts", ".tsx")):
                 try:
-                    from belief.prompts.protocol_skeletons import get_skeleton, get_all_protocol_names
+                    from belief.prompts.protocol_skeletons import get_skeleton
                     goal_lower = state.user_goal.lower() if state.user_goal else ""
                     protocol_map = {
                         "x402": ["x402", "payment", "micropayment", "paywall"],
@@ -387,7 +386,7 @@ class BuilderAgent(BaseAgent):
         symbol_context = state.skeleton_registry_context  # fallback
         try:
             from belief.models.skeleton import SkeletonArtifact
-            from belief.models.symbol_registry import SymbolRegistry, parse_file
+            from belief.models.symbol_registry import SymbolRegistry
             from belief.models.context_compression import build_compressed_context
 
             skeleton = state.skeleton_artifact

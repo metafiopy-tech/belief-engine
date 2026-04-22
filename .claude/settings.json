@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(railway logs *)",
+      "Bash(ruff check *)"
+    ]
+  }
+}

@@ -17,7 +17,7 @@ import asyncio
 import logging
 import signal
 import sys
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 from belief.photosynthesis.config import PhotoConfig, load_config
 from belief.photosynthesis.sources import (
@@ -75,6 +75,16 @@ class PhotosynthesisDaemon:
         self.scheduler: Any = None
         self._shutting_down = False
         self._loop = asyncio.new_event_loop()
+        # job_id -> "active" | "stub:<reason>" | "error:<msg>"
+        self._job_health: dict[str, str] = {}
+
+    def job_health(self) -> dict[str, str]:
+        """Return current health status for every registered job.
+
+        Values: 'active', 'stub:<reason>', or 'error:<last-error>'.
+        Callers can poll this for monitoring / admin dashboards.
+        """
+        return dict(self._job_health)
 
     # --------------------------------------------------------------- lifecycle
     def start(self) -> None:
@@ -207,12 +217,15 @@ class PhotosynthesisDaemon:
     async def _run_harvest(self, name: str, module: Any) -> None:
         from belief.core.http import get_async_client
 
+        job_id = f"harvest:{name}"
         async with get_async_client(timeout=30.0) as client:
             try:
                 new_seeds = await module.harvest(client, self.state, self.config)
             except Exception:
                 logger.exception("harvest %s raised", name)
+                self._job_health[job_id] = f"error:{name} last run raised"
                 return
+        self._job_health[job_id] = "active"
         logger.info("harvest %s: %d new signals", name, len(new_seeds))
 
     # -------------------------------------------------------- filter pass glue
@@ -344,19 +357,26 @@ class PhotosynthesisDaemon:
 
     def _domain_profile_rebuild(self) -> None:
         """Spec: k-means recompute over the last week of promoted goals."""
-        logger.info("domain_profile_rebuild: (placeholder — needs ChromaDB env)")
+        self._set_stub("domain_profile_rebuild", "needs ChromaDB env + sklearn")
 
     def _threshold_calibrate(self) -> None:
         """Spec: p95 analysis + Haiku label loop on filter boundary."""
-        logger.info("threshold_calibrate: (placeholder — needs Haiku client)")
+        self._set_stub("threshold_calibrate", "needs Haiku client + filter corpus")
 
     def _dead_letter_retry(self) -> None:
         """Spec: retry items stuck in failed_gen with different prompts."""
-        logger.info("dead_letter_retry: (placeholder — needs Sonnet client)")
+        self._set_stub("dead_letter_retry", "needs Sonnet client + failed_gen table")
 
     def _skill_library_compact(self) -> None:
         """Spec: compact the skill library (dedup near-duplicate skills)."""
-        logger.info("skill_library_compact: (placeholder — needs skill library)")
+        self._set_stub("skill_library_compact", "needs skill library (ToolRegistry)")
+
+    def _set_stub(self, job_id: str, reason: str) -> None:
+        """Mark a job as stubbed and log once on first discovery."""
+        key = f"stub:{reason}"
+        if self._job_health.get(job_id) != key:
+            logger.info("%s: disabled (%s)", job_id, reason)
+            self._job_health[job_id] = key
 
     def _control_table_init(self) -> None:
         """Ensure the kill-switch control table row exists on startup."""

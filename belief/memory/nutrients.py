@@ -23,7 +23,6 @@ Research: Voyager skill library, Reflexion verbal RL, FSRS algorithm
 from __future__ import annotations
 
 import math
-import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -412,7 +411,7 @@ class NutrientProfile(BaseModel):
             return ""
 
         sections: list[str] = []
-        sections.append(f"## INSTITUTIONAL MEMORY (from prior builds)\n")
+        sections.append("## INSTITUTIONAL MEMORY (from prior builds)\n")
 
         if self.covenants:
             sections.append("### Covenants (MUST follow these rules):")
@@ -462,7 +461,7 @@ class NutrientProfile(BaseModel):
     def _truncate_to_budget(self, budget: int) -> str:
         """Rebuild context block within token budget, dropping lowest-priority content."""
         sections: list[str] = []
-        sections.append(f"## INSTITUTIONAL MEMORY (from prior builds)\n")
+        sections.append("## INSTITUTIONAL MEMORY (from prior builds)\n")
 
         if self.covenants:
             sections.append("### Covenants (MUST follow these rules):")

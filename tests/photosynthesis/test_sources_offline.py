@@ -14,7 +14,6 @@ installed — that's the intended behavior for the light test extra.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,7 +21,7 @@ from typing import Any
 import pytest
 
 from belief.photosynthesis.config import PhotoConfig
-from belief.photosynthesis.state import CandidateSeed, PhotosynthesisState
+from belief.photosynthesis.state import PhotosynthesisState
 
 
 # ---------------------------------------------------------------------------

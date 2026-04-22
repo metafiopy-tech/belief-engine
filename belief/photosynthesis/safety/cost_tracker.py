@@ -1,5 +1,16 @@
 """SQLite-backed cost tracker + BreakerAnthropic wrapper.
 
+**Scope: Photosynthesis pipeline only.**
+
+This module is the spend-tracking and circuit-breaker layer for the
+*scheduled goal-synthesis* subsystem (belief/photosynthesis/).  It is
+NOT part of the build-pipeline LLM dispatcher.  Build-pipeline agents
+route all LLM calls through ``belief.llm.LLMClient`` + ``ModelRouter``.
+
+``BreakerAnthropic`` is structurally typed (``HasMessagesCreate`` Protocol)
+so tests can inject fakes without installing ``anthropic``.  If you see
+this being used outside ``belief/photosynthesis/``, that is a bug.
+
 Source of truth for Photosynthesis spend. Anthropic's Admin API is
 eventually consistent; this file is always current.
 
@@ -28,10 +39,8 @@ breaker gates before the call; the tracker records after.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import sqlite3
-import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass

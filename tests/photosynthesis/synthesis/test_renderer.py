@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from belief.photosynthesis.synthesis.generator import GoalSpec
 from belief.photosynthesis.synthesis.renderer import (

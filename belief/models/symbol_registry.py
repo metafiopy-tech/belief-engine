@@ -13,7 +13,6 @@ This is the foundation for Milestone 3's full context compression.
 from __future__ import annotations
 
 import ast
-import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional

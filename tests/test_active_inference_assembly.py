@@ -43,7 +43,6 @@ from belief.evolution.active_inference import (
     should_trigger_jitterbug,
 )
 from belief.evolution.assembly_theory import (
-    DEFAULT_AI_HIGH,
     DEFAULT_USAGE_HIGH,
     PromotionVerdict,
     assembly_index,

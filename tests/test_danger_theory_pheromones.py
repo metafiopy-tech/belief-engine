@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 
 import pytest
 
@@ -47,7 +46,6 @@ from belief.safety.danger_theory import (
 )
 from belief.safety.pheromones import (
     DEFAULT_HALF_LIFE_SECONDS,
-    DEFAULT_HOT_ZONE_THRESHOLD,
     PheromoneTrail,
     clear_pheromones,
     deposit_pheromone,

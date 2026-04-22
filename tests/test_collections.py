@@ -9,8 +9,6 @@ Covers:
   - Migration from legacy collection works
 """
 
-import time
-from pathlib import Path
 
 import chromadb
 import pytest
@@ -22,7 +20,7 @@ from belief.memory.collections import (
     migrate_from_legacy,
     _add_fsrs_defaults,
 )
-from belief.memory.nutrients import Nutrient, NutrientType, NutrientTier
+from belief.memory.nutrients import Nutrient, NutrientType
 from belief.memory.soil import Soil, _HashEmbeddingFunction
 
 

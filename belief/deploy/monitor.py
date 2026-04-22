@@ -21,7 +21,6 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger("belief.deploy.monitor")
 
@@ -102,7 +101,8 @@ class HealthMonitor:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            from belief.core.http import get_async_client
+            async with get_async_client(timeout=self.timeout) as client:
                 resp = await client.get(self.health_url)
                 elapsed = (time.time() - t0) * 1000
                 check.response_time_ms = elapsed

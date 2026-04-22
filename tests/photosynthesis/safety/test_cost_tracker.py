@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -12,7 +11,6 @@ from belief.photosynthesis.safety.cost_tracker import (
     BreakerAnthropic,
     BudgetExceeded,
     CostTracker,
-    PRICING,
     Usage,
     price_usd,
 )

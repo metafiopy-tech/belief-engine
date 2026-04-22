@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger("belief.codebase.repo_graph")
 

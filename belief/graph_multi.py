@@ -24,7 +24,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import operator
 from typing import Annotated, Any, Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -146,13 +145,7 @@ async def _build_one_service(state: dict[str, Any]) -> dict[str, Any]:
     Returns:
         state with code_files, test_files, execution_result for this service
     """
-    from belief.agents.architect import ArchitectAgent
-    from belief.agents.builder import BuilderAgent
-    from belief.agents.executor import ExecutorAgent
-    from belief.agents.skeleton_pass1 import skeleton_pass1_node
-    from belief.agents.tester import TesterAgent
     from belief.config.models import ModelRouter
-    from belief.models.state import UnifiedState
 
     service_spec = state.get("service_spec")
     if not service_spec:

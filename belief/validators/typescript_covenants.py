@@ -340,7 +340,7 @@ def _enforce_vitest(
                 if auto_fix:
                     new_content = re.sub(pattern, replacement, new_content)
                     v.auto_fixed = True
-                    v.fix_applied = f"jest.* → vi.*"
+                    v.fix_applied = "jest.* → vi.*"
                 violations.append(v)
                 break  # One violation per pattern is enough
 

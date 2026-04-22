@@ -12,7 +12,6 @@ Covers:
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from belief.memory.fsrs import (
     FSRSState,

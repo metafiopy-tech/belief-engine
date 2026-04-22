@@ -6,18 +6,14 @@ Every network interaction goes through a respx / monkeypatched fake.
 
 from __future__ import annotations
 
-import asyncio
-import os
 from typing import Any
 
-import httpx
 import pytest
 
 from belief.config.local_cost_tracker import LocalCostTracker
 from belief.config.models import (
     Backend,
     DEFAULT_LOCAL_MODEL,
-    HYBRID_ROUTING,
     ModelRole,
     ModelRouter,
     RouteMode,

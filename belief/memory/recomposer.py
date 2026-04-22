@@ -25,7 +25,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from belief.memory.nutrients import NutrientType
 
 logger = logging.getLogger("belief.memory.recomposer")
 

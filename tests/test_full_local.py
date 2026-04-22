@@ -25,8 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import pytest
 
@@ -183,7 +182,6 @@ class TestNutrientProfileCompact:
 
 
 from belief.cache.skeleton_cache import (
-    CacheEntry,
     cache_size,
     cache_skeleton,
     fingerprint_spec,
@@ -392,7 +390,6 @@ class TestExtractCodeBlock:
 
 from belief.metrics.local_benchmark import (
     LocalBenchmarkReport,
-    ReportDelta,
     build_report,
     compare_reports,
     format_comparison,

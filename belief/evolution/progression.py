@@ -520,14 +520,14 @@ def format_progression_report(metrics: ProgressionMetrics) -> str:
 
     lines = [
         f"Generative Chain Stage: {metrics.current_stage} ({stage_names.get(metrics.current_stage, '?')})",
-        f"",
+        "",
         f"  Tools: {metrics.total_tool_count} total ({metrics.seed_tool_count} hand-authored)",
         f"  Clusters: {metrics.cluster_count} (silhouette={metrics.cluster_silhouette:.2f})",
         f"  Coverage: {metrics.coverage_fraction:.0%} of benchmark space",
         f"  Diversity: rank_ratio={metrics.basis_rank_ratio:.2f}",
         f"  Connectivity: {metrics.connectivity_fraction:.0%} tool co-occurrence",
         f"  Archetypes: {metrics.archetype_count} (reuse={metrics.archetype_reuse:.0%})",
-        f"",
+        "",
     ]
 
     # Stage progress indicators

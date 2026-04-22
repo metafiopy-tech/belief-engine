@@ -34,7 +34,6 @@ import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("belief.codebase.patch_sampler")
 
@@ -293,7 +292,7 @@ Import from the module being tested."""
         patched_code = current_code.replace(patch.old_code, patch.new_code, 1)
 
         # Build test file
-        test_imports = f"import sys\nsys.path.insert(0, '.')\n"
+        test_imports = "import sys\nsys.path.insert(0, '.')\n"
         test_content = test_imports + "\n\n".join(t.code for t in tests)
 
         passed = set()

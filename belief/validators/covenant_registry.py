@@ -123,7 +123,7 @@ class CovenantRegistry:
                     violations=violations,
                     time_ms=elapsed_ms,
                 ))
-            except Exception as e:
+            except Exception:
                 results.append(CovenantResult(
                     name=name,
                     source="static",

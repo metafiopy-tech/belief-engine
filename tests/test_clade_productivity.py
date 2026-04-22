@@ -18,9 +18,7 @@ Covers:
 """
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
 
 import pytest
 
@@ -196,7 +194,7 @@ class TestReviewProductivityWeighting:
 
 chromadb = pytest.importorskip("chromadb")
 
-from belief.memory.nutrients import Nutrient, NutrientType, NutrientTier  # noqa: E402
+from belief.memory.nutrients import Nutrient, NutrientType  # noqa: E402
 from belief.memory.soil import (  # noqa: E402
     Soil,
     VoyageEmbeddingFunction,

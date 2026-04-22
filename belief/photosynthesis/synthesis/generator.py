@@ -35,7 +35,6 @@ from belief.photosynthesis.synthesis.prompts import (
     format_neighbors,
 )
 from belief.photosynthesis.synthesis.ranker import (
-    ACCEPT_THRESHOLD,
     RankerResult,
     combined_value,
     coverage_gain,

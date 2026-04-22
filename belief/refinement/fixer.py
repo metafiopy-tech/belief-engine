@@ -114,8 +114,6 @@ async def generate_fix(
             # Try fuzzy match — strip whitespace differences
             old_stripped = old_str.strip()
             if old_stripped in file_content:
-                # Find the actual match with surrounding whitespace
-                idx = file_content.index(old_stripped)
                 old_str = old_stripped
             else:
                 logger.warning(f"Fixer: old_str not found in {target_file}")
@@ -231,7 +229,6 @@ Generate search/replace edits across one or more files to fix this atomically.""
         )
 
         applied_edits = []
-        all_ok = True
 
         for edit in result.edits:
             fpath = edit.get("file", "")
@@ -249,7 +246,6 @@ Generate search/replace edits across one or more files to fix this atomically.""
                     old_str = old_stripped
                 else:
                     logger.warning(f"Multi-fixer: old_str not found in {fpath}")
-                    all_ok = False
                     continue
 
             new_content = content.replace(old_str, new_str, 1)
@@ -259,7 +255,6 @@ Generate search/replace edits across one or more files to fix this atomically.""
                     ast.parse(new_content)
                 except SyntaxError as e:
                     logger.warning(f"Multi-fixer: edit invalid in {fpath}: {e}")
-                    all_ok = False
                     continue
 
             applied_edits.append({

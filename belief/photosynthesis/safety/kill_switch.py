@@ -28,7 +28,6 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
-import os
 import signal
 import sqlite3
 import threading
@@ -37,7 +36,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterator, Optional, TypeVar
+from typing import Any, Callable, Iterator, Optional, TypeVar
 
 
 logger = logging.getLogger("belief.photosynthesis.safety.kill_switch")

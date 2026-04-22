@@ -499,7 +499,7 @@ def _fallback_manifest(goal: str, target_type: str = "python") -> FileManifestPl
 
 # ── Phase 2: Multi-service detection ─────────────────────────────────────────
 
-def _detect_service_architecture(skeleton: SkeletonArtifact, state) -> 'ServiceArchitecture | None':
+def _detect_service_architecture(skeleton: SkeletonArtifact, state) -> object | None:
     """Detect if a skeleton represents a multi-service project.
 
     Heuristics:
@@ -571,7 +571,6 @@ def _detect_service_architecture(skeleton: SkeletonArtifact, state) -> 'ServiceA
 
         # Detect routes from file tree
         routes = []
-        has_server = any(e.path.endswith(("server.py", "app.py")) for e in pkg_files)
 
         service = ServiceSpec(
             name=pkg.replace("_", "-"),

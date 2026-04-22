@@ -30,10 +30,45 @@ Notes:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
+
+
+# ---------------------------------------------------------------------------
+# Domain allowlist
+# ---------------------------------------------------------------------------
+
+#: Domains that belief-engine is expected to contact in production.
+#: Passed to BreakerAsyncClient(allowed_domains=...) to reject unexpected
+#: outbound HTTP before the request is even sent.
+DEFAULT_ALLOWED_DOMAINS: frozenset[str] = frozenset({
+    # Anthropic
+    "api.anthropic.com",
+    # Ollama (local)
+    "localhost",
+    "127.0.0.1",
+    # GitHub
+    "api.github.com",
+    "github.com",
+    "raw.githubusercontent.com",
+    # HackerNews (Algolia search)
+    "hn.algolia.com",
+    # ArXiv
+    "arxiv.org",
+    "export.arxiv.org",
+    # PyPI
+    "pypi.org",
+    "files.pythonhosted.org",
+    # Stack Exchange / Overflow
+    "api.stackexchange.com",
+    # Telegram (optional notifications)
+    "api.telegram.org",
+    # Railway (deployment health checks)
+    "railway.app",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -114,10 +149,12 @@ class BreakerAsyncClient:
         self,
         retry: Optional[RetryConfig] = None,
         breaker: Optional[BreakerConfig] = None,
+        allowed_domains: Optional[frozenset[str]] = None,
         **httpx_kwargs: Any,
     ) -> None:
         self._retry_cfg = retry or RetryConfig()
         self._breaker_cfg = breaker or BreakerConfig()
+        self._allowed_domains = allowed_domains  # None means unrestricted
         self._client = httpx.AsyncClient(**httpx_kwargs)
 
         # Lazy-build retry + breaker the first time request() is called,
@@ -159,10 +196,24 @@ class BreakerAsyncClient:
     async def __aexit__(self, *args: Any) -> None:
         await self._client.__aexit__(*args)
 
+    def _check_domain(self, url: str) -> None:
+        """Raise ValueError if the URL's host is not in the allowlist."""
+        if self._allowed_domains is None:
+            return
+        host = urlparse(url).hostname or ""
+        # Strip port if present and normalise
+        host = host.lower().split(":")[0]
+        if host not in self._allowed_domains:
+            raise ValueError(
+                f"Outbound HTTP blocked: '{host}' is not in the allowed domain list. "
+                f"Add it to DEFAULT_ALLOWED_DOMAINS or pass allowed_domains= to override."
+            )
+
     async def request(
         self, method: str, url: str, **kwargs: Any
     ) -> httpx.Response:
         """Send one request through retry + breaker."""
+        self._check_domain(url)
         self._ensure_policies()
 
         async def _do() -> httpx.Response:
@@ -191,6 +242,7 @@ def get_async_client(
     *,
     retry: Optional[RetryConfig] = None,
     breaker: Optional[BreakerConfig] = None,
+    allowed_domains: Optional[frozenset[str]] = None,
     **httpx_kwargs: Any,
 ) -> BreakerAsyncClient:
     """Factory for a retry+breaker-wrapped httpx.AsyncClient.
@@ -199,9 +251,18 @@ def get_async_client(
     with jitter 1-30s, breaker fail_max=5, reset=60s, 4xx excluded.
     Override either dataclass to tune.
 
+    Pass `allowed_domains=DEFAULT_ALLOWED_DOMAINS` to restrict outbound
+    HTTP to known-safe hosts. Pass `allowed_domains=None` (default) for
+    unrestricted mode (backward-compatible).
+
     Pass through any httpx kwargs (timeout, headers, http2, etc.).
     """
-    return BreakerAsyncClient(retry=retry, breaker=breaker, **httpx_kwargs)
+    return BreakerAsyncClient(
+        retry=retry,
+        breaker=breaker,
+        allowed_domains=allowed_domains,
+        **httpx_kwargs,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -232,10 +293,51 @@ async def conditional_get(
     return resp, resp.status_code == 304
 
 
+# ---------------------------------------------------------------------------
+# Synchronous convenience helpers
+# ---------------------------------------------------------------------------
+
+
+def head_sync(url: str, *, timeout: float = 5.0, headers: Optional[dict] = None) -> int:
+    """Synchronous HEAD request. Returns the HTTP status code, or 0 on error.
+
+    Uses httpx.Client (same dependency as the async path).  Centralised here
+    so callers (executor.py PyPI checks, etc.) don't scatter urllib calls.
+    """
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.head(url, headers=headers or {}, follow_redirects=True)
+            return resp.status_code
+    except Exception:
+        return 0
+
+
+def post_form_sync(
+    url: str,
+    data: dict,
+    *,
+    timeout: float = 10.0,
+) -> int:
+    """Synchronous form-encoded POST. Returns the HTTP status code, or 0 on error.
+
+    Centralised here so callers (notify.py Telegram sends, etc.) don't
+    scatter urllib calls and benefit from consistent timeout handling.
+    """
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(url, data=data)
+            return resp.status_code
+    except Exception:
+        return 0
+
+
 __all__ = [
     "BreakerAsyncClient",
     "BreakerConfig",
+    "DEFAULT_ALLOWED_DOMAINS",
     "RetryConfig",
     "conditional_get",
     "get_async_client",
+    "head_sync",
+    "post_form_sync",
 ]

@@ -13,15 +13,13 @@ Covers:
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from belief.evolution.crystallizer import (
     CandidateInvariant,
     INVARIANT_TEMPLATES,
-    InvariantTemplate,
     filter_candidates,
     promote_to_covenant,
     sweep_templates,

@@ -16,11 +16,8 @@ import pytest
 
 from belief.safety.confidence_probe import (
     ConfidenceProbe,
-    ERROR_KEYWORDS,
     EXPECTED_TOTAL_STEPS,
     KNOWN_AGENTS,
-    ProbeMetadata,
-    StepFeatures,
     THRESH_ESCALATE,
     THRESH_PROCEED,
     extract_features,

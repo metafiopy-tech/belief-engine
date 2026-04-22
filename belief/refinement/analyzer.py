@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 from belief.refinement import RefinementState
 
@@ -235,7 +234,7 @@ def _guess_target_file(test_output: str, code_files: dict[str, str]) -> str:
 
 # ── Pydantic model for structured LLM output ────────────────────────────────
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 class _AnalysisResult(BaseModel):
     test_name: str = ""

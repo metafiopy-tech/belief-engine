@@ -10,7 +10,6 @@ import pytest
 from belief.photosynthesis.synthesis.archives import Neighbor
 from belief.photosynthesis.synthesis.generator import (
     GoalSpec,
-    POST_DUP_THRESHOLD,
     synthesize,
 )
 

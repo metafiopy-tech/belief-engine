@@ -10,14 +10,10 @@ Source: spawn_gate.py _tg_send pattern
 
 from __future__ import annotations
 
-import json
 import logging
-import urllib.error
-import urllib.parse
-import urllib.request
-from typing import Optional
 
 from belief.config.settings import settings
+from belief.core.http import post_form_sync
 
 logger = logging.getLogger("belief.tools.notify")
 
@@ -33,14 +29,12 @@ def send_telegram(text: str, parse_mode: str = "Markdown") -> bool:
 
     try:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        data = urllib.parse.urlencode({
+        status = post_form_sync(url, {
             "chat_id": chat_id,
-            "text": text[:4000],  # Telegram limit
+            "text": text[:4000],
             "parse_mode": parse_mode,
-        }).encode()
-        req = urllib.request.Request(url, data=data, method="POST")
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return r.status == 200
+        }, timeout=10.0)
+        return status == 200
     except Exception as e:
         logger.debug(f"Telegram send failed: {e}")
         return False
@@ -79,7 +73,7 @@ def notify_seed_proposal(title: str, target: str, confidence: str) -> None:
 def notify_health_issue(issues: list[str]) -> None:
     """Notify about health issues."""
     msg = (
-        f"⚠️ *Health Issues*\n\n" +
+        "⚠️ *Health Issues*\n\n" +
         "\n".join(f"• {i}" for i in issues)
     )
     send_telegram(msg)

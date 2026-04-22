@@ -34,10 +34,8 @@ No ChromaDB, no network, pure stdlib.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Iterable, Sequence
 
 logger = logging.getLogger("belief.safety.danger_theory")
 

@@ -411,7 +411,7 @@ def create_seed_version(archive: Archive) -> AgentVersion:
     }
 
     # Collect model config
-    from belief.config.models import ModelRole, _DEFAULTS
+    from belief.config.models import _DEFAULTS
 
     model_config = {role.value: model for role, model in _DEFAULTS.items()}
 

@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -106,7 +104,6 @@ class TestEvaluatorIntegrity:
     @pytest.mark.asyncio
     async def test_catches_modification(self, tmp_path):
         from belief.safety.probes import (
-            _CRITICAL_FILE_HASHES,
             check_evaluator_integrity,
             initialize_probes,
         )
@@ -126,7 +123,6 @@ class TestEvaluatorIntegrity:
     @pytest.mark.asyncio
     async def test_catches_deletion(self, tmp_path):
         from belief.safety.probes import (
-            _CRITICAL_FILE_HASHES,
             check_evaluator_integrity,
             initialize_probes,
         )

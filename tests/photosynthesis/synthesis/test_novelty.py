@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 
 import pytest
 
-from belief.photosynthesis.synthesis.archives import ArchiveManager, Neighbor
+from belief.photosynthesis.synthesis.archives import Neighbor
 from belief.photosynthesis.synthesis.novelty import (
-    DISTINCT_THRESHOLD,
-    HARD_DUP_THRESHOLD,
     _parse_verdict,
     async_score_novelty,
 )

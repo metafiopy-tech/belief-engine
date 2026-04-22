@@ -195,7 +195,7 @@ class ServiceArchitecture(BaseModel):
                 if service.database:
                     tree[f"{pkg}/src/database.ts"] = f"{service.name} database setup"
                 if service.depends_on:
-                    tree[f"{pkg}/src/clients.ts"] = f"HTTP clients for calling other services"
+                    tree[f"{pkg}/src/clients.ts"] = "HTTP clients for calling other services"
                 tree[f"{pkg}/Dockerfile"] = f"{service.name} Docker build"
             else:
                 # Python service structure (default)
@@ -208,7 +208,7 @@ class ServiceArchitecture(BaseModel):
                 if service.database:
                     tree[f"{pkg}/database.py"] = f"{service.name} database setup"
                 if service.depends_on:
-                    tree[f"{pkg}/clients.py"] = f"HTTP clients for calling other services"
+                    tree[f"{pkg}/clients.py"] = "HTTP clients for calling other services"
 
             # Service-specific files
             for f in service.files:
@@ -242,21 +242,21 @@ class ServiceArchitecture(BaseModel):
         for service in self.services:
             lines.append(f"  {service.name}:")
             lines.append(f"    build: ./{service.package}")
-            lines.append(f"    ports:")
+            lines.append("    ports:")
             lines.append(f'      - "{service.port}:{service.port}"')
 
             # Dependencies
             dep_names = [d.target_service for d in service.depends_on]
             if dep_names:
-                lines.append(f"    depends_on:")
+                lines.append("    depends_on:")
                 for dep in dep_names:
                     lines.append(f"      - {dep}")
 
             # Environment
-            lines.append(f"    environment:")
+            lines.append("    environment:")
             lines.append(f"      - PORT={service.port}")
             if service.database:
-                lines.append(f"      - DATABASE_URL=${{DATABASE_URL:-sqlite:///data.db}}")
+                lines.append("      - DATABASE_URL=${DATABASE_URL:-sqlite:///data.db}")
             for dep in service.depends_on:
                 target = self.get_service(dep.target_service)
                 if target:
@@ -269,12 +269,12 @@ class ServiceArchitecture(BaseModel):
         if self.gateway:
             lines.append(f"  {self.gateway.name}:")
             lines.append(f"    build: ./{self.gateway.package}")
-            lines.append(f"    ports:")
+            lines.append("    ports:")
             lines.append(f'      - "{self.gateway.port}:{self.gateway.port}"')
-            lines.append(f"    depends_on:")
+            lines.append("    depends_on:")
             for s in self.services:
                 lines.append(f"      - {s.name}")
-            lines.append(f"    environment:")
+            lines.append("    environment:")
             lines.append(f"      - PORT={self.gateway.port}")
             for s in self.services:
                 env_name = s.name.upper().replace("-", "_") + "_URL"

@@ -15,7 +15,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import sys
@@ -301,8 +300,8 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
                         )
 
                         if needs_approval:
-                            print(f"     Status: propose-only (human approval required)")
-                            print(f"     Review: cat ~/.belief-engine/proposals.json\n")
+                            print("     Status: propose-only (human approval required)")
+                            print("     Review: cat ~/.belief-engine/proposals.json\n")
                         else:
                             # Auto-apply: HIGH confidence + evolvable file
                             from belief.evolution import SelfPatch
@@ -322,7 +321,7 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
         print(f"  BUILD COMPLETE — {elapsed:.1f}s")
         print(f"{'═' * 60}")
         print(f"\n  Output: {out_dir}/")
-        print(f"  Files:")
+        print("  Files:")
         for fname in sorted(code_files):
             size = len(code_files[fname])
             print(f"    {fname}  ({size} chars)")
@@ -407,7 +406,7 @@ async def _run_sica_cmd(args):
     _configure_logging()
     logger = logging.getLogger("belief.cli")
 
-    from belief.evolution.sica import SelfImprovementCycle, composite_utility
+    from belief.evolution.sica import SelfImprovementCycle
     project_root = _get_project_root()
     cycle = SelfImprovementCycle(project_root)
 
@@ -422,7 +421,6 @@ async def _run_sica_cmd(args):
         try:
             if hasattr(args, 'dry_run') and args.dry_run:
                 # Dry run: show what WOULD happen without modifying files
-                from belief.evolution.sica import SelfImprovementCycle as _SIC
                 # Run benchmark only
                 benchmark_data = await cycle._run_benchmark(args.tiers, None)
                 print(f"  Baseline: {benchmark_data['passed']}/{benchmark_data['total']} "
@@ -430,7 +428,7 @@ async def _run_sica_cmd(args):
 
                 # Early stop: all passing = nothing to improve
                 if benchmark_data['pass_rate'] >= 1.0:
-                    print(f"  All challenges passing — nothing to improve. Stopping.")
+                    print("  All challenges passing — nothing to improve. Stopping.")
                     break
 
                 # Generate proposal only
@@ -439,9 +437,9 @@ async def _run_sica_cmd(args):
                     print(f"  Proposal: {proposal.get('title', 'untitled')}")
                     print(f"  Target: {proposal.get('target_file', '?')}")
                     print(f"  Why: {proposal.get('why', '?')[:200]}")
-                    print(f"  (dry run — not applied)")
+                    print("  (dry run — not applied)")
                 else:
-                    print(f"  No proposal generated — stopping.")
+                    print("  No proposal generated — stopping.")
                     break
                 continue
 
@@ -449,7 +447,7 @@ async def _run_sica_cmd(args):
 
             # Early stop: no proposal generated (nothing to improve)
             if result.error == "No proposal generated":
-                print(f"  ○ All challenges passing — stopping early.")
+                print("  ○ All challenges passing — stopping early.")
                 break
 
             if result.accepted:
@@ -478,7 +476,7 @@ async def _run_sica_cmd(args):
     # Summary
     archive = cycle.archive
     print(f"\n{'═' * 60}")
-    print(f"  SICA SUMMARY")
+    print("  SICA SUMMARY")
     print(f"{'═' * 60}")
     print(f"  Iterations: {len(archive.iterations)}")
     print(f"  Accepted:   {sum(1 for r in archive.iterations if r.accepted)}")
@@ -508,8 +506,6 @@ async def _run_sica_cmd(args):
 async def _run_fix_cmd(args):
     """Run brownfield issue fixing from CLI."""
     _configure_logging()
-    logger = logging.getLogger("belief.cli")
-
     repo = args.repo
     repo_path = None
 
@@ -568,11 +564,11 @@ async def _run_fix_cmd(args):
             print(f"  +++ b/{result.patch_file}")
             for line in result.patch_old.split("\n")[:10]:
                 print(f"  - {line}")
-            print(f"  ...")
+            print("  ...")
             for line in result.patch_new.split("\n")[:10]:
                 print(f"  + {line}")
     else:
-        print(f"\n  ✗ FAILED")
+        print("\n  ✗ FAILED")
         if result.error:
             print(f"  Error: {result.error}")
         print(f"  Iterations: {result.iterations}")
@@ -787,7 +783,7 @@ def _run_probe_cmd(args) -> None:
         )
         cm = report.get("confusion_matrix", [])
         if cm:
-            print(f"confusion_matrix (rows=actual, cols=predicted):")
+            print("confusion_matrix (rows=actual, cols=predicted):")
             for row in cm:
                 print("  " + " ".join(f"{int(v):5d}" for v in row))
         return

@@ -19,7 +19,6 @@ import logging
 import os
 import re
 import subprocess
-import sys
 import tempfile
 import time
 import venv
@@ -27,7 +26,6 @@ from pathlib import Path
 
 from belief.agents.base import BaseAgent
 from belief.config.models import ModelRole
-from belief.config.settings import settings
 from belief.models.artifacts import ExecutionResult, PytestResult, PytestTestItem
 from belief.models.state import Phase, UnifiedState
 
@@ -419,7 +417,6 @@ class ExecutorAgent(BaseAgent):
         Returns list of error descriptions (empty = all clear).
         """
         errors = []
-        import re as _re
 
         # Build a map of available modules from code_files
         available_modules = set()
@@ -697,12 +694,10 @@ class ExecutorAgent(BaseAgent):
 
             # Check PyPI for unknown packages
             try:
-                import urllib.request
+                from belief.core.http import head_sync
                 url = f"https://pypi.org/pypi/{pkg_name}/json"
-                req = urllib.request.Request(url, method="HEAD")
-                req.add_header("User-Agent", "belief-engine/2.3")
-                resp = urllib.request.urlopen(req, timeout=5)
-                if resp.status == 200:
+                status = head_sync(url, timeout=5.0, headers={"User-Agent": "belief-engine/2.3"})
+                if status == 200:
                     verified_deps.append(dep)
                 else:
                     logger.warning(f"Executor: BLOCKED unknown package '{pkg_name}' — not found on PyPI")

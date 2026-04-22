@@ -17,7 +17,6 @@ to be a good measure."  DGM was caught writing fake unit-test logs.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger("belief.safety.goodhart_canary")
 

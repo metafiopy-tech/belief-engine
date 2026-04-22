@@ -6,7 +6,6 @@ Source: engine_loop.py lines 249-282
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from belief.polarity.incompleteness import IncompletenessLoop
 from belief.polarity.belief import BeliefLoop

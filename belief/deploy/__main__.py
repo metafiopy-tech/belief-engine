@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import logging
 import os
 import sys
@@ -128,7 +127,7 @@ async def _deploy(args):
         build_path = output_dir / args.build
         if not build_path.exists():
             print(f"Build not found: {args.build}")
-            print(f"Run: python3 -m belief.deploy --list")
+            print("Run: python3 -m belief.deploy --list")
             sys.exit(1)
         build_id = args.build
     else:
@@ -171,7 +170,7 @@ async def _deploy(args):
     result = await deploy(code_files, config)
 
     if result.status == DeployStatus.LIVE:
-        print(f"\n  \033[32m✓ DEPLOYED SUCCESSFULLY\033[0m")
+        print("\n  \033[32m✓ DEPLOYED SUCCESSFULLY\033[0m")
         print(f"  URL: {result.url}")
         print(f"  Time: {result.duration_seconds:.1f}s")
 
@@ -188,7 +187,7 @@ async def _deploy(args):
             print(f"\n{monitor.summary()}")
 
     else:
-        print(f"\n  \033[31m✗ DEPLOY FAILED\033[0m")
+        print("\n  \033[31m✗ DEPLOY FAILED\033[0m")
         print(f"  Error: {result.error}")
         if result.logs:
             print(f"\n  Logs:\n{result.logs[-500:]}")

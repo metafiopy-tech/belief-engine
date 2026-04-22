@@ -1,7 +1,9 @@
 """Tester Agent — generate pytest tests from code and acceptance criteria."""
 
 from __future__ import annotations
-import json, logging, os, re
+import logging
+import os
+import re
 from belief.agents.base import BaseAgent
 from belief.config.models import ModelRole
 from belief.llm import LLMClient
@@ -227,7 +229,6 @@ class TesterAgent(BaseAgent):
                                 conftest_imports.add(arg.arg)
 
             # Check for imports from non-existent local modules
-            valid = True
             source_modules = {
                 f.replace("/", ".").replace(".py", "").split(".")[-1]
                 for f in code_files if f.endswith(".py")
@@ -349,14 +350,14 @@ class TesterAgent(BaseAgent):
                             "@pytest.fixture",
                             "def run_cli(runner):",
                             '    """Helper to invoke CLI commands."""',
-                            f"    def _run(*args):",
+                            "    def _run(*args):",
                             f"        return runner.invoke({func_name}, args)",
                             "    return _run",
                             "",
                             "",
                             "@pytest.fixture",
-                            f"def cli_app():",
-                            f'    """The Click app object for direct invocation."""',
+                            "def cli_app():",
+                            '    """The Click app object for direct invocation."""',
                             f"    return {func_name}",
                             "",
                         ])
@@ -376,89 +377,89 @@ class TesterAgent(BaseAgent):
                 # Database session fixture
                 if is_fastapi:
                     lines.extend([
-                        f"@pytest.fixture",
+                        "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """Database session for testing."""',
-                        f"    from database import SessionLocal, init_db, engine, Base",
-                        f"    Base.metadata.create_all(bind=engine)",
-                        f"    db = SessionLocal()",
-                        f"    try:",
-                        f"        yield db",
-                        f"    finally:",
-                        f"        db.close()",
-                        f"        Base.metadata.drop_all(bind=engine)",
+                        '    """Database session for testing."""',
+                        "    from database import SessionLocal, init_db, engine, Base",
+                        "    Base.metadata.create_all(bind=engine)",
+                        "    db = SessionLocal()",
+                        "    try:",
+                        "        yield db",
+                        "    finally:",
+                        "        db.close()",
+                        "        Base.metadata.drop_all(bind=engine)",
                         "",
                     ])
                 else:
                     lines.extend([
-                        f"@pytest.fixture",
+                        "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """Database session stub."""',
-                        f"    yield None  # TODO: implement with real DB session",
+                        '    """Database session stub."""',
+                        "    yield None  # TODO: implement with real DB session",
                         "",
                     ])
             elif "client" in fixture_lower or "api" in fixture_lower:
                 # API/test client variant
                 if is_fastapi:
                     lines.extend([
-                        f"@pytest.fixture",
+                        "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """Test client for the API."""',
-                        f"    with TestClient(app) as c:",
-                        f"        yield c",
+                        '    """Test client for the API."""',
+                        "    with TestClient(app) as c:",
+                        "        yield c",
                         "",
                     ])
                 else:
                     lines.extend([
-                        f"@pytest.fixture",
+                        "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """Test client stub."""',
-                        f"    yield None  # TODO: implement",
+                        '    """Test client stub."""',
+                        "    yield None  # TODO: implement",
                         "",
                     ])
             elif "app" in fixture_lower:
                 # App instance fixture
                 if is_fastapi:
                     lines.extend([
-                        f"@pytest.fixture",
+                        "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """FastAPI app instance."""',
-                        f"    return app",
+                        '    """FastAPI app instance."""',
+                        "    return app",
                         "",
                     ])
                 else:
                     lines.extend([
-                        f"@pytest.fixture",
+                        "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """App instance stub."""',
-                        f"    yield None  # TODO: implement",
+                        '    """App instance stub."""',
+                        "    yield None  # TODO: implement",
                         "",
                     ])
             elif "cli" in fixture_lower or "invoke" in fixture_lower:
                 # CLI runner variant
                 if is_click:
                     lines.extend([
-                        f"@pytest.fixture",
+                        "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """CLI runner fixture."""',
-                        f"    return CliRunner()",
+                        '    """CLI runner fixture."""',
+                        "    return CliRunner()",
                         "",
                     ])
                 else:
                     lines.extend([
-                        f"@pytest.fixture",
+                        "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """CLI fixture stub."""',
-                        f"    yield None  # TODO: implement",
+                        '    """CLI fixture stub."""',
+                        "    yield None  # TODO: implement",
                         "",
                     ])
             else:
                 # Generic stub — at least yield something non-None
                 lines.extend([
-                    f"@pytest.fixture",
+                    "@pytest.fixture",
                     f"def {fixture}():",
                     f'    """Auto-generated fixture for {fixture}."""',
-                    f"    yield {{}}  # TODO: implement with real test data",
+                    "    yield {}  # TODO: implement with real test data",
                     "",
                 ])
 
@@ -699,7 +700,6 @@ def _cap_test_count(test_files: dict[str, str], max_tests_per_file: int = 20) ->
 
         # Too many tests — keep only the first max_tests_per_file
         # (prioritized by position: smoke tests come first in generated output)
-        keep = set(test_funcs[:max_tests_per_file])
         drop = set(test_funcs[max_tests_per_file:])
 
         # Remove dropped test functions from the source

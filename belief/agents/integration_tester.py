@@ -106,9 +106,9 @@ def _spec_to_test_file(service, spec: dict) -> str:
     # Health check test
     lines.extend([
         f"def test_{service.package}_health():",
-        f'    """Smoke test: service is reachable."""',
-        f"    response = httpx.get(f\"{{BASE_URL}}/health\", timeout=5)",
-        f"    assert response.status_code in (200, 404)  # 404 OK if no /health route",
+        '    """Smoke test: service is reachable."""',
+        "    response = httpx.get(f\"{BASE_URL}/health\", timeout=5)",
+        "    assert response.status_code in (200, 404)  # 404 OK if no /health route",
         "",
         "",
     ])
@@ -140,12 +140,12 @@ def _spec_to_test_file(service, spec: dict) -> str:
                 lines.append(f'    url = f"{{BASE_URL}}{path}"')
 
             if has_body and method.upper() in ("POST", "PUT", "PATCH"):
-                lines.append(f'    payload = {{"test": True}}  # Minimal valid payload')
+                lines.append('    payload = {"test": True}  # Minimal valid payload')
                 lines.append(f"    response = httpx.{method}(url, json=payload, timeout=5)")
             else:
                 lines.append(f"    response = httpx.{method}(url, timeout=5)")
 
-            lines.append(f"    assert response.status_code < 500, f\"Server error: {{response.status_code}}\"")
+            lines.append("    assert response.status_code < 500, f\"Server error: {response.status_code}\"")
             lines.append("")
             lines.append("")
 
@@ -184,13 +184,13 @@ def _generate_cross_service_tests(architecture) -> str | None:
         lines.extend([
             f"def {test_name}():",
             f'    """Verify {svc.name} can reach {target.name}."""',
-            f'    # Target service should be reachable',
+            '    # Target service should be reachable',
             f'    response = httpx.get("http://localhost:{target.port}/health", timeout=5)',
-            f"    assert response.status_code < 500",
+            "    assert response.status_code < 500",
             "",
-            f'    # Source service should be reachable',
+            '    # Source service should be reachable',
             f'    response = httpx.get("http://localhost:{svc.port}/health", timeout=5)',
-            f"    assert response.status_code < 500",
+            "    assert response.status_code < 500",
             "",
             "",
         ])
@@ -228,7 +228,7 @@ def run_integration_tests_live(
 
             # Inject correct base URLs
             for pkg, url in base_urls.items():
-                content = content.replace(f"http://localhost:", url.replace("http://localhost:", "http://localhost:"))
+                content = content.replace("http://localhost:", url.replace("http://localhost:", "http://localhost:"))
 
             fpath.write_text(content)
 

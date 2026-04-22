@@ -319,7 +319,7 @@ restartPolicyMaxRetries = 3
 
 
 def _generate_compose(config: DeployConfig) -> str:
-    return f"""version: '3.8'
+    return """version: '3.8'
 
 services:
   app:

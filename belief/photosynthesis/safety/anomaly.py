@@ -30,7 +30,6 @@ audit_sink) so tests can drive it with synthetic series.
 from __future__ import annotations
 
 import logging
-import math
 import statistics
 import time
 from dataclasses import dataclass, field

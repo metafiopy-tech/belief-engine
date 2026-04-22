@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from belief.grinder.daemon import (
     BuildResult,
-    DaemonStats,
     GrinderDaemon,
 )
 from belief.grinder.goal_queue import GoalEnvelope

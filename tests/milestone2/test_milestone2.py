@@ -42,7 +42,6 @@ from belief.models.skeleton import (  # noqa: E402
     MethodSignature,
     ConfigSchema,
     ExceptionSpec,
-    ProtocolDefinition,
 )
 from belief.models.symbol_registry import SymbolRegistry
 from belief.models.dependency_dag import (
@@ -50,8 +49,6 @@ from belief.models.dependency_dag import (
     create_build_plan,
     critical_path,
     DependencyCycleError,
-    TopologicalResult,
-    BuildPlan,
 )
 from belief.agents.skeleton_builder import generate_all_skeletons
 from belief.agents.pyright_checker import (
@@ -676,7 +673,7 @@ class TestImportResolution12Files:
                                 )
 
         assert not unresolved, (
-            f"Unresolved imports in 12-file project:\n" + "\n".join(unresolved)
+            "Unresolved imports in 12-file project:\n" + "\n".join(unresolved)
         )
 
     def test_all_files_have_valid_syntax(self):

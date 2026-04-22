@@ -10,14 +10,11 @@ Wired into the main graph between validator and END when:
 
 from __future__ import annotations
 
-import ast
-import asyncio
 import logging
 import os
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
@@ -166,7 +163,6 @@ def _find_related_files(target_file: str, code_files: dict[str, str]) -> list[st
     Returns the target + any files that import from it or that it imports from.
     Used to scope multi-file fixes.
     """
-    import re as _re
 
     related = {target_file}
     target_module = target_file.replace("/", ".").replace(".py", "")
@@ -559,7 +555,7 @@ async def _generate_reflection(
         logger.info(f"Reflection: {reflection[:100]}...")
         return reflection
 
-    except Exception as e:
+    except Exception:
         # Fallback: deterministic reflection without LLM
         if regressed:
             return (

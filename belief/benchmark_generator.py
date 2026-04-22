@@ -122,7 +122,6 @@ def generate_challenges(
     Returns:
         List of GeneratedChallenge objects
     """
-    rng = random.Random(seed)
     challenges = []
 
     for i in range(n):

@@ -356,7 +356,7 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
                 continue
             # model_config is class-level Pydantic v2 config, not a Field
             if f.name == "model_config":
-                lines.append(f"    model_config = ConfigDict(from_attributes=True)")
+                lines.append("    model_config = ConfigDict(from_attributes=True)")
                 continue
             desc = f.description.replace('"', "'") if f.description else ""
             default = _literal_default(f.default)
@@ -379,7 +379,7 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
         for v in model.validators:
             lines.append("")
             lines.append(f"    def {v}(self):")
-            lines.append(f"        pass  # TODO: implement validator")
+            lines.append("        pass  # TODO: implement validator")
 
         lines.append("")
 
@@ -670,7 +670,7 @@ def _generate_exception_code(skeleton: SkeletonArtifact, file_path: str) -> str 
             lines.append(f"class {exc.name}({exc.base_class}):")
 
         if exc.message_template:
-            lines.append(f"    def __init__(self, **kwargs):")
+            lines.append("    def __init__(self, **kwargs):")
             lines.append(f'        super().__init__(f"{exc.message_template}")')
         else:
             lines.append("    pass")

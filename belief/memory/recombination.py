@@ -12,12 +12,10 @@ between builds to enrich the soil.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import random
-from pathlib import Path
 
-from belief.memory.nutrients import Nutrient, NutrientType, NutrientTier, _now_ts
+from belief.memory.nutrients import Nutrient, NutrientType
 from belief.memory.soil import Soil
 
 logger = logging.getLogger("belief.memory.recombination")

@@ -55,7 +55,7 @@ class IntakeAgent(BaseAgent):
             if not spec.acceptance_criteria:
                 spec.acceptance_criteria = [
                     f"The automation for '{goal}' executes without errors",
-                    f"The automation produces the expected output",
+                    "The automation produces the expected output",
                 ]
             spec.complexity_score = max(1, min(5, spec.complexity_score))
             state.requirement_spec = spec
@@ -68,7 +68,7 @@ class IntakeAgent(BaseAgent):
                 goal=goal, goal_refined=goal, target_type="python",
                 acceptance_criteria=[
                     f"The automation for '{goal}' executes without errors",
-                    f"The automation produces the expected output",
+                    "The automation produces the expected output",
                 ],
             )
             state.warnings.append(f"Intake used fallback: {e}")

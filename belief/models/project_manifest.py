@@ -113,7 +113,6 @@ def manifest_from_skeleton(
     - Config schemas → env_vars
     - Code patterns → service_type, ports
     """
-    from belief.models.skeleton import SkeletonArtifact
 
     # Detect service type from code patterns
     all_code = "\n".join(generated_files.values())

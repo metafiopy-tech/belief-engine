@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +81,6 @@ async def fix_issue(
     from belief.codebase import Codebase
     from belief.codebase.localizer import HierarchicalLocalizer
     from belief.codebase.patch_sampler import PatchSampler
-    from belief.codebase.change_impact import select_affected_tests
     from belief.config.models import ModelRouter
     from belief.llm import LLMClient
 
@@ -205,7 +204,6 @@ async def _validate_patch(
         tmp_path = Path(tmp)
 
         # Copy the entire codebase
-        import shutil
         for fpath in codebase.files:
             content = codebase.get_file_content(fpath)
             if content:

@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 
 from belief.photosynthesis.safety.anomaly import (
-    AnomalyAlert,
     mad_alert,
     percentile_alert,
     rolling_zscore_alert,

@@ -10,8 +10,6 @@ from pathlib import Path
 import pytest
 
 from belief.grinder.goal_queue import (
-    FALLBACK_GOAL_TEMPLATES,
-    GoalEnvelope,
     GoalQueue,
     render_fallback_goal,
 )

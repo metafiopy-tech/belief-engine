@@ -33,8 +33,8 @@ from __future__ import annotations
 import ast
 import hashlib
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional, Sequence
+from dataclasses import dataclass
+from typing import Iterable, Sequence
 
 logger = logging.getLogger("belief.evolution.assembly_theory")
 

@@ -14,7 +14,6 @@ from belief.memory.library_inductor import (
     MIN_SUCCESSFUL_USES,
     MIN_TROPHIC_LEVEL,
     NamingResult,
-    PromotionOutcome,
     promote_apex_predator,
     promote_eligible,
 )

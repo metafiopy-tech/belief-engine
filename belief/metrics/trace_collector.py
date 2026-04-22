@@ -48,9 +48,9 @@ import queue
 import sqlite3
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Optional
 
 
 logger = logging.getLogger("belief.metrics.trace_collector")

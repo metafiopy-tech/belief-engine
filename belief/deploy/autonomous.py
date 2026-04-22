@@ -17,10 +17,9 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger("belief.deploy.autonomous")
 
@@ -120,7 +119,7 @@ async def autonomous_build_and_deploy(
 
         try:
             from belief.deploy.monitor import HealthMonitor
-            from belief.deploy.remediation import AutoRemediation, RemediationConfig
+            from belief.deploy.remediation import AutoRemediation
 
             health_monitor = HealthMonitor(
                 url=result.url,

@@ -9,7 +9,6 @@ Covers:
 """
 
 import ast
-import json
 import pytest
 
 pytest.skip(
@@ -31,16 +30,12 @@ from belief.models.skeleton import (  # noqa: E402
     ModelFieldSpec,
     ABCDefinition,
     MethodSignature,
-    ProtocolDefinition,
     ConfigSchema,
     ExceptionSpec,
 )
 from belief.models.symbol_registry import (
     SymbolRegistry,
     parse_file,
-    FileSymbols,
-    ClassSymbol,
-    FunctionSymbol,
 )
 from belief.agents.skeleton_builder import (
     generate_skeleton_file,

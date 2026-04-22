@@ -17,7 +17,6 @@ Covers:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pytest
@@ -26,7 +25,7 @@ import pytest
 # ── Pure-stdlib tests (no chromadb) ────────────────────────────────────────
 
 
-from belief.memory.nutrients import Nutrient, NutrientType, NutrientTier, _now_ts
+from belief.memory.nutrients import Nutrient, NutrientType, _now_ts
 
 
 class TestNutrientBiTemporalFields:
@@ -123,9 +122,6 @@ class TestNutrientBiTemporalFields:
 
 
 from belief.memory.manifold import (
-    DEFAULT_GAP_THRESHOLD,
-    DomainCluster,
-    ManifoldReport,
     build_manifold,
     format_report,
     nutrient_domains,

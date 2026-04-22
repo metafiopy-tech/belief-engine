@@ -110,7 +110,6 @@ class BeliefLoop:
             return recent[-1] if recent else None
 
         most_common = Counter(words).most_common(3)
-        theme = " ".join(w for w, _ in most_common)
 
         # Find the covenant that best matches the theme
         best_match = recent[-1]

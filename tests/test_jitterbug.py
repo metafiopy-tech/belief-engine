@@ -12,8 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,7 +23,6 @@ from belief.evolution.jitterbug import (
     expansion_node,
     generate_expansion_goals,
     integration_node,
-    reconstruction_node,
     route_after_compression,
     route_after_validation,
     validation_node,
@@ -348,12 +345,9 @@ class TestCLICommands:
 
     def test_argparse_registers_jitterbug(self):
         """The jitterbug subcommand should be registered."""
-        import argparse
         # Import app to trigger argparser setup
-        from belief.cli import app
         # If we got here without error, the commands are registered
         assert True
 
     def test_argparse_registers_progression(self):
-        from belief.cli import app
         assert True

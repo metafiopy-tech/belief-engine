@@ -10,7 +10,6 @@ Source: frequency_layer.py
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from belief.models.state import PolarityState, WorldState
 

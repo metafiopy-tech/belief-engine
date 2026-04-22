@@ -41,8 +41,8 @@ Public API:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional, Sequence
+from dataclasses import dataclass
+from typing import Any, Optional, Sequence
 
 # ── Thresholds (spec defaults) ─────────────────────────────────────────────
 

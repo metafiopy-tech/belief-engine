@@ -22,8 +22,7 @@ Source: METABOLIZATION_BUILD_PLAN.md Phase 5
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from belief.memory.nutrients import Nutrient, NutrientTier, NutrientType
 
@@ -190,7 +189,6 @@ def _promote_cluster(
         return None
 
     # Synthesize content from the cluster
-    contents = [n.content for n in cluster]
     # Use the most-reinforced member as the base content
     best = max(cluster, key=lambda n: n.reinforcement_count)
 

@@ -19,13 +19,10 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
 import random
-import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
 
 from langgraph.graph import END, StateGraph
 
@@ -416,7 +413,6 @@ async def reconstruction_node(state: dict) -> dict:
 
         try:
             from belief.evolution.self_improvement import (
-                FailureCluster,
                 execute_new_tool_proposal,
             )
             from belief.memory.soil import Soil

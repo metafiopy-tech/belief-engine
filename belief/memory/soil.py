@@ -25,10 +25,9 @@ import hashlib
 import logging
 import os
 import struct
-import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
+from typing import Iterator, Optional
 
 import chromadb
 from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
@@ -36,7 +35,6 @@ from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
 from belief.memory.nutrients import (
     Nutrient,
     NutrientProfile,
-    NutrientTier,
     NutrientType,
     _now_ts,
 )
@@ -44,11 +42,8 @@ from belief.memory.fsrs import (
     FSRSState,
     clade_productivity,
     review as fsrs_review,
-    retrievability as fsrs_retrievability,
-    schedule_next_review,
 )
 from belief.memory.collections import (
-    COLLECTION_CONFIGS,
     collection_for_nutrient_type,
     get_or_create_collections,
     migrate_from_legacy,

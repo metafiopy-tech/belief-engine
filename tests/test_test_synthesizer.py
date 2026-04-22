@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-import pytest
 
 from belief.memory.test_synthesizer import (
     DEFAULT_MAX_TESTS,

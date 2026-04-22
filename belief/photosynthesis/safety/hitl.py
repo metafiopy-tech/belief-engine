@@ -26,7 +26,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterator, Optional, Protocol
+from typing import Any, Iterator, Optional, Protocol
 
 
 logger = logging.getLogger("belief.photosynthesis.safety.hitl")

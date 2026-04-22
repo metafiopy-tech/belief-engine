@@ -71,7 +71,6 @@ def enforce_all(
     # Detect project context
     all_code = "\n".join(fixed.values())
     uses_sqlalchemy = "sqlalchemy" in all_code.lower()
-    uses_fastapi = "FastAPI" in all_code or "fastapi" in all_code
 
     # Run each enforcer
     enforcers = [
@@ -192,7 +191,7 @@ def _enforce_no_future_with_sqlalchemy(
             covenant="no_future_with_sqlalchemy",
             file=fname,
             line=1,
-            message=f"Removed `from __future__ import annotations` (breaks SQLAlchemy Mapped types)",
+            message="Removed `from __future__ import annotations` (breaks SQLAlchemy Mapped types)",
             auto_fix=fixed,
         )]
 

@@ -21,9 +21,8 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Optional
 
-from belief.models.skeleton import SkeletonArtifact, DependencyEdge
+from belief.models.skeleton import SkeletonArtifact
 
 
 # ---------------------------------------------------------------------------

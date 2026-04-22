@@ -13,9 +13,7 @@ Covers:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,10 +25,9 @@ from belief.evolution.self_improvement import (
     cluster_failures,
     evaluate_tool_against_failures,
     formulate_tool_goal,
-    get_recent_failures,
     select_target_cluster,
 )
-from belief.evolution.tool_validator import ToolValidationResult, validate_tool
+from belief.evolution.tool_validator import validate_tool
 from belief.memory.tool_registry import SelfAuthoredTool, ToolRegistry
 
 
@@ -590,7 +587,6 @@ class TestSICANewToolDispatch:
     def test_should_propose_new_tool_returns_false_without_failures(self, tmp_path):
         """Returns False when there are no failure traces (empty soil)."""
         import asyncio
-        from unittest.mock import MagicMock, patch
         from belief.evolution.sica import SelfImprovementCycle
 
         mock_soil = MagicMock()
@@ -633,7 +629,6 @@ class TestSICANewToolDispatch:
 
     def test_custom_soil_injected(self, tmp_path):
         """Soil can be injected via constructor."""
-        from unittest.mock import MagicMock
         from belief.evolution.sica import SelfImprovementCycle
 
         mock_soil = MagicMock()

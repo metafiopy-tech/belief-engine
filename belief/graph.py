@@ -652,8 +652,6 @@ async def _refinement_impl(state: dict[str, Any], router: ModelRouter) -> dict[s
         # Compute actual weighted verdict from real test results
         final_passed = refinement.get("final_passed", 0)
         final_total = refinement.get("final_total", 0)
-        initial_passed = refinement.get("initial_passed", 0)
-        improvement = final_passed - initial_passed
 
         if refinement["verdict"] == "pass":
             result["validation_result"] = {

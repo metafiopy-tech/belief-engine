@@ -38,10 +38,9 @@ from belief.models.skeleton import (  # noqa: E402
 )
 from belief.models.symbol_registry import SymbolRegistry
 from belief.agents.skeleton_builder import generate_all_skeletons
-from belief.agents.builder_skeleton import build_implementation_file, build_all_implementations
+from belief.agents.builder_skeleton import build_all_implementations
 from belief.agents.architect_skeleton import validate_skeleton
 from belief.agents.graph_integration import (
-    skeleton_architect_node,
     skeleton_pass1_node,
     skeleton_builder_node,
     run_full_skeleton_build,
@@ -574,7 +573,7 @@ class TestImportResolution:
                                 )
 
         assert not unresolved, (
-            f"Unresolved imports:\n" + "\n".join(unresolved)
+            "Unresolved imports:\n" + "\n".join(unresolved)
         )
 
 

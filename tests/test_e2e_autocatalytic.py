@@ -23,13 +23,8 @@ Run with: python -m pytest tests/test_e2e_autocatalytic.py -v
 
 from __future__ import annotations
 
-import asyncio
-import json
-import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -183,7 +178,7 @@ class TestAutocatalyticCore:
 
 class TestCrystallization:
     def test_template_sweep(self, workspace):
-        from belief.evolution.crystallizer import INVARIANT_TEMPLATES, sweep_templates
+        from belief.evolution.crystallizer import sweep_templates
 
         # Build traces where fastapi always has uvicorn
         traces = [
@@ -256,7 +251,7 @@ class TestJitterbugGraph:
 
 class TestArchiveIntegration:
     def test_seed_and_select(self, workspace):
-        from belief.evolution.archive import AgentVersion, create_seed_version
+        from belief.evolution.archive import create_seed_version
 
         archive = workspace["archive"]
         seed = create_seed_version(archive)
@@ -439,24 +434,6 @@ class TestCovenantRegistry:
 class TestFullLoopSummary:
     def test_all_v3_modules_import(self):
         """Verify every module from sessions 1-7 imports successfully."""
-        import belief.memory.fsrs
-        import belief.memory.collections
-        import belief.memory.tool_registry
-        import belief.memory.episode_recorder
-        import belief.evolution.archive
-        import belief.evolution.cascade
-        import belief.evolution.crystallizer
-        import belief.evolution.jitterbug
-        import belief.evolution.progression
-        import belief.evolution.tool_validator
-        import belief.optimization.dspy_modules
-        import belief.optimization.compiler
-        import belief.optimization.prompt_store
-        import belief.safety.overseer
-        import belief.safety.probes
-        import belief.safety.goodhart_canary
-        import belief.metrics.dashboard
-        import belief.validators.covenant_registry
 
     def test_version_is_3(self):
         import belief

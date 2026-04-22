@@ -16,7 +16,6 @@ Grinder's schema validator passes.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -71,7 +70,7 @@ def render_session_markdown(spec: GoalSpec) -> str:
         "   a matching test (when kind=test) or endpoint/artifact verification.",
         "",
         "3. Package the deliverable in the conventional Belief Engine layout",
-        f"   (entry point, README, pyproject.toml) using the primary libraries.",
+        "   (entry point, README, pyproject.toml) using the primary libraries.",
         "",
         "CONSTRAINTS",
         "- Python 3.14",

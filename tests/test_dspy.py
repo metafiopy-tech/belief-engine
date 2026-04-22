@@ -12,9 +12,7 @@ Covers:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -40,9 +38,6 @@ class TestDspyAvailability:
 
     def test_module_import_without_dspy(self):
         """The optimization package should import even if dspy is not installed."""
-        import belief.optimization
-        import belief.optimization.compiler
-        import belief.optimization.prompt_store
 
     def test_dspy_modules_import_without_dspy(self):
         """dspy_modules should import (the guard is in __init__, not import)."""

@@ -134,7 +134,6 @@ class BaseAgent(ABC):
         here to keep per-agent overhead at zero cost.
         """
         try:
-            from belief.polarity.incompleteness import IncompletenessLoop
             from belief.polarity.frequency import FrequencyLayer
             from belief.models.state import PolarityState
 
@@ -147,7 +146,6 @@ class BaseAgent(ABC):
             # Heuristic remainder — zero LLM cost
             errors = output.get("errors", [])
             warnings = output.get("warnings", [])
-            phase = output.get("phase", "")
 
             if errors:
                 # Agent produced errors — low coherence signal

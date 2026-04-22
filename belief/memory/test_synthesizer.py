@@ -24,7 +24,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Optional, Protocol
+from typing import Any, Optional, Protocol
 
 
 logger = logging.getLogger("belief.memory.test_synthesizer")

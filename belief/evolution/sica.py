@@ -295,7 +295,7 @@ class SelfImprovementCycle:
                 return result
 
             # ── Step 5: Re-run benchmark ────────────────────────────────
-            logger.info(f"SICA: applied proposal, re-running benchmark")
+            logger.info("SICA: applied proposal, re-running benchmark")
             post = await self._run_benchmark(benchmark_tiers, benchmark_ids)
             result.post_score = post["pass_rate"]
             result.post_passing = post["passing_ids"]
@@ -698,7 +698,6 @@ class SelfImprovementCycle:
         """
         # Estimate avg output lines from benchmark results
         # (we don't have direct access to output files here, so use a heuristic)
-        results = benchmark_data.get("results", [])
         avg_score = benchmark_data.get("pass_rate", 0.0)
 
         # Use pass_rate as a rough proxy for code complexity bucket

@@ -22,7 +22,6 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 logger = logging.getLogger("belief.tools.multi_service")
 
@@ -187,7 +186,6 @@ def verify_services(
     for svc in services:
         svc_name = svc.get("name", "unknown")
         svc_package = svc.get("package", svc_name)
-        svc_port = svc.get("port", 8000)
 
         # Find files belonging to this service
         svc_files = {
