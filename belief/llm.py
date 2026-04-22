@@ -99,13 +99,24 @@ class AsyncOllamaClient:
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
-        # Resolution order: explicit arg > env var > default.
+        # Pull per-model defaults from belief.config.local_models — when
+        # the model name matches a known entry, those defaults apply
+        # unless overridden by kwargs or env vars.  Unknown models fall
+        # back to the conservative DEFAULT_LOCAL_MODEL_CONFIG.
+        from belief.config.local_models import get_model_config
+        model_config = get_model_config(model)
+        self._model_config = model_config
+
+        # Resolution order: explicit arg > env var > model-table > class default.
         env_keep_alive = os.environ.get("BELIEF_OLLAMA_KEEP_ALIVE", "").strip()
-        self.keep_alive = (
-            keep_alive
-            if keep_alive is not None
-            else (env_keep_alive or self._DEFAULT_KEEP_ALIVE)
-        )
+        if keep_alive is not None:
+            self.keep_alive = keep_alive
+        elif env_keep_alive:
+            self.keep_alive = env_keep_alive
+        else:
+            self.keep_alive = str(
+                model_config.get("keep_alive", self._DEFAULT_KEEP_ALIVE)
+            )
 
         env_num_ctx = os.environ.get("BELIEF_OLLAMA_NUM_CTX", "").strip()
         if num_ctx is not None:
@@ -114,9 +125,15 @@ class AsyncOllamaClient:
             try:
                 self.num_ctx = int(env_num_ctx)
             except ValueError:
-                self.num_ctx = self._DEFAULT_NUM_CTX
+                self.num_ctx = int(model_config.get("num_ctx", self._DEFAULT_NUM_CTX))
         else:
-            self.num_ctx = self._DEFAULT_NUM_CTX
+            self.num_ctx = int(model_config.get("num_ctx", self._DEFAULT_NUM_CTX))
+
+        # Additional sampling defaults from the model config — applied
+        # in generate() below as Ollama `options`.
+        self._default_num_predict = int(model_config.get("num_predict", 4096))
+        self._default_temperature = float(model_config.get("temperature", 0.0))
+        self._default_repeat_penalty = model_config.get("repeat_penalty")  # optional
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -149,6 +166,19 @@ class AsyncOllamaClient:
                      "cache_creation_input_tokens": 0}}
         """
         client = self._get_client()
+        options: dict[str, Any] = {
+            "temperature": float(temperature),
+            "num_predict": int(max_tokens),
+            # Pinning num_ctx stabilises Ollama's KV-cache so the
+            # system-prompt prefix is reused across calls in a build.
+            "num_ctx": int(self.num_ctx),
+        }
+        # repeat_penalty is opt-in per model (14B wants 1.1; 7B leaves
+        # it at Ollama's default). Only inject when the model config
+        # specifies one.
+        if self._default_repeat_penalty is not None:
+            options["repeat_penalty"] = float(self._default_repeat_penalty)
+
         payload = {
             "model": model or self.model,
             "messages": [
@@ -160,13 +190,7 @@ class AsyncOllamaClient:
             # build — same 14B weights across PLAN/BUILD/DEBUG instead of
             # a cold reload each time.
             "keep_alive": self.keep_alive,
-            "options": {
-                "temperature": float(temperature),
-                "num_predict": int(max_tokens),
-                # Pinning num_ctx stabilises Ollama's KV-cache so the
-                # system-prompt prefix is reused across calls in a build.
-                "num_ctx": int(self.num_ctx),
-            },
+            "options": options,
         }
         resp = await client.post("/api/chat", json=payload)
         resp.raise_for_status()
@@ -468,10 +492,19 @@ class LLMClient:
 
 def _parse_structured(raw: str, schema: Type[T]) -> T:
     """Extract and parse JSON from LLM response text.
-    
-    Handles truncated JSON by attempting repair (closing unclosed brackets/braces).
-    This is critical for the decomposer and validator whose outputs frequently
-    exceed the max_tokens limit.
+
+    Handles several failure modes common to local models (qwen / llama)
+    and occasionally Claude under pressure:
+      1. Markdown code fences (```json ... ```)
+      2. Truncated output (close unclosed brackets/braces)
+      3. Trailing commas ({"a": 1,})
+      4. Single-quoted strings ({'a': 'b'})
+      5. Unquoted keys ({a: 1})
+      6. As a last resort, regex-extract the top-level fields that
+         match the schema.
+
+    The lenient transforms are only applied on ``json.loads`` failure,
+    so valid JSON from Claude stays untouched.
     """
     text = raw.strip()
 
@@ -483,6 +516,19 @@ def _parse_structured(raw: str, schema: Type[T]) -> T:
     # Find the JSON object
     brace_start = text.find("{")
     if brace_start == -1:
+        # No JSON braces at all — still try regex salvage before giving up.
+        # Local models occasionally respond with narrative text that
+        # happens to contain ``"field": value`` fragments we can recover.
+        try:
+            salvaged = _regex_extract_fields(text, schema)
+            if salvaged:
+                logger.info(
+                    f"No JSON object found; salvaged {len(salvaged)} fields "
+                    f"via regex fallback for {schema.__name__}"
+                )
+                return schema.model_validate(salvaged)
+        except Exception as e:
+            logger.debug(f"Brace-less regex salvage failed: {e}")
         raise ValueError(f"No JSON object found in response: {text[:200]}")
 
     # Try 1: Find matching closing brace (clean JSON)
@@ -504,7 +550,7 @@ def _parse_structured(raw: str, schema: Type[T]) -> T:
         except Exception as e:
             logger.debug(f"Initial JSON parse failed, attempting repair: {e}")
 
-    # Try 2: Repair truncated JSON
+    # Try 2: Repair truncated JSON (close unclosed brackets)
     truncated = text[brace_start:]
     repaired = _repair_json(truncated)
     if repaired:
@@ -513,12 +559,290 @@ def _parse_structured(raw: str, schema: Type[T]) -> T:
             logger.info(f"Parsed repaired JSON ({len(repaired)} chars)")
             return schema.model_validate(data)
         except Exception as e:
-            raise ValueError(
-                f"JSON repair failed for {schema.__name__}: {e}\n"
-                f"Repaired text: {repaired[:300]}"
+            logger.debug(f"Repaired parse still failed, trying lenient clean: {e}")
+
+    # Try 3: Lenient cleanup for local-model-flavoured invalid JSON
+    # (trailing commas, single quotes, unquoted keys).
+    candidate = repaired if repaired else (json_str or truncated)
+    if candidate:
+        cleaned = _lenient_json_cleanup(candidate)
+        if cleaned and cleaned != candidate:
+            try:
+                data = json.loads(cleaned)
+                logger.info(
+                    "Parsed after lenient cleanup (trailing-comma / single-quote / unquoted-key fix)"
+                )
+                return schema.model_validate(data)
+            except Exception as e:
+                logger.debug(f"Lenient cleanup failed: {e}")
+
+    # Try 4: Regex fallback — pick top-level string / number fields that
+    # the schema expects.  Only handles scalar fields; anything with a
+    # nested object or list still fails here.
+    try:
+        salvaged = _regex_extract_fields(text, schema)
+        if salvaged:
+            logger.info(
+                f"Salvaged {len(salvaged)} field(s) via regex fallback for {schema.__name__}"
             )
+            return schema.model_validate(salvaged)
+    except Exception as e:
+        logger.debug(f"Regex salvage failed: {e}")
 
     raise ValueError(f"Unclosed JSON object in response: {text[:200]}")
+
+
+# ── Lenient JSON cleanup for local-model output ────────────────────────────
+
+# These transformations are applied *only* when standard json.loads has
+# already failed, so valid JSON is never touched.  They fix the common
+# JSON mishaps we see from qwen2.5-coder:14b and friends.
+
+
+def _lenient_json_cleanup(text: str) -> str:
+    """Return ``text`` with common local-model JSON bugs cleaned up.
+
+    Applies, in order:
+      - single-quoted string literals → double-quoted
+      - unquoted keys → quoted keys
+      - trailing commas before ``}`` or ``]`` → removed
+
+    The walk is string-aware so apostrophes inside correctly-quoted
+    JSON strings aren't clobbered.  On any processing error we return
+    the input unchanged rather than poison the next parse attempt.
+    """
+    try:
+        out = _convert_single_to_double_quotes(text)
+        out = _quote_unquoted_keys(out)
+        out = _strip_trailing_commas(out)
+        return out
+    except Exception:
+        return text
+
+
+def _convert_single_to_double_quotes(text: str) -> str:
+    """Convert single-quoted string literals to double-quoted.
+
+    Rules:
+      - Only strings adjacent to ``:`` or ``[`` / ``,`` / ``{`` contexts
+        (i.e., JSON string positions) get converted.
+      - Existing double-quoted strings are preserved; apostrophes inside
+        them are not touched.
+    """
+    out: list[str] = []
+    i = 0
+    in_dq = False  # inside a double-quoted string
+    escape = False
+    while i < len(text):
+        c = text[i]
+        if in_dq:
+            out.append(c)
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_dq = False
+            i += 1
+            continue
+
+        if c == '"':
+            in_dq = True
+            out.append(c)
+            i += 1
+            continue
+
+        if c == "'":
+            # Find the matching closing ' (allow \' escapes)
+            j = i + 1
+            esc = False
+            while j < len(text):
+                cj = text[j]
+                if esc:
+                    esc = False
+                elif cj == "\\":
+                    esc = True
+                elif cj == "'":
+                    break
+                j += 1
+            if j < len(text):
+                inner = text[i + 1: j]
+                # Escape any embedded double-quotes
+                inner = inner.replace("\\'", "'").replace('"', '\\"')
+                out.append('"')
+                out.append(inner)
+                out.append('"')
+                i = j + 1
+                continue
+            # No closing '; bail — leave as-is to avoid corrupting
+            out.append(c)
+            i += 1
+            continue
+
+        out.append(c)
+        i += 1
+
+    return "".join(out)
+
+
+# Regex for unquoted keys — matches `{ foo: ` or `, bar: ` and adds quotes
+_UNQUOTED_KEY_RE = re.compile(
+    r'(?P<sep>[{,]\s*)(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*:'
+)
+
+
+def _quote_unquoted_keys(text: str) -> str:
+    """Quote unquoted object keys.  ``{foo: 1}`` → ``{"foo": 1}``.
+
+    Walks the string to skip quoted regions; applies the regex only
+    to the outside-string parts so apostrophes / colons inside strings
+    aren't mistaken for keys.
+    """
+    def _process_chunk(chunk: str) -> str:
+        return _UNQUOTED_KEY_RE.sub(r'\g<sep>"\g<key>":', chunk)
+
+    # Split into string vs outside-string pieces
+    pieces: list[str] = []
+    i = 0
+    in_str = False
+    escape = False
+    buf_start = 0
+    while i < len(text):
+        c = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_str = False
+                # String just closed; flush from buf_start..i+1 verbatim
+                pieces.append(text[buf_start: i + 1])
+                buf_start = i + 1
+            i += 1
+            continue
+        if c == '"':
+            # Flush outside-string region up to here (processed)
+            if i > buf_start:
+                pieces.append(_process_chunk(text[buf_start:i]))
+            in_str = True
+            buf_start = i
+            i += 1
+            continue
+        i += 1
+
+    # Flush tail
+    if buf_start < len(text):
+        if in_str:
+            pieces.append(text[buf_start:])
+        else:
+            pieces.append(_process_chunk(text[buf_start:]))
+
+    return "".join(pieces)
+
+
+# Regex for trailing commas before } or ]
+_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
+
+
+def _strip_trailing_commas(text: str) -> str:
+    """Remove trailing commas before ``}`` / ``]``, avoiding string interiors."""
+    # Same string-aware walk as _quote_unquoted_keys
+    pieces: list[str] = []
+    i = 0
+    in_str = False
+    escape = False
+    buf_start = 0
+    while i < len(text):
+        c = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_str = False
+                pieces.append(text[buf_start: i + 1])
+                buf_start = i + 1
+            i += 1
+            continue
+        if c == '"':
+            if i > buf_start:
+                pieces.append(_TRAILING_COMMA_RE.sub(r"\1", text[buf_start:i]))
+            in_str = True
+            buf_start = i
+            i += 1
+            continue
+        i += 1
+    if buf_start < len(text):
+        if in_str:
+            pieces.append(text[buf_start:])
+        else:
+            pieces.append(_TRAILING_COMMA_RE.sub(r"\1", text[buf_start:]))
+    return "".join(pieces)
+
+
+# ── Regex salvage for the last-resort path ────────────────────────────────
+
+
+def _regex_extract_fields(text: str, schema: Type[BaseModel]) -> dict | None:
+    """Pull top-level scalar fields out of a malformed response.
+
+    Walks the schema's declared field names and, for each one, looks
+    for a ``"field": <value>`` pattern in the raw text where ``<value>``
+    is a string, number, or boolean.  Fields that aren't found and
+    aren't required are omitted (Pydantic will fill defaults).
+
+    Returns ``None`` if no required fields could be salvaged — this
+    signals to the caller to raise the original parse error instead
+    of hiding it behind a half-built model.
+    """
+    try:
+        fields = schema.model_fields
+    except AttributeError:
+        return None
+
+    salvaged: dict[str, Any] = {}
+    for name, field_info in fields.items():
+        # Handle "name": "..." or "name": 123 or "name": true
+        # Optional trailing comma/newline. DOTALL for multiline strings.
+        patterns = [
+            # String value (double-quoted)
+            rf'"{re.escape(name)}"\s*:\s*"((?:\\.|[^"\\])*)"',
+            # Numeric value
+            rf'"{re.escape(name)}"\s*:\s*(-?\d+(?:\.\d+)?)',
+            # Boolean
+            rf'"{re.escape(name)}"\s*:\s*(true|false)',
+            # null
+            rf'"{re.escape(name)}"\s*:\s*(null)',
+        ]
+        for idx, p in enumerate(patterns):
+            m = re.search(p, text, re.DOTALL)
+            if m:
+                raw_val = m.group(1)
+                if idx == 0:
+                    val: Any = raw_val.encode("utf-8").decode("unicode_escape")
+                elif idx == 1:
+                    val = float(raw_val) if "." in raw_val else int(raw_val)
+                elif idx == 2:
+                    val = raw_val == "true"
+                else:
+                    val = None
+                salvaged[name] = val
+                break
+
+    # Were any required fields missed? If so, don't return a partial.
+    missing_required = [
+        n for n, f in fields.items()
+        if n not in salvaged and f.is_required()
+    ]
+    if missing_required:
+        logger.debug(
+            f"regex salvage missing required fields: {missing_required}"
+        )
+        return None
+
+    return salvaged if salvaged else None
 
 
 def _repair_json(text: str) -> str | None:

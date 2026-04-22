@@ -51,9 +51,16 @@ def test_local_pipeline_has_collapsed_node_set():
         "synthesizer",
         "validator",
         "refinement",
+    }
+    # decomposer is intentionally run post-print by the CLI, not
+    # inside the graph — see graph_local docstring.
+    expected_absent = {
+        "research",
+        "tester",
+        "gap_analyst",
+        "polarity_check",
         "decomposer",
     }
-    expected_absent = {"research", "tester", "gap_analyst", "polarity_check"}
 
     assert expected_present <= nodes, f"missing: {expected_present - nodes}"
     assert not (expected_absent & nodes), (
@@ -73,10 +80,10 @@ def test_cloud_pipeline_unaffected():
     cloud_nodes = {n for n in cloud.nodes.keys() if not n.startswith("__")}
     local_nodes = {n for n in local.nodes.keys() if not n.startswith("__")}
 
-    # Cloud keeps everything
-    assert {"research", "tester", "gap_analyst", "polarity_check"} <= cloud_nodes
-    # Local stays lean
-    assert not ({"research", "tester", "gap_analyst", "polarity_check"} & local_nodes)
+    # Cloud keeps everything, including decomposer
+    assert {"research", "tester", "gap_analyst", "polarity_check", "decomposer"} <= cloud_nodes
+    # Local stays lean — those same agents are absent
+    assert not ({"research", "tester", "gap_analyst", "polarity_check", "decomposer"} & local_nodes)
 
 
 def test_route_after_executor_success_goes_to_synthesizer():
@@ -118,17 +125,19 @@ def test_route_after_validator_sends_fixable_runnable_to_refinement():
     assert _route_after_validator(state) == "refinement"
 
 
-def test_route_after_validator_pass_goes_to_decomposer():
+def test_route_after_validator_pass_ends_graph():
+    """Pass verdict now ends the graph directly — the CLI fires the
+    decomposer post-print so the user sees BUILD COMPLETE sooner."""
     from belief.graph_local import _route_after_validator
 
     state = {
         "execution_result": {"success": True},
         "validation_result": {"verdict": "pass"},
     }
-    assert _route_after_validator(state) == "decomposer"
+    assert _route_after_validator(state) == "__end__"
 
 
-def test_route_after_validator_missing_validation_ends_build():
+def test_route_after_validator_missing_validation_ends_graph():
     from belief.graph_local import _route_after_validator
 
-    assert _route_after_validator({}) == "decomposer"
+    assert _route_after_validator({}) == "__end__"

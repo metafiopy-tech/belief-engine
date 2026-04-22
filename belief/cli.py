@@ -117,29 +117,66 @@ async def run(
     # ── Build the pipeline and run ────────────────────────────────────────
     router = ModelRouter()
 
-    # Detect multi-service goals — LLM classification with keyword fallback
-    is_multi_service = False
-    try:
-        from belief.tools.multi_service import classify_goal
-        from belief.llm import LLMClient
+    # Detect multi-service goals.
+    #
+    # In cloud mode: an LLM classifier (Haiku) makes the call; the
+    # keyword classifier is a fallback on error.
+    #
+    # In local mode: skip the LLM call entirely — it was burning ~25s on
+    # a 14B model for what is almost always a single-service build.
+    # The keyword classifier catches the real multi-service cases
+    # (compose/docker/microservices keywords) at near-zero cost.
+    # If a local user genuinely needs LLM classification they can
+    # override via BELIEF_FORCE_LLM_CLASSIFY=1 (escape hatch; undocumented
+    # intentionally — use only if the keyword classifier gets a case
+    # wrong in practice).
+    from belief.config.models import RouteMode as _RouteMode
+    _force_llm_classify = (
+        os.environ.get("BELIEF_FORCE_LLM_CLASSIFY", "").strip().lower()
+        in ("1", "true", "yes")
+    )
+    _skip_llm_classify = (
+        router.mode is _RouteMode.LOCAL and not _force_llm_classify
+    )
 
-        classifier_llm = LLMClient(router)
-        classification = await classify_goal(goal, classifier_llm)
-        await classifier_llm.close()
-        is_multi_service = classification.is_multi_service
-    except Exception as e:
-        # Fallback to keyword detection if LLM fails
+    is_multi_service = False
+    if _skip_llm_classify:
         from belief.tools.multi_service import _classify_by_keywords
         classification = _classify_by_keywords(goal)
         is_multi_service = classification.is_multi_service
-        logger.debug(f"LLM classification failed ({e}), used keywords: {is_multi_service}")
+        logger.info(
+            f"CLI: local mode — using keyword classifier "
+            f"(multi_service={is_multi_service}, 0 LLM cost)"
+        )
+    else:
+        try:
+            from belief.tools.multi_service import classify_goal
+            from belief.llm import LLMClient
+
+            classifier_llm = LLMClient(router)
+            classification = await classify_goal(goal, classifier_llm)
+            await classifier_llm.close()
+            is_multi_service = classification.is_multi_service
+        except Exception as e:
+            # Fallback to keyword detection if LLM fails
+            from belief.tools.multi_service import _classify_by_keywords
+            classification = _classify_by_keywords(goal)
+            is_multi_service = classification.is_multi_service
+            logger.debug(f"LLM classification failed ({e}), used keywords: {is_multi_service}")
 
     # Pipeline selection precedence:
     #   multi-service goal    → graph_multi   (handles service orchestration)
     #   local mode + single   → graph_local   (collapsed 4-stage pipeline)
     #   default               → graph         (full 9-agent cloud pipeline)
     # Cloud + single-service is unchanged from v3.1.0.
-    from belief.config.models import RouteMode
+    #
+    # When the graph_local path is taken, the decomposer node is NOT
+    # part of the graph — it runs as a deferred post-print task so the
+    # user sees BUILD COMPLETE ~60s sooner on a 14B local model.  We
+    # track this in `used_local_pipeline` so the finalisation code
+    # below knows to invoke the decomposer explicitly.
+    RouteMode = _RouteMode  # reuse the import aliased above
+    used_local_pipeline = False
     if is_multi_service:
         try:
             from belief.graph_multi import build_multi_pipeline
@@ -152,6 +189,7 @@ async def run(
         try:
             from belief.graph_local import build_local_pipeline
             pipeline = build_local_pipeline(router)
+            used_local_pipeline = True
             logger.info(
                 "CLI: local mode + single-service — using collapsed graph_local pipeline"
             )
@@ -377,6 +415,27 @@ async def run(
         except Exception as e:
             logger.debug(f"Notification failed (non-blocking): {e}")
 
+        # ── Deferred decomposer (local-pipeline only) ─────────────────
+        # The graph_local pipeline omits the decomposer so BUILD COMPLETE
+        # prints 60+s earlier on a 14B local model.  We invoke it here,
+        # after the user has already seen their build, so soil gets the
+        # same nutrients it would have in cloud mode.  Failures here
+        # must never retroactively fail the build — log + move on.
+        if used_local_pipeline:
+            try:
+                from belief.memory.decomposer import decomposer_node as _decomposer
+                logger.info("Decomposer: deferred post-print execution starting")
+                _d_start = time.time()
+                await _decomposer(final_state)
+                logger.info(
+                    f"Decomposer: deferred execution finished in "
+                    f"{time.time() - _d_start:.1f}s"
+                )
+            except Exception as _decomposer_err:
+                logger.warning(
+                    f"Deferred decomposer failed (non-fatal): {_decomposer_err}"
+                )
+
     else:
         print(f"\n  BUILD FAILED — no code files produced after {elapsed:.1f}s")
         for e in final_state.get("errors", []):
@@ -388,6 +447,19 @@ async def run(
             notify_build_complete(run_id, goal, "failed", 0, elapsed, 0)
         except Exception as e:
             logger.debug(f"Notification failed (non-blocking): {e}")
+
+        # Even on a failed build, soil should capture the antipattern.
+        # Run the deferred decomposer after the failure print too.
+        if used_local_pipeline:
+            try:
+                from belief.memory.decomposer import decomposer_node as _decomposer
+                logger.info("Decomposer: deferred post-print execution starting (failed build)")
+                await _decomposer(final_state)
+                logger.info("Decomposer: deferred execution finished")
+            except Exception as _decomposer_err:
+                logger.warning(
+                    f"Deferred decomposer failed (non-fatal): {_decomposer_err}"
+                )
 
     # Machine-readable summary (for A/B runner and scripting)
     if json_output:

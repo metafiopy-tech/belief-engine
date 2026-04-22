@@ -88,7 +88,6 @@ from belief.agents.skeleton_pass1 import skeleton_pass1_node
 from belief.agents.synthesizer import SynthesizerAgent
 from belief.agents.validator import ValidatorAgent
 from belief.config.models import ModelRouter
-from belief.memory.decomposer import decomposer_node
 from belief.memory.recomposer import recomposer_node
 from belief.models.state import Phase
 
@@ -149,14 +148,21 @@ def _route_after_executor(
 
 def _route_after_validator(
     state: dict[str, Any],
-) -> Literal["refinement", "decomposer"]:
+) -> Literal["refinement", "__end__"]:
     """Local validator routing — a simplified version of the cloud rule.
 
     Cloud's :func:`belief.graph._route_after_validation` can loop back
     to the builder or research nodes.  In local mode we flatten that:
     if the verdict is fixable-and-ran we hand off to refinement
-    (water-cycle patching), otherwise we go straight to decomposer and
-    end the build.
+    (water-cycle patching), otherwise we terminate the graph
+    immediately.
+
+    The decomposer used to live at the end of this pipeline and took
+    ~60s on a 14B local model (Sonnet-scale abstraction work running
+    on Ollama).  It doesn't gate anything the user is waiting for —
+    it only deposits nutrients into soil.  The CLI now fires it after
+    printing ``BUILD COMPLETE``, which gets the user's result back
+    to them ~60s sooner.  See :func:`belief.cli.run`.
     """
     exec_r = state.get("execution_result")
     exec_ok = False
@@ -168,7 +174,7 @@ def _route_after_validator(
 
     validation = state.get("validation_result")
     if validation is None:
-        return "decomposer"
+        return "__end__"
 
     verdict = (
         validation.get("verdict") if isinstance(validation, dict)
@@ -191,7 +197,7 @@ def _route_after_validator(
     ):
         return "refinement"
 
-    return "decomposer"
+    return "__end__"
 
 
 # ── Pipeline construction ─────────────────────────────────────────────────
@@ -253,12 +259,14 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
     )
 
     # ── Stage 4: POLISH ────────────────────────────────────────────
+    # Note: decomposer is intentionally absent from the local graph.
+    # The CLI runs it after printing BUILD COMPLETE so the user's result
+    # isn't gated on a 60s Sonnet-scale extraction job on Ollama.
     graph.add_node("synthesizer", _traced(synthesizer, "synthesizer"))
     graph.add_node("validator", _traced(validator, "validator"))
     graph.add_node(
         "refinement", _traced(_make_refinement_node(router), "refinement")
     )
-    graph.add_node("decomposer", _traced(decomposer_node, "decomposer"))
 
     # ── Edges ──────────────────────────────────────────────────────
     graph.set_entry_point("recomposer")
@@ -284,13 +292,13 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
     # Synthesizer → validator
     graph.add_edge("synthesizer", "validator")
 
-    # Validator → refinement? → decomposer → END
+    # Validator → refinement? → END
+    # (Decomposer is fired post-print by the CLI; see module docstring.)
     graph.add_conditional_edges(
         "validator",
         _route_after_validator,
-        {"refinement": "refinement", "decomposer": "decomposer"},
+        {"refinement": "refinement", "__end__": END},
     )
-    graph.add_edge("refinement", "decomposer")
-    graph.add_edge("decomposer", END)
+    graph.add_edge("refinement", END)
 
     return graph.compile()
