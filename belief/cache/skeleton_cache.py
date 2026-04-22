@@ -27,6 +27,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
@@ -215,3 +216,146 @@ def cache_size(base_dir: Path = DEFAULT_CACHE_DIR) -> int:
         if child.is_dir() and (child / "skeleton.json").exists():
             count += 1
     return count
+
+
+# ── In-process cache layer (validation-phase Session 1) ───────────────────
+#
+# SkeletonArtifact is a Pydantic model; instances aren't hashable, so we
+# can't stamp ``@lru_cache`` on the generator directly. Instead we
+# fingerprint the spec once and memoise on the 16-char hex digest — a
+# string, which ``@lru_cache`` is happy with.  The memo is per-process;
+# it disappears when the process exits, which is fine because the
+# filesystem cache beneath it persists across runs.
+
+
+@lru_cache(maxsize=256)
+def _memo_load_from_disk(key: str, base_dir: str) -> Optional[str]:
+    """Process-local memo that shadows the on-disk cache.
+
+    Returns the cached skeleton-payload JSON string, or ``None`` on
+    miss. We return JSON rather than a dict because lru_cache will hand
+    the same object back to every caller; callers parse their own copy
+    so they can mutate freely.
+    """
+    target = _key_dir(key, Path(base_dir))
+    skeleton_path = target / "skeleton.json"
+    if not skeleton_path.exists():
+        return None
+    try:
+        return skeleton_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _invalidate_memo(key: str, base_dir: Path) -> None:
+    """Drop a single key from the in-process memo.
+
+    Used after ``cache_skeleton`` so a fresh write is immediately
+    visible. Cheap full-clear if the base_dir combination was never
+    seen before (lru_cache has no per-arg eviction, but ``cache_clear``
+    is cheap on a 256-entry cache).
+    """
+    try:
+        _memo_load_from_disk.cache_clear()
+    except Exception:
+        pass
+
+
+def get_or_generate_skeleton(
+    spec: dict,
+    generator,
+    *,
+    base_dir: Path = DEFAULT_CACHE_DIR,
+) -> tuple[dict, bool]:
+    """Return the cached skeleton payload, generating it on miss.
+
+    Args:
+        spec:      Dict describing the build.  Hashed via
+                   :func:`fingerprint_spec`.  Only fields that actually
+                   influence the skeleton output should be in here —
+                   extra noise reduces the hit rate.
+        generator: Callable with no required args that returns the
+                   skeleton-payload dict (e.g. ``{"files": {...},
+                   "registry_context": "..."}``).  Only invoked on
+                   cache miss.
+        base_dir:  Override the default on-disk cache root (tests).
+
+    Returns:
+        ``(payload, cache_hit)`` — ``cache_hit`` is True when the
+        payload came from cache, False when it was freshly generated.
+
+    Design notes:
+      * A miss path that raises propagates normally; we don't poison
+        the cache with a partial entry.
+      * Filesystem errors during write are swallowed (matches the rest
+        of this module) — next call just re-generates.
+    """
+    key = fingerprint_spec(spec)
+
+    # Tier 1: in-process memo — the cheapest possible hit.
+    cached_json = _memo_load_from_disk(key, str(base_dir))
+    if cached_json is not None:
+        try:
+            payload = json.loads(cached_json)
+            logger.debug(f"skeleton_cache: in-process memo hit key={key}")
+            return payload, True
+        except json.JSONDecodeError:
+            _invalidate_memo(key, Path(base_dir))
+
+    # Tier 2: regenerate. cache_skeleton atomically writes to disk;
+    # we then refresh the memo so subsequent in-process calls are fast.
+    payload = generator()
+    cache_skeleton(spec, payload, base_dir=base_dir)
+    _invalidate_memo(key, Path(base_dir))
+    logger.info(f"skeleton_cache: generated + stored key={key}")
+    return payload, False
+
+
+# ── AST parse cache (validation-phase Session 1) ──────────────────────────
+#
+# Several passes re-parse the same source (covenant enforcement, import
+# verification, symbol extraction).  AST parsing is deterministic: same
+# bytes in, same tree out.  ``lru_cache`` on the SHA-1 of the source
+# gives us one parse per unique file per process — roughly a 3-5x
+# speedup on any node that walks ``code_files`` more than once.
+
+
+@lru_cache(maxsize=512)
+def _cached_ast_parse_by_hash(code_hash: str, source: str):
+    """Internal: the actual parser, keyed on both hash and source.
+
+    Keying on hash is what makes this efficient (short cache keys); we
+    keep ``source`` in the arg list so unrelated calls with different
+    code but hash collisions can't return the wrong tree.
+    """
+    import ast as _ast
+    return _ast.parse(source)
+
+
+def cached_ast_parse(source: str):
+    """Parse ``source`` into an ``ast.AST`` with in-process memoisation.
+
+    Returns a *fresh* module on cache miss and the *same* cached module
+    object on hits — callers must not mutate the tree in place.  A
+    parse error is raised, not cached.
+    """
+    if not isinstance(source, str):
+        raise TypeError("cached_ast_parse expects a str")
+    digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:16]
+    return _cached_ast_parse_by_hash(digest, source)
+
+
+def clear_caches() -> None:
+    """Drop every in-process memo for this module.
+
+    Called in tests, and useful when the on-disk cache is mutated out
+    of band (e.g. a developer deletes ``~/.belief-engine/skeleton_cache``).
+    """
+    try:
+        _memo_load_from_disk.cache_clear()
+    except Exception:
+        pass
+    try:
+        _cached_ast_parse_by_hash.cache_clear()
+    except Exception:
+        pass

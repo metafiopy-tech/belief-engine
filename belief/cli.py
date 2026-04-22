@@ -134,6 +134,12 @@ async def run(
         is_multi_service = classification.is_multi_service
         logger.debug(f"LLM classification failed ({e}), used keywords: {is_multi_service}")
 
+    # Pipeline selection precedence:
+    #   multi-service goal    → graph_multi   (handles service orchestration)
+    #   local mode + single   → graph_local   (collapsed 4-stage pipeline)
+    #   default               → graph         (full 9-agent cloud pipeline)
+    # Cloud + single-service is unchanged from v3.1.0.
+    from belief.config.models import RouteMode
     if is_multi_service:
         try:
             from belief.graph_multi import build_multi_pipeline
@@ -141,6 +147,18 @@ async def run(
             logger.info("CLI: multi-service goal detected — using graph_multi pipeline")
         except Exception as e:
             logger.debug(f"Multi-service pipeline failed to load: {e}")
+            pipeline = build_pipeline(router)
+    elif router.mode is RouteMode.LOCAL:
+        try:
+            from belief.graph_local import build_local_pipeline
+            pipeline = build_local_pipeline(router)
+            logger.info(
+                "CLI: local mode + single-service — using collapsed graph_local pipeline"
+            )
+        except Exception as e:
+            logger.warning(
+                f"graph_local failed to load ({e}); falling back to full pipeline"
+            )
             pipeline = build_pipeline(router)
     else:
         pipeline = build_pipeline(router)

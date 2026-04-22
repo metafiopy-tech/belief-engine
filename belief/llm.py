@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from contextvars import ContextVar
 from typing import Any, Type, TypeVar
@@ -64,7 +65,25 @@ class AsyncOllamaClient:
     surface (generate / is_available) but use httpx.AsyncClient because
     the rest of belief.llm is already async. LLMClient._call_with_role
     is the dispatch point.
+
+    Validation-phase Session 1 additions:
+      - keep_alive: tell Ollama to keep the model resident between calls.
+        Avoids re-loading the 14B weights on every agent hop (saves
+        ~3-5s per call on MacBook Air M2).
+      - num_ctx: pin the context window so Ollama doesn't re-allocate
+        KV cache between calls with different prompt sizes.
+      - Identical system prompts across calls in a build get prefix-
+        cached by Ollama automatically; we make sure that actually
+        happens by keeping system/user separation stable.
+
+    Env var overrides (read on construction):
+      BELIEF_OLLAMA_KEEP_ALIVE  — e.g. "30m", "1h", "-1" (forever).
+                                  Default: "30m".
+      BELIEF_OLLAMA_NUM_CTX     — integer token window. Default: 8192.
     """
+
+    _DEFAULT_KEEP_ALIVE = "30m"
+    _DEFAULT_NUM_CTX = 8192
 
     def __init__(
         self,
@@ -72,11 +91,32 @@ class AsyncOllamaClient:
         model: str = "qwen2.5-coder:14b",
         base_url: str = "http://localhost:11434",
         timeout: float = 300.0,
+        keep_alive: str | None = None,
+        num_ctx: int | None = None,
     ) -> None:
         self.model = model
         self.base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
+
+        # Resolution order: explicit arg > env var > default.
+        env_keep_alive = os.environ.get("BELIEF_OLLAMA_KEEP_ALIVE", "").strip()
+        self.keep_alive = (
+            keep_alive
+            if keep_alive is not None
+            else (env_keep_alive or self._DEFAULT_KEEP_ALIVE)
+        )
+
+        env_num_ctx = os.environ.get("BELIEF_OLLAMA_NUM_CTX", "").strip()
+        if num_ctx is not None:
+            self.num_ctx = int(num_ctx)
+        elif env_num_ctx:
+            try:
+                self.num_ctx = int(env_num_ctx)
+            except ValueError:
+                self.num_ctx = self._DEFAULT_NUM_CTX
+        else:
+            self.num_ctx = self._DEFAULT_NUM_CTX
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -116,9 +156,16 @@ class AsyncOllamaClient:
                 {"role": "user", "content": user},
             ],
             "stream": False,
+            # keep_alive keeps the model resident between calls within a
+            # build — same 14B weights across PLAN/BUILD/DEBUG instead of
+            # a cold reload each time.
+            "keep_alive": self.keep_alive,
             "options": {
                 "temperature": float(temperature),
                 "num_predict": int(max_tokens),
+                # Pinning num_ctx stabilises Ollama's KV-cache so the
+                # system-prompt prefix is reused across calls in a build.
+                "num_ctx": int(self.num_ctx),
             },
         }
         resp = await client.post("/api/chat", json=payload)

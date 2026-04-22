@@ -116,39 +116,74 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
             logger.debug(f"SkeletonPass1: DAG sort skipped: {e}")
 
         # --- M1: Generate skeleton files deterministically ---
-        registry = SymbolRegistry()
-        skeleton_files = generate_all_skeletons(skeleton, registry)
-        logger.info(f"SkeletonPass1: generated {len(skeleton_files)} skeleton files")
+        # Cache layer: skeleton generation is deterministic given the
+        # skeleton spec, so the same goal-path pair always produces the
+        # same files.  We cache at the (files, registry_context) level so
+        # the identical build on a rerun skips the generator entirely.
+        from belief.cache.skeleton_cache import get_or_generate_skeleton
 
-        # --- M3: Build compressed, budget-aware symbol context ---
-        registry_context = ""
+        skeleton_spec = {
+            "file_tree": [
+                {
+                    "path": e.path,
+                    "role": getattr(e, "role", None),
+                    "skeleton": bool(getattr(e, "skeleton", False)),
+                }
+                for e in skeleton.file_tree
+            ],
+            "external_dependencies": sorted(
+                skeleton.external_dependencies or []
+            ),
+            "framework": getattr(skeleton, "framework", "") or "",
+            "language": getattr(skeleton, "language", "python"),
+        }
+
+        def _generate() -> dict:
+            """Fresh-generate path — only runs on cache miss."""
+            local_registry = SymbolRegistry()
+            generated_files = generate_all_skeletons(skeleton, local_registry)
+            try:
+                ctx = local_registry.full_registry_context()
+            except Exception:
+                ctx = ""
+            return {
+                "files": generated_files,
+                "registry_context": ctx,
+                "registry_file_count": len(local_registry.all_files()),
+            }
+
+        cached_payload, cache_hit = get_or_generate_skeleton(
+            skeleton_spec, _generate
+        )
+        skeleton_files = dict(cached_payload.get("files", {}))
+        registry_context = cached_payload.get("registry_context", "") or ""
+        cached_file_count = int(cached_payload.get("registry_file_count", 0))
+        if cache_hit:
+            logger.info(
+                f"SkeletonPass1: cache HIT — {len(skeleton_files)} skeleton files "
+                f"({cached_file_count} registry entries)"
+            )
+        else:
+            logger.info(
+                f"SkeletonPass1: generated {len(skeleton_files)} skeleton files"
+            )
+
+        # --- M3: Compression-summary logging ---
+        # Compression itself happens inside the generator path now (the
+        # registry context is stored alongside the files).  We keep the
+        # estimate_tokens telemetry for observability.
         compression_summary = ""
         try:
-            from belief.models.context_compression import (
-                build_compressed_context,
-                rank_symbols,
-                ContextBudget,
-                estimate_tokens,
-            )
-            # Pre-compute ranked symbols once
-            ranked = rank_symbols(registry, skeleton)
-
-            # Build context for each implementation file and combine
-            # (The builder will get one context per file, but we also store
-            # the full registry context as a fallback)
-            registry_context = registry.full_registry_context()
+            from belief.models.context_compression import estimate_tokens
 
             full_tokens = estimate_tokens(registry_context)
             compression_summary = (
                 f"registry={full_tokens} tokens, "
-                f"{len(registry.all_files())} files, "
-                f"{len(ranked)} ranked symbols"
+                f"{cached_file_count} files"
             )
             logger.info(f"SkeletonPass1: context compression — {compression_summary}")
-
         except ImportError:
-            registry_context = registry.full_registry_context()
-            logger.debug("SkeletonPass1: context_compression not available, using raw registry")
+            logger.debug("SkeletonPass1: context_compression not available")
 
         # Merge skeleton files into code_files
         code_files = dict(state.get("code_files", {}))
@@ -170,7 +205,7 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
 
         logger.info(
             f"SkeletonPass1 complete: {len(skeleton_files)} skeleton files, "
-            f"{len(registry.all_files())} registry entries"
+            f"{cached_file_count} registry entries"
         )
 
     except Exception as e:
