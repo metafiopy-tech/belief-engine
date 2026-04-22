@@ -54,7 +54,12 @@ def _get_project_root() -> Path:
     return cwd
 
 
-async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dict:
+async def run(
+    goal: str,
+    max_cost: float = 10.0,
+    max_iterations: int = 3,
+    json_output: bool = False,
+) -> dict:
     """Run the full pipeline on a goal. Returns final state dict."""
     _configure_logging()
     logger = logging.getLogger("belief.cli")
@@ -365,6 +370,31 @@ async def run(goal: str, max_cost: float = 10.0, max_iterations: int = 3) -> dic
             notify_build_complete(run_id, goal, "failed", 0, elapsed, 0)
         except Exception as e:
             logger.debug(f"Notification failed (non-blocking): {e}")
+
+    # Machine-readable summary (for A/B runner and scripting)
+    if json_output:
+        import json as _json
+        validation_result = final_state.get("validation_result") or {}
+        usage_result = final_state.get("token_usage") or {}
+
+        def _gv(obj, key, default):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
+        v = _gv(validation_result, "verdict", "")
+        if hasattr(v, "value"):
+            v = v.value
+        summary = {
+            "verdict": str(v) if v else ("pass" if verdict_str == "pass" else "fail"),
+            "tests_passed": _gv(validation_result, "tests_passed", 0),
+            "tests_total": _gv(validation_result, "tests_total", 0),
+            "weighted_score": _gv(validation_result, "weighted_score", 0.0),
+            "cost_usd": _gv(usage_result, "total_cost_usd", cost),
+            "time_seconds": elapsed,
+            "run_id": run_id,
+        }
+        print(_json.dumps(summary))
 
     # Cleanup
     health.stop()
@@ -894,6 +924,64 @@ def _run_progression_cmd():
     print(format_progression_report(metrics))
 
 
+def _run_experiment_cmd(args) -> None:
+    """Dispatch experiment sub-commands."""
+    action = getattr(args, "exp_action", None)
+
+    if action in (None, "report"):
+        from belief.experiments.reporter import comparison_table
+        exp_id = getattr(args, "experiment_id", None)
+        print(comparison_table(exp_id))
+        return
+
+    if action == "longitudinal":
+        from belief.experiments.reporter import longitudinal_report
+        print(longitudinal_report())
+        return
+
+    if action in ("run", "quick"):
+        from belief.benchmark import CHALLENGES
+        from belief.experiments.ab_runner import run_experiment
+
+        tiers = getattr(args, "tiers", [1, 2])
+        model = getattr(args, "model", "qwen2.5-coder:14b")
+
+        if action == "quick":
+            n = getattr(args, "n", 5)
+            conditions = ["engine_local", "raw_local"]
+        else:
+            n = getattr(args, "challenges", 5)
+            conditions = list(getattr(args, "conditions",
+                                      ["engine_cloud", "engine_local", "raw_local"]))
+
+        # Sample N challenges from the selected tiers
+        import random
+        pool = [c for c in CHALLENGES if c.tier in tiers]
+        if not pool:
+            pool = list(CHALLENGES)
+        selected = random.sample(pool, min(n, len(pool)))
+        challenge_list = [{"id": c.id, "goal": c.goal} for c in selected]
+
+        print(f"\n  Experiment: {len(challenge_list)} challenge(s), "
+              f"conditions: {', '.join(conditions)}")
+        print(f"  Model: {model}")
+        print(f"  Tiers: {tiers}\n")
+
+        experiment_id = asyncio.run(
+            run_experiment(challenge_list, conditions=conditions, model=model)
+        )
+
+        print(f"\n  Experiment {experiment_id} complete.")
+        print("  Results:\n")
+
+        from belief.experiments.reporter import comparison_table
+        print(comparison_table(experiment_id))
+        return
+
+    print(f"Unknown experiment action: {action!r}")
+    print("Try: belief experiment run | quick | report | longitudinal")
+
+
 def app():
     """CLI entry point."""
     import argparse
@@ -908,6 +996,10 @@ def app():
     build_parser.add_argument("--deploy", choices=["railway", "docker_local"],
                               help="Deploy after build")
     build_parser.add_argument("--deploy-name", help="Project name for deployment")
+    build_parser.add_argument(
+        "--json-output", action="store_true",
+        help="Print a JSON summary line at the end (for scripting/A/B tests)",
+    )
 
     # Benchmark
     bench_parser = subparsers.add_parser("benchmark", help="Run benchmark challenges")
@@ -994,6 +1086,55 @@ def app():
     parser.add_argument("--max-iterations", type=int, default=3)
     parser.add_argument("--deploy", choices=["railway", "docker_local"])
     parser.add_argument("--deploy-name")
+    parser.add_argument("--json-output", action="store_true",
+                        help="Print a JSON summary line at the end")
+
+    # Experiment A/B harness
+    exp_parser = subparsers.add_parser(
+        "experiment",
+        help="Run controlled A/B experiments (engine vs raw model)",
+    )
+    exp_sub = exp_parser.add_subparsers(dest="exp_action")
+
+    # experiment run
+    exp_run = exp_sub.add_parser("run", help="Run an A/B experiment")
+    exp_run.add_argument(
+        "--challenges", type=int, default=5,
+        help="Number of random challenges to test (default: 5)",
+    )
+    exp_run.add_argument(
+        "--conditions", nargs="+",
+        default=["engine_cloud", "engine_local", "raw_local"],
+        choices=["engine_cloud", "engine_local", "raw_local"],
+        help="Which conditions to run",
+    )
+    exp_run.add_argument("--model", default="qwen2.5-coder:14b",
+                         help="Ollama model for local conditions")
+    exp_run.add_argument("--tiers", type=int, nargs="+", default=[1, 2],
+                         help="Benchmark tiers to sample challenges from (default: 1 2)")
+
+    # experiment quick
+    exp_quick = exp_sub.add_parser(
+        "quick",
+        help="Quick local-only comparison on N challenges (no cloud cost)",
+    )
+    exp_quick.add_argument("--n", type=int, default=5,
+                           help="Number of challenges (default: 5)")
+    exp_quick.add_argument("--model", default="qwen2.5-coder:14b",
+                           help="Ollama model")
+    exp_quick.add_argument("--tiers", type=int, nargs="+", default=[1, 2],
+                           help="Benchmark tiers to sample from (default: 1 2)")
+
+    # experiment report
+    exp_report = exp_sub.add_parser("report", help="Show results from an experiment")
+    exp_report.add_argument("--id", dest="experiment_id", default=None,
+                            help="Experiment ID (default: most recent)")
+
+    # experiment longitudinal
+    exp_sub.add_parser(
+        "longitudinal",
+        help="Show how performance changes over time as soil grows",
+    )
 
     # Session 6: model-routing flags (set env before ModelRouter loads).
     # Applied to every subcommand; equivalent to exporting the env vars.
@@ -1140,11 +1281,16 @@ def app():
     elif args.command == "library":
         _run_library_cmd(args)
         sys.exit(0)
+    elif args.command == "experiment":
+        _run_experiment_cmd(args)
+        sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)
         if not goal:
             parser.error("--goal is required")
-        result = asyncio.run(run(goal, args.max_cost, args.max_iterations))
+        json_out = getattr(args, "json_output", False)
+        result = asyncio.run(run(goal, args.max_cost, args.max_iterations,
+                                 json_output=json_out))
 
         # Deploy if requested
         if args.deploy and result.get("code_files"):
