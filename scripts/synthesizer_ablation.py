@@ -148,9 +148,7 @@ def _env_for_condition(condition: str) -> dict[str, str]:
     return env
 
 
-def _run_one_build(
-    challenge_id: str, condition: str, *, timeout_s: int = 1800
-) -> RunResult | None:
+def _run_one_build(challenge_id: str, condition: str, *, timeout_s: int = 1800) -> RunResult | None:
     """Invoke ``belief benchmark --challenges <id> --mode local`` under
     the per-condition env and return a parsed RunResult.
 
@@ -164,11 +162,20 @@ def _run_one_build(
     try:
         proc = subprocess.run(
             [
-                sys.executable, "-m", "belief.cli",
-                "benchmark", "--challenges", challenge_id, "--mode", "local",
+                sys.executable,
+                "-m",
+                "belief.cli",
+                "benchmark",
+                "--challenges",
+                challenge_id,
+                "--mode",
+                "local",
                 "--json",
             ],
-            capture_output=True, text=True, env=env, timeout=timeout_s,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout_s,
         )
     except subprocess.TimeoutExpired:
         logger.warning("%s / %s timed out after %ds", challenge_id, condition, timeout_s)
@@ -178,7 +185,10 @@ def _run_one_build(
     if proc.returncode != 0:
         logger.warning(
             "%s / %s exited %d: %s",
-            challenge_id, condition, proc.returncode, proc.stderr[-300:],
+            challenge_id,
+            condition,
+            proc.returncode,
+            proc.stderr[-300:],
         )
     # The --json flag makes the benchmark CLI print a JSON blob as its
     # final stdout line.  Parse defensively; if missing, fill zeros
@@ -229,7 +239,7 @@ def run_ablation(
                 if existing:
                     skipped += 1
                     continue
-                print(f"[{done+1}/{total}] {ch} / {cond} / run={run_n}")
+                print(f"[{done + 1}/{total}] {ch} / {cond} / run={run_n}")
                 result = _run_one_build(ch, cond)
                 if result is None:
                     result = RunResult(0, 0, 0.0, 0, 0.0, 0.0, 0.0)
@@ -240,10 +250,16 @@ def run_ablation(
                         started_at)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                     (
-                        ch, cond, run_n,
-                        result.tests_passed, result.tests_total,
-                        result.weighted_score, result.ruff_errors,
-                        result.radon_mi, result.wallclock_s, result.cost_usd,
+                        ch,
+                        cond,
+                        run_n,
+                        result.tests_passed,
+                        result.tests_total,
+                        result.weighted_score,
+                        result.ruff_errors,
+                        result.radon_mi,
+                        result.wallclock_s,
+                        result.cost_usd,
                         time.time(),
                     ),
                 )
@@ -260,10 +276,7 @@ def run_ablation(
 
 def print_summary() -> None:
     conn = _db()
-    conds = [
-        row[0]
-        for row in conn.execute("SELECT DISTINCT condition FROM runs").fetchall()
-    ]
+    conds = [row[0] for row in conn.execute("SELECT DISTINCT condition FROM runs").fetchall()]
     if not conds:
         print("(no runs in database yet)")
         return
@@ -311,8 +324,9 @@ def _print_decision(conn: sqlite3.Connection) -> None:
     # Pull paired metric arrays (challenge, metric, condition).
     conds = {
         c: conn.execute(
-            f"SELECT challenge_id, weighted_score, ruff_errors, wallclock_s "
-            f"FROM runs WHERE condition=?", (c,)
+            "SELECT challenge_id, weighted_score, ruff_errors, wallclock_s "
+            "FROM runs WHERE condition=?",
+            (c,),
         ).fetchall()
         for c in CONDITIONS
     }
@@ -342,23 +356,25 @@ def _print_decision(conn: sqlite3.Connection) -> None:
     wc_overhead_router = (router_wc - b_only_wc) / max(b_only_wc, 1e-6) * 100
 
     print("\n--- Decision signals ---")
-    print(f"  builder_plus_synth vs builder_only:  weighted_score lift = {ws_lift_synth:+.1f}%,"
-          f"  wallclock overhead = {wc_overhead_synth:+.1f}%")
-    print(f"  router vs builder_only:                                    "
-          f"  wallclock overhead = {wc_overhead_router:+.1f}%")
+    print(
+        f"  builder_plus_synth vs builder_only:  weighted_score lift = {ws_lift_synth:+.1f}%,"
+        f"  wallclock overhead = {wc_overhead_synth:+.1f}%"
+    )
+    print(
+        f"  router vs builder_only:                                    "
+        f"  wallclock overhead = {wc_overhead_router:+.1f}%"
+    )
 
     # Simple threshold: session-4 says ≥5% quality lift required.
     if ws_lift_synth < 5.0:
-        print("\n  RECOMMENDATION: DELETE the synthesizer "
-              "(no ≥5% quality lift; it's pure cost).")
-    elif abs(router_ws - b_plus_ws) / max(b_plus_ws, 1e-6) * 100 < 2.0 and (
-        router_wc < b_plus_wc
-    ):
-        print("\n  RECOMMENDATION: ROUTE "
-              "(router matches full-polish quality at lower wall clock).")
+        print("\n  RECOMMENDATION: DELETE the synthesizer (no ≥5% quality lift; it's pure cost).")
+    elif abs(router_ws - b_plus_ws) / max(b_plus_ws, 1e-6) * 100 < 2.0 and (router_wc < b_plus_wc):
+        print("\n  RECOMMENDATION: ROUTE (router matches full-polish quality at lower wall clock).")
     else:
-        print("\n  RECOMMENDATION: KEEP the synthesizer "
-              "(lift is real and the router doesn't preserve it).")
+        print(
+            "\n  RECOMMENDATION: KEEP the synthesizer "
+            "(lift is real and the router doesn't preserve it)."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -370,15 +386,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Synthesizer A/B ablation harness.")
     parser.add_argument("--n", type=int, default=3, help="runs per (challenge, condition)")
     parser.add_argument(
-        "--challenges", nargs="*", default=DEFAULT_CHALLENGES,
+        "--challenges",
+        nargs="*",
+        default=DEFAULT_CHALLENGES,
         help="challenge IDs to run (default: 10 tier-1/2 benchmark challenges)",
     )
     parser.add_argument(
-        "--conditions", nargs="*", default=list(CONDITIONS),
+        "--conditions",
+        nargs="*",
+        default=list(CONDITIONS),
         choices=CONDITIONS,
     )
     parser.add_argument(
-        "--report", action="store_true",
+        "--report",
+        action="store_true",
         help="print summary of existing runs and exit (no new builds)",
     )
     args = parser.parse_args()

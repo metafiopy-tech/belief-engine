@@ -79,8 +79,8 @@ class TestStabilitySuccess:
     def test_spaced_review_grows_more(self):
         """Lower retrievability (longer gap) should give bigger stability boost."""
         s, d = 5.0, 5.0
-        spaced = update_stability_on_success(s, d, 0.5)   # Longer gap
-        massed = update_stability_on_success(s, d, 0.95)   # Just reviewed
+        spaced = update_stability_on_success(s, d, 0.5)  # Longer gap
+        massed = update_stability_on_success(s, d, 0.95)  # Just reviewed
         assert spaced > massed, f"Spaced ({spaced}) should exceed massed ({massed})"
 
 
@@ -193,20 +193,22 @@ class TestReview:
 
     def test_lapsed_recovers_on_success(self):
         """Successful review after lapse should transition to learning."""
-        state = FSRSState(decay_state="lapsed", lapses=1, reps=3,
-                          last_review=datetime(2025, 1, 1, tzinfo=timezone.utc))
+        state = FSRSState(
+            decay_state="lapsed",
+            lapses=1,
+            reps=3,
+            last_review=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        )
         state = review(state, grade=3)
         assert state.decay_state == "learning"
 
     def test_stability_grows_on_success(self):
-        state = FSRSState(stability=5.0,
-                          last_review=datetime(2025, 1, 1, tzinfo=timezone.utc))
+        state = FSRSState(stability=5.0, last_review=datetime(2025, 1, 1, tzinfo=timezone.utc))
         new_state = review(state, grade=3, now=datetime(2025, 1, 5, tzinfo=timezone.utc))
         assert new_state.stability > 5.0
 
     def test_stability_drops_on_failure(self):
-        state = FSRSState(stability=20.0,
-                          last_review=datetime(2025, 1, 1, tzinfo=timezone.utc))
+        state = FSRSState(stability=20.0, last_review=datetime(2025, 1, 1, tzinfo=timezone.utc))
         new_state = review(state, grade=1, now=datetime(2025, 1, 5, tzinfo=timezone.utc))
         assert new_state.stability < 20.0
 
@@ -220,10 +222,10 @@ class TestReview:
     def test_grade_clamped(self):
         """Grades outside 1-4 should be clamped."""
         state = FSRSState()
-        s1 = review(state, grade=0)   # Clamped to 1
+        s1 = review(state, grade=0)  # Clamped to 1
         s2 = review(state, grade=10)  # Clamped to 4
-        assert s1.lapses == 1   # grade 1 = failure
-        assert s2.reps == 1     # grade 4 = success
+        assert s1.lapses == 1  # grade 1 = failure
+        assert s2.reps == 1  # grade 4 = success
 
 
 # ── Full lifecycle ──────────────────────────────────────────────────────────
@@ -240,9 +242,9 @@ class TestFullLifecycle:
             state = review(state, grade=grade, now=now + timedelta(days=i * 3))
 
         # After 3 successes, 1 failure, 1 recovery:
-        assert state.reps == 4        # 4 successes total
-        assert state.lapses == 1      # 1 failure
-        assert state.stability > 0    # Still has some stability
+        assert state.reps == 4  # 4 successes total
+        assert state.lapses == 1  # 1 failure
+        assert state.stability > 0  # Still has some stability
         assert 1.0 <= state.difficulty <= 10.0
         assert state.last_review is not None
         assert state.next_review is not None

@@ -21,8 +21,7 @@ class CrossTalkManager:
     Source: engine_loop.py CrossTalkManager
     """
 
-    def get_latios_world(self, latios: IncompletenessLoop,
-                         latias: BeliefLoop, goal: str) -> str:
+    def get_latios_world(self, latios: IncompletenessLoop, latias: BeliefLoop, goal: str) -> str:
         """Build world context for Latios, seeded with Latias's covenant."""
         covenant = latias.get_deepest_covenant()
         world = f"Goal: {goal}\n"
@@ -34,8 +33,7 @@ class CrossTalkManager:
             world += "\nRecent gaps you've found:\n" + "\n".join(f"- {g}" for g in recent_gaps)
         return world
 
-    def get_latias_world(self, latios: IncompletenessLoop,
-                         latias: BeliefLoop, goal: str) -> str:
+    def get_latias_world(self, latios: IncompletenessLoop, latias: BeliefLoop, goal: str) -> str:
         """Build world context for Latias, seeded with Latios's remainder."""
         gap = latios.current
         world = f"Goal: {goal}\n"

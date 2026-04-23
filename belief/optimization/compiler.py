@@ -58,7 +58,7 @@ class BeliefOptimizer:
         Returns (optimized_module, metrics_dict).
         """
         try:
-            import dspy
+            import dspy  # noqa: F401 — availability probe; submodules imported below
         except ImportError:
             raise ImportError(
                 "dspy is required for prompt optimization. "
@@ -73,6 +73,7 @@ class BeliefOptimizer:
 
         try:
             from dspy.teleprompt import GEPA
+
             optimizer = GEPA(
                 metric=metric_fn,
                 num_candidates=num_candidates,
@@ -86,6 +87,7 @@ class BeliefOptimizer:
         if optimizer is None:
             try:
                 from dspy.teleprompt import MIPROv2
+
                 optimizer = MIPROv2(
                     metric=metric_fn,
                     num_candidates=num_candidates,
@@ -97,6 +99,7 @@ class BeliefOptimizer:
         if optimizer is None:
             try:
                 from dspy.teleprompt import BootstrapFewShot
+
                 optimizer = BootstrapFewShot(
                     metric=metric_fn,
                     max_bootstrapped_demos=3,
@@ -153,13 +156,9 @@ class BeliefOptimizer:
                 for pred_name, predictor in module.named_predictors():
                     instructions = ""
                     if hasattr(predictor, "extended_signature"):
-                        instructions = getattr(
-                            predictor.extended_signature, "instructions", ""
-                        )
+                        instructions = getattr(predictor.extended_signature, "instructions", "")
                     elif hasattr(predictor, "signature"):
-                        instructions = getattr(
-                            predictor.signature, "instructions", ""
-                        )
+                        instructions = getattr(predictor.signature, "instructions", "")
                     if instructions:
                         prompts[f"{name}.{pred_name}"] = instructions
 

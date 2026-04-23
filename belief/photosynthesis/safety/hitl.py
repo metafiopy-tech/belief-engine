@@ -163,14 +163,11 @@ class ApprovalStore:
         finally:
             c.close()
 
-    def insert_pending(
-        self, *, app: str, payload: dict[str, Any], est_cost: float
-    ) -> int:
+    def insert_pending(self, *, app: str, payload: dict[str, Any], est_cost: float) -> int:
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE;")
             cur = c.execute(
-                "INSERT INTO approvals(ts, app, payload, est_cost, status) "
-                "VALUES(?, ?, ?, ?, ?);",
+                "INSERT INTO approvals(ts, app, payload, est_cost, status) VALUES(?, ?, ?, ?, ?);",
                 (
                     int(time.time()),
                     app,
@@ -182,14 +179,11 @@ class ApprovalStore:
             c.execute("COMMIT;")
             return int(cur.lastrowid or 0)
 
-    def resolve(
-        self, approval_id: int, status: ApprovalStatus, decided_by: str = ""
-    ) -> None:
+    def resolve(self, approval_id: int, status: ApprovalStatus, decided_by: str = "") -> None:
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE;")
             c.execute(
-                "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? "
-                "WHERE id = ?;",
+                "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? WHERE id = ?;",
                 (status.value, int(time.time()), decided_by, approval_id),
             )
             c.execute("COMMIT;")
@@ -233,9 +227,7 @@ async def request_approval(
     'timeout' status as "granted" and the daemon's call sites treat
     granted=False as "abort this cycle."
     """
-    auto = max(
-        AUTO_THRESHOLD_FLOOR, min(AUTO_THRESHOLD_CEILING, float(auto_threshold))
-    )
+    auto = max(AUTO_THRESHOLD_FLOOR, min(AUTO_THRESHOLD_CEILING, float(auto_threshold)))
     hard = float(hard_threshold)
     cost = float(est_cost)
 
@@ -248,17 +240,13 @@ async def request_approval(
             cost,
             hard,
         )
-        return ApprovalDecision(
-            granted=False, status=ApprovalStatus.HARD_BLOCKED, approval_id=aid
-        )
+        return ApprovalDecision(granted=False, status=ApprovalStatus.HARD_BLOCKED, approval_id=aid)
 
     # Auto-approve
     if cost < auto:
         aid = store.insert_pending(app=app, payload=payload, est_cost=cost)
         store.resolve(aid, ApprovalStatus.AUTO_APPROVED, decided_by="policy")
-        return ApprovalDecision(
-            granted=True, status=ApprovalStatus.AUTO_APPROVED, approval_id=aid
-        )
+        return ApprovalDecision(granted=True, status=ApprovalStatus.AUTO_APPROVED, approval_id=aid)
 
     # Ask the human
     aid = store.insert_pending(app=app, payload=payload, est_cost=cost)
@@ -275,25 +263,17 @@ async def request_approval(
         )
     except asyncio.TimeoutError:
         store.resolve(aid, ApprovalStatus.TIMEOUT, decided_by="timeout")
-        return ApprovalDecision(
-            granted=False, status=ApprovalStatus.TIMEOUT, approval_id=aid
-        )
+        return ApprovalDecision(granted=False, status=ApprovalStatus.TIMEOUT, approval_id=aid)
 
     if decision is None:
         # Transport returned "no answer" — fail closed.
         store.resolve(aid, ApprovalStatus.AUTO_REJECTED, decided_by="transport_none")
-        return ApprovalDecision(
-            granted=False, status=ApprovalStatus.AUTO_REJECTED, approval_id=aid
-        )
+        return ApprovalDecision(granted=False, status=ApprovalStatus.AUTO_REJECTED, approval_id=aid)
     if decision:
         store.resolve(aid, ApprovalStatus.APPROVED, decided_by="human")
-        return ApprovalDecision(
-            granted=True, status=ApprovalStatus.APPROVED, approval_id=aid
-        )
+        return ApprovalDecision(granted=True, status=ApprovalStatus.APPROVED, approval_id=aid)
     store.resolve(aid, ApprovalStatus.REJECTED, decided_by="human")
-    return ApprovalDecision(
-        granted=False, status=ApprovalStatus.REJECTED, approval_id=aid
-    )
+    return ApprovalDecision(granted=False, status=ApprovalStatus.REJECTED, approval_id=aid)
 
 
 __all__ = [

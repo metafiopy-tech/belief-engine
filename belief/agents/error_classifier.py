@@ -58,6 +58,7 @@ class RecoveryStrategy(str, Enum):
 @dataclass
 class ClassifiedError:
     """A classified error with recovery strategy."""
+
     category: ErrorCategory
     strategy: RecoveryStrategy
     reason: str
@@ -183,7 +184,7 @@ def classify_error(
 def _normalize(error: str) -> str:
     """Normalize error for dedup comparison."""
     s = error.lower().strip()
-    s = re.sub(r'/tmp/\S+', '/tmp/X', s)
-    s = re.sub(r'line \d+', 'line N', s)
-    s = re.sub(r'\d+', 'N', s)
+    s = re.sub(r"/tmp/\S+", "/tmp/X", s)
+    s = re.sub(r"line \d+", "line N", s)
+    s = re.sub(r"\d+", "N", s)
     return s

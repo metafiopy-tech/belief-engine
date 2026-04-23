@@ -14,13 +14,13 @@ these tests target only the new branches.
 
 from __future__ import annotations
 
-import os
 
 import pytest
 
 
 def _nutrient(nid, content="x", nt=None, tags=None):
     from belief.memory.nutrients import Nutrient, NutrientType
+
     nt = nt or NutrientType.PATTERN
     return Nutrient(
         id=nid,
@@ -36,18 +36,21 @@ def _nutrient(nid, content="x", nt=None, tags=None):
 
 def test_is_local_mode_default_false(monkeypatch):
     from belief.memory.recomposer import _is_local_mode
+
     monkeypatch.delenv("BELIEF_MODEL_MODE", raising=False)
     assert _is_local_mode({}) is False
 
 
 def test_is_local_mode_via_env(monkeypatch):
     from belief.memory.recomposer import _is_local_mode
+
     monkeypatch.setenv("BELIEF_MODEL_MODE", "local")
     assert _is_local_mode({}) is True
 
 
 def test_is_local_mode_via_state_overrides(monkeypatch):
     from belief.memory.recomposer import _is_local_mode
+
     monkeypatch.delenv("BELIEF_MODEL_MODE", raising=False)
     assert _is_local_mode({"model_mode": "LOCAL"}) is True
     assert _is_local_mode({"model_mode": "cloud"}) is False
@@ -59,11 +62,13 @@ def test_is_local_mode_via_state_overrides(monkeypatch):
 @pytest.mark.parametrize("tag", ["readme", "docs", "deploy", "dockerfile", "CHANGELOG"])
 def test_looks_like_human_docs_matches_expected_tags(tag):
     from belief.memory.recomposer import _looks_like_human_docs
+
     assert _looks_like_human_docs(_nutrient("x", tags=[tag])) is True
 
 
 def test_looks_like_human_docs_skips_regular_tags():
     from belief.memory.recomposer import _looks_like_human_docs
+
     assert _looks_like_human_docs(_nutrient("x", tags=["fastapi", "async"])) is False
 
 
@@ -72,6 +77,7 @@ def test_looks_like_human_docs_skips_regular_tags():
 
 def test_truncate_nutrient_noop_when_short():
     from belief.memory.recomposer import _truncate_nutrient
+
     n = _nutrient("s", content="short")
     assert _truncate_nutrient(n).content == "short"
 
@@ -81,6 +87,7 @@ def test_truncate_nutrient_clips_long_content():
         LOCAL_NUTRIENT_CHAR_CAP,
         _truncate_nutrient,
     )
+
     n = _nutrient("l", content="x" * 2000)
     clipped = _truncate_nutrient(n)
     assert len(clipped.content) <= LOCAL_NUTRIENT_CHAR_CAP
@@ -116,8 +123,7 @@ def test_compress_for_local_drops_readme_caps_categories_clips_content():
             for i in range(8)
         ],
         skeletons=[
-            _nutrient(f"sk{i}", content="scaffold", nt=NutrientType.SKELETON)
-            for i in range(3)
+            _nutrient(f"sk{i}", content="scaffold", nt=NutrientType.SKELETON) for i in range(3)
         ],
     )
 
@@ -159,9 +165,7 @@ def test_compress_for_local_rendered_block_respects_hard_cap():
         skeletons=[],
     )
     compressed = _compress_for_local(profile)
-    block = _hard_cap_context(
-        compressed.format_context_block_compact(complexity=3)
-    )
+    block = _hard_cap_context(compressed.format_context_block_compact(complexity=3))
     assert len(block) <= LOCAL_TOTAL_CONTEXT_CHAR_CAP
 
 
@@ -185,8 +189,7 @@ def test_recomposer_node_compresses_in_local_mode(monkeypatch):
         # matters.
         return NutrientProfile(
             covenants=[
-                _nutrient(f"c{i}", content="rule-" + "z" * 1500,
-                          nt=NutrientType.COVENANT)
+                _nutrient(f"c{i}", content="rule-" + "z" * 1500, nt=NutrientType.COVENANT)
                 for i in range(3)
             ],
             antipatterns=[],
@@ -205,6 +208,7 @@ def test_recomposer_node_compresses_in_local_mode(monkeypatch):
     class _FakeSoil:
         def decay_all(self):
             return {"archived": 0, "active": 1}
+
         def retrieve_profile(self, goal, complexity=3):
             return _build_profile()
 
@@ -266,6 +270,7 @@ def test_recomposer_node_uses_full_formatter_in_cloud_mode(monkeypatch):
     class _FakeSoil:
         def decay_all(self):
             return {"archived": 0, "active": 1}
+
         def retrieve_profile(self, goal, complexity=3):
             return _FakeProfile()
 

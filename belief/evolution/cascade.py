@@ -102,7 +102,9 @@ async def cascaded_evaluate(
         )
         return False, all_results, "smoke_failed"
 
-    logger.info(f"Gate 2 passed ({smoke_passed}/{len(smoke_results)}, ${sum(r.cost_usd for r in smoke_results):.2f})")
+    logger.info(
+        f"Gate 2 passed ({smoke_passed}/{len(smoke_results)}, ${sum(r.cost_usd for r in smoke_results):.2f})"
+    )
 
     # ── Gate 3: Full benchmark ──────────────────────────────────────────
     if total_cost >= _COST_CAP:
@@ -132,19 +134,20 @@ async def cascaded_evaluate(
             )
             # Flag but don't auto-reject — DGM insight: regressions may be stepping stones
             for reg_id in regressions:
-                all_results.append(BenchmarkResult(
-                    version_id=version.id,
-                    challenge_id=f"regression:{reg_id}",
-                    passed=False,
-                    score=0.0,
-                    cost_usd=0.0,
-                    time_seconds=0.0,
-                    error_summary=f"Regression from parent: {reg_id} was passing, now failing",
-                ))
+                all_results.append(
+                    BenchmarkResult(
+                        version_id=version.id,
+                        challenge_id=f"regression:{reg_id}",
+                        passed=False,
+                        score=0.0,
+                        cost_usd=0.0,
+                        time_seconds=0.0,
+                        error_summary=f"Regression from parent: {reg_id} was passing, now failing",
+                    )
+                )
 
     logger.info(
-        f"Cascade complete: accepted, total_cost=${total_cost:.2f}, "
-        f"regressions={len(regressions)}"
+        f"Cascade complete: accepted, total_cost=${total_cost:.2f}, regressions={len(regressions)}"
     )
     return True, all_results, ""
 
@@ -206,34 +209,36 @@ async def _run_smoke(version: AgentVersion, engine_graph) -> list[BenchmarkResul
         challenge_results = await run_benchmark(challenge_ids=_SMOKE_CHALLENGES)
 
         for cr in challenge_results:
-            results.append(BenchmarkResult(
-                version_id=version.id,
-                challenge_id=cr.challenge_id,
-                passed=cr.verdict == "pass",
-                score=cr.weighted_score,
-                cost_usd=cr.cost_usd,
-                time_seconds=cr.build_time_seconds,
-                error_summary=cr.error if cr.verdict != "pass" else None,
-            ))
+            results.append(
+                BenchmarkResult(
+                    version_id=version.id,
+                    challenge_id=cr.challenge_id,
+                    passed=cr.verdict == "pass",
+                    score=cr.weighted_score,
+                    cost_usd=cr.cost_usd,
+                    time_seconds=cr.build_time_seconds,
+                    error_summary=cr.error if cr.verdict != "pass" else None,
+                )
+            )
     except Exception as e:
         logger.warning(f"Smoke test crashed: {e}")
         for cid in _SMOKE_CHALLENGES:
-            results.append(BenchmarkResult(
-                version_id=version.id,
-                challenge_id=cid,
-                passed=False,
-                score=0.0,
-                cost_usd=0.0,
-                time_seconds=0.0,
-                error_summary=str(e),
-            ))
+            results.append(
+                BenchmarkResult(
+                    version_id=version.id,
+                    challenge_id=cid,
+                    passed=False,
+                    score=0.0,
+                    cost_usd=0.0,
+                    time_seconds=0.0,
+                    error_summary=str(e),
+                )
+            )
 
     return results
 
 
-async def _run_full_benchmark(
-    version: AgentVersion, engine_graph
-) -> list[BenchmarkResult]:
+async def _run_full_benchmark(version: AgentVersion, engine_graph) -> list[BenchmarkResult]:
     """Gate 3: run all Tier 1-5 challenges."""
     results: list[BenchmarkResult] = []
 
@@ -243,15 +248,17 @@ async def _run_full_benchmark(
         challenge_results = await run_benchmark(tiers=[1, 2, 3, 4, 5])
 
         for cr in challenge_results:
-            results.append(BenchmarkResult(
-                version_id=version.id,
-                challenge_id=cr.challenge_id,
-                passed=cr.verdict == "pass",
-                score=cr.weighted_score,
-                cost_usd=cr.cost_usd,
-                time_seconds=cr.build_time_seconds,
-                error_summary=cr.error if cr.verdict != "pass" else None,
-            ))
+            results.append(
+                BenchmarkResult(
+                    version_id=version.id,
+                    challenge_id=cr.challenge_id,
+                    passed=cr.verdict == "pass",
+                    score=cr.weighted_score,
+                    cost_usd=cr.cost_usd,
+                    time_seconds=cr.build_time_seconds,
+                    error_summary=cr.error if cr.verdict != "pass" else None,
+                )
+            )
     except Exception as e:
         logger.warning(f"Full benchmark crashed: {e}")
 

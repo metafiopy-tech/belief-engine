@@ -66,7 +66,8 @@ class Settings:
             max_cost_per_build=float(os.environ.get("BELIEF_MAX_COST_PER_BUILD", "10.0")),
             max_iterations=int(os.environ.get("BELIEF_MAX_ITERATIONS", "3")),
             max_steps_per_task=int(os.environ.get("BELIEF_MAX_STEPS_PER_TASK", "25")),
-            ollama_enabled=os.environ.get("OLLAMA_ENABLED", "false").lower() in ("true", "1", "yes"),
+            ollama_enabled=os.environ.get("OLLAMA_ENABLED", "false").lower()
+            in ("true", "1", "yes"),
             ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2"),
             ollama_url=os.environ.get("OLLAMA_URL", "http://localhost:11434"),
             telegram_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),

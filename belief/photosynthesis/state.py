@@ -159,8 +159,7 @@ class PhotosynthesisState:
         with self.conn() as c:
             c.execute("BEGIN IMMEDIATE;")
             cur = c.execute(
-                "INSERT OR IGNORE INTO seen(source, item_id, first_seen) "
-                "VALUES(?, ?, ?);",
+                "INSERT OR IGNORE INTO seen(source, item_id, first_seen) VALUES(?, ?, ?);",
                 (source, item_id, now),
             )
             c.execute("COMMIT;")

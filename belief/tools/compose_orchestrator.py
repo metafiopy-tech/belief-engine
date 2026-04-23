@@ -159,6 +159,7 @@ class ComposeStack:
     def _get_base_urls(self) -> dict[str, str]:
         """Extract base URLs for each service from compose config."""
         import yaml
+
         try:
             compose = yaml.safe_load(self.compose_yaml)
             urls = {}
@@ -174,16 +175,22 @@ class ComposeStack:
     async def _run_compose(self, *args: str, timeout: int = 60) -> bool:
         """Run a docker compose command."""
         cmd = [
-            "docker", "compose",
-            "-p", self.project_name,
-            "-f", str(self.tmp_dir / "docker-compose.yml"),
+            "docker",
+            "compose",
+            "-p",
+            self.project_name,
+            "-f",
+            str(self.tmp_dir / "docker-compose.yml"),
             *args,
         ]
         try:
             proc = await asyncio.to_thread(
-                subprocess.run, cmd,
-                capture_output=True, text=True,
-                timeout=timeout, cwd=str(self.tmp_dir),
+                subprocess.run,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(self.tmp_dir),
             )
             if proc.returncode != 0:
                 logger.debug(f"Compose {args[0]} stderr: {proc.stderr[-500:]}")
@@ -203,15 +210,26 @@ class ComposeStack:
             try:
                 proc = await asyncio.to_thread(
                     subprocess.run,
-                    ["docker", "compose", "-p", self.project_name,
-                     "-f", str(self.tmp_dir / "docker-compose.yml"),
-                     "ps", "--format", "json"],
-                    capture_output=True, text=True, timeout=10,
+                    [
+                        "docker",
+                        "compose",
+                        "-p",
+                        self.project_name,
+                        "-f",
+                        str(self.tmp_dir / "docker-compose.yml"),
+                        "ps",
+                        "--format",
+                        "json",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                     cwd=str(self.tmp_dir),
                 )
 
                 if proc.returncode == 0 and proc.stdout.strip():
                     import json
+
                     lines = proc.stdout.strip().split("\n")
                     all_healthy = True
                     for line in lines:
@@ -241,10 +259,19 @@ class ComposeStack:
         try:
             proc = await asyncio.to_thread(
                 subprocess.run,
-                ["docker", "compose", "-p", self.project_name,
-                 "-f", str(self.tmp_dir / "docker-compose.yml"),
-                 "logs", "--tail=50"],
-                capture_output=True, text=True, timeout=10,
+                [
+                    "docker",
+                    "compose",
+                    "-p",
+                    self.project_name,
+                    "-f",
+                    str(self.tmp_dir / "docker-compose.yml"),
+                    "logs",
+                    "--tail=50",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
                 cwd=str(self.tmp_dir),
             )
             return proc.stdout

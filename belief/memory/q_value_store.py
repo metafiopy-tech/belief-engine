@@ -33,6 +33,7 @@ logger = logging.getLogger("belief.memory.q_value")
 @dataclass
 class QValueExperience:
     """An experience with Q-value for value-aware retrieval."""
+
     id: str
     content: str
     q_value: float = 0.5  # Initial Q-value (neutral)
@@ -84,6 +85,7 @@ class QValueStore:
         """
         try:
             from belief.memory.soil import Soil
+
             soil_path = Path("~/.belief-engine/soil").expanduser()
             soil = Soil(soil_path)
 
@@ -100,15 +102,17 @@ class QValueStore:
                 q = self._q_values.get(exp_id, 0.5)
                 sim = getattr(r, "similarity", 0.5)
 
-                experiences.append(QValueExperience(
-                    id=exp_id,
-                    content=r.content,
-                    q_value=q,
-                    similarity=sim,
-                    retrieval_count=self._retrieval_counts.get(exp_id, 0),
-                    success_count=self._success_counts.get(exp_id, 0),
-                    tags=getattr(r, "tags", []),
-                ))
+                experiences.append(
+                    QValueExperience(
+                        id=exp_id,
+                        content=r.content,
+                        q_value=q,
+                        similarity=sim,
+                        retrieval_count=self._retrieval_counts.get(exp_id, 0),
+                        success_count=self._success_counts.get(exp_id, 0),
+                        tags=getattr(r, "tags", []),
+                    )
+                )
 
             # Filter by minimum similarity
             experiences = [e for e in experiences if e.similarity >= min_similarity]
@@ -124,10 +128,9 @@ class QValueStore:
             q_z = _z_normalize_list(q_values)
 
             for i, exp in enumerate(experiences):
-                exp.combined_score = (
-                    (1 - self.lambda_weight) * sim_z[i] +
-                    self.lambda_weight * q_z[i]
-                )
+                exp.combined_score = (1 - self.lambda_weight) * sim_z[i] + self.lambda_weight * q_z[
+                    i
+                ]
 
             # Sort by combined score
             experiences.sort(key=lambda e: e.combined_score, reverse=True)
@@ -140,7 +143,7 @@ class QValueStore:
 
             logger.info(
                 f"Q-value retrieval: {len(experiences)} candidates → top {n}, "
-                f"avg Q={sum(e.q_value for e in experiences[:n])/max(n,1):.2f}"
+                f"avg Q={sum(e.q_value for e in experiences[:n]) / max(n, 1):.2f}"
             )
 
             return experiences[:n]
@@ -172,7 +175,9 @@ class QValueStore:
 
         self._save()
 
-        avg_q = sum(self._q_values[eid] for eid in experience_ids if eid in self._q_values) / max(len(experience_ids), 1)
+        avg_q = sum(self._q_values[eid] for eid in experience_ids if eid in self._q_values) / max(
+            len(experience_ids), 1
+        )
         logger.info(
             f"Q-value update: {len(experience_ids)} experiences, "
             f"reward={reward:.1f}, avg Q after={avg_q:.3f}"

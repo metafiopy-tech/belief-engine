@@ -222,8 +222,10 @@ class TestEnvironmentTampering:
         # First call: snapshot
         await check_environment_tampering()
 
-        # Simulate key change
-        original = _ENV_SNAPSHOTS.get("ANTHROPIC_API_KEY", "")
+        # Simulate key change — the previous snapshot value is read
+        # only to confirm the snapshot existed; assignment below is
+        # what the tampering check compares against.
+        _ = _ENV_SNAPSHOTS.get("ANTHROPIC_API_KEY", "")
         _ENV_SNAPSHOTS["ANTHROPIC_API_KEY"] = "original_key_value"
 
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "different_key"}):
@@ -268,8 +270,12 @@ class TestResourceConsumption:
 
         # First half: $1 avg, second half: $4 avg (>2x)
         mock_results = [
-            MagicMock(cost_usd=1.0), MagicMock(cost_usd=1.0), MagicMock(cost_usd=1.0),
-            MagicMock(cost_usd=4.0), MagicMock(cost_usd=4.0), MagicMock(cost_usd=4.0),
+            MagicMock(cost_usd=1.0),
+            MagicMock(cost_usd=1.0),
+            MagicMock(cost_usd=1.0),
+            MagicMock(cost_usd=4.0),
+            MagicMock(cost_usd=4.0),
+            MagicMock(cost_usd=4.0),
         ]
 
         with patch("belief.evolution.archive.Archive") as MockArchive:
@@ -309,6 +315,7 @@ class TestResourceConsumption:
 class TestGoodhartCanary:
     def test_canary_challenges_exist(self):
         from belief.safety.goodhart_canary import CANARY_CHALLENGES
+
         assert len(CANARY_CHALLENGES) == 3
         assert all("id" in c and "goal" in c for c in CANARY_CHALLENGES)
 
@@ -349,6 +356,7 @@ class TestGoodhartCanary:
 
     def test_canary_ids_unique(self):
         from belief.safety.goodhart_canary import CANARY_CHALLENGES
+
         ids = [c["id"] for c in CANARY_CHALLENGES]
         assert len(ids) == len(set(ids))
 
@@ -358,6 +366,7 @@ class TestGoodhartCanary:
 
         try:
             from belief.benchmark import CHALLENGES
+
             benchmark_ids = {c.id for c in CHALLENGES}
             for canary in CANARY_CHALLENGES:
                 assert canary["id"] not in benchmark_ids, (
@@ -398,11 +407,13 @@ class TestDashboard:
         dashboard = MetricsDashboard(db_path=db_path)
 
         for i in range(10):
-            dashboard.record(IterationMetrics(
-                iteration=i,
-                timestamp=f"2025-01-{i+1:02d}T00:00:00",
-                benchmark_score=0.5 + i * 0.03,
-            ))
+            dashboard.record(
+                IterationMetrics(
+                    iteration=i,
+                    timestamp=f"2025-01-{i + 1:02d}T00:00:00",
+                    benchmark_score=0.5 + i * 0.03,
+                )
+            )
 
         loaded = dashboard.load_all()
         assert len(loaded) == 10
@@ -420,13 +431,22 @@ class TestDashboard:
         dashboard = MetricsDashboard(db_path=db_path)
 
         # Record without canary
-        dashboard.record(IterationMetrics(
-            iteration=1, timestamp="t", benchmark_score=0.5,
-        ))
+        dashboard.record(
+            IterationMetrics(
+                iteration=1,
+                timestamp="t",
+                benchmark_score=0.5,
+            )
+        )
         # Record with canary
-        dashboard.record(IterationMetrics(
-            iteration=2, timestamp="t", benchmark_score=0.6, canary_score=0.55,
-        ))
+        dashboard.record(
+            IterationMetrics(
+                iteration=2,
+                timestamp="t",
+                benchmark_score=0.6,
+                canary_score=0.55,
+            )
+        )
 
         loaded = dashboard.load_all()
         assert loaded[0].canary_score is None
@@ -442,9 +462,13 @@ class TestGrowthAnalysis:
 
         dashboard = MetricsDashboard(db_path=str(tmp_path / "m.jsonl"))
         for i in range(3):
-            dashboard.record(IterationMetrics(
-                iteration=i, timestamp="t", benchmark_score=0.5,
-            ))
+            dashboard.record(
+                IterationMetrics(
+                    iteration=i,
+                    timestamp="t",
+                    benchmark_score=0.5,
+                )
+            )
 
         result = dashboard.compute_growth_analysis()
         assert result["status"] == "insufficient_data"
@@ -455,9 +479,13 @@ class TestGrowthAnalysis:
         dashboard = MetricsDashboard(db_path=str(tmp_path / "m.jsonl"))
         # Linear growth: 0.3, 0.35, 0.4, 0.45, 0.5, 0.55
         for i in range(6):
-            dashboard.record(IterationMetrics(
-                iteration=i, timestamp="t", benchmark_score=0.3 + i * 0.05,
-            ))
+            dashboard.record(
+                IterationMetrics(
+                    iteration=i,
+                    timestamp="t",
+                    benchmark_score=0.3 + i * 0.05,
+                )
+            )
 
         result = dashboard.compute_growth_analysis()
         assert result["status"] == "ok"
@@ -469,9 +497,13 @@ class TestGrowthAnalysis:
 
         dashboard = MetricsDashboard(db_path=str(tmp_path / "m.jsonl"))
         for i in range(8):
-            dashboard.record(IterationMetrics(
-                iteration=i, timestamp="t", benchmark_score=0.3 + i * 0.05,
-            ))
+            dashboard.record(
+                IterationMetrics(
+                    iteration=i,
+                    timestamp="t",
+                    benchmark_score=0.3 + i * 0.05,
+                )
+            )
 
         result = dashboard.compute_growth_analysis()
         assert result["best_fit"] in ("linear", "exponential")
@@ -493,15 +525,17 @@ class TestDashboardPrinting:
         from belief.metrics.dashboard import IterationMetrics, MetricsDashboard
 
         dashboard = MetricsDashboard(db_path=str(tmp_path / "m.jsonl"))
-        dashboard.record(IterationMetrics(
-            iteration=5,
-            timestamp="2025-01-01T00:00:00",
-            benchmark_score=0.75,
-            cost_per_solved=1.20,
-            novel_capabilities=2,
-            tool_library_size=8,
-            covenant_count=15,
-        ))
+        dashboard.record(
+            IterationMetrics(
+                iteration=5,
+                timestamp="2025-01-01T00:00:00",
+                benchmark_score=0.75,
+                cost_per_solved=1.20,
+                novel_capabilities=2,
+                tool_library_size=8,
+                covenant_count=15,
+            )
+        )
         dashboard.print_dashboard()
         captured = capsys.readouterr()
         assert "BELIEF ENGINE" in captured.out
@@ -512,9 +546,13 @@ class TestDashboardPrinting:
         from belief.metrics.dashboard import IterationMetrics, MetricsDashboard
 
         dashboard = MetricsDashboard(db_path=str(tmp_path / "m.jsonl"))
-        dashboard.record(IterationMetrics(
-            iteration=1, timestamp="t", benchmark_score=0.5,
-        ))
+        dashboard.record(
+            IterationMetrics(
+                iteration=1,
+                timestamp="t",
+                benchmark_score=0.5,
+            )
+        )
         dashboard.print_json()
         captured = capsys.readouterr()
         data = json.loads(captured.out)
@@ -528,4 +566,5 @@ class TestDashboardPrinting:
 class TestCLI:
     def test_dashboard_cmd_exists(self):
         from belief.cli import _run_dashboard_cmd
+
         assert callable(_run_dashboard_cmd)

@@ -62,13 +62,11 @@ def _tail(series: Sequence[float], window: int) -> list[float]:
     return list(series[-window:])
 
 
-def _baseline_without_last(
-    series: Sequence[float], window: int
-) -> list[float]:
+def _baseline_without_last(series: Sequence[float], window: int) -> list[float]:
     """Last `window` samples, excluding the most recent."""
     if len(series) < 2:
         return []
-    return list(series[-(window + 1):-1])
+    return list(series[-(window + 1) : -1])
 
 
 def rolling_zscore_alert(
@@ -242,9 +240,7 @@ def run_watchdog(
 
     last = series[-1]
     baseline_last_24 = series[-25:-1] if len(series) >= 2 else []
-    if last < min_flag_cost and all(
-        x < min_flag_cost for x in baseline_last_24
-    ):
+    if last < min_flag_cost and all(x < min_flag_cost for x in baseline_last_24):
         return result
 
     detectors = (

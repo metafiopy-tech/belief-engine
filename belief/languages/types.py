@@ -206,11 +206,12 @@ def _resolve_go_type(schema: dict, defs: dict) -> str:
 
 def _to_go_name(name: str) -> str:
     """Convert snake_case or camelCase to PascalCase for Go."""
-    parts = re.split(r'[_\-]', name)
+    parts = re.split(r"[_\-]", name)
     return "".join(p.capitalize() for p in parts)
 
 
 # ── Pydantic → Multi-Language ────────────────────────────────────────────────
+
 
 def pydantic_to_typescript(model_code: str) -> str:
     """Convert Pydantic model Python code to TypeScript interfaces.
@@ -267,13 +268,13 @@ def _python_type_to_ts(type_str: str) -> str:
     }
 
     # Handle Optional[X] → X | null
-    opt = re.match(r'Optional\[(.+)\]', type_str)
+    opt = re.match(r"Optional\[(.+)\]", type_str)
     if opt:
         inner = _python_type_to_ts(opt.group(1))
         return f"{inner} | null"
 
     # Handle list[X] → X[]
-    lst = re.match(r'(?:list|List)\[(.+)\]', type_str)
+    lst = re.match(r"(?:list|List)\[(.+)\]", type_str)
     if lst:
         inner = _python_type_to_ts(lst.group(1))
         return f"{inner}[]"

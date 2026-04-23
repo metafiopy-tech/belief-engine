@@ -12,7 +12,7 @@ No LLM calls. Deterministic. Fast.
 
 Current covenants enforced:
   1. Explicit stdlib imports
-  2. No file over 200 lines  
+  2. No file over 200 lines
   3. Static import verification (handled by import_fix node)
   4. SQLAlchemy type annotations must be imported
   5. SQLAlchemy Mapped/mapped_column must be imported
@@ -32,6 +32,7 @@ logger = logging.getLogger("belief.validators")
 @dataclass
 class Violation:
     """A covenant violation found by structural enforcement."""
+
     covenant: str
     file: str
     line: int = 0
@@ -43,6 +44,7 @@ class Violation:
 @dataclass
 class EnforcementResult:
     """Result of running all covenant enforcers."""
+
     violations: list[Violation] = field(default_factory=list)
     fixes_applied: int = 0
     files_modified: list[str] = field(default_factory=list)
@@ -139,19 +141,22 @@ def enforce_with_registry(
     if soil is not None:
         try:
             from belief.validators.covenant_registry import CovenantRegistry
+
             registry = CovenantRegistry(soil)
             dynamic_results = registry.fire_all(fixed)
 
             for dr in dynamic_results:
                 if dr.source == "dynamic" and not dr.passed:
                     for v in dr.violations:
-                        result.violations.append(Violation(
-                            covenant=dr.name,
-                            file=v.get("file", ""),
-                            line=v.get("line", 0),
-                            message=v.get("message", ""),
-                            severity=v.get("severity", "warning"),
-                        ))
+                        result.violations.append(
+                            Violation(
+                                covenant=dr.name,
+                                file=v.get("file", ""),
+                                line=v.get("line", 0),
+                                message=v.get("message", ""),
+                                severity=v.get("severity", "warning"),
+                            )
+                        )
         except Exception as e:
             logger.debug(f"Dynamic covenant check skipped: {e}")
 
@@ -159,6 +164,7 @@ def enforce_with_registry(
 
 
 # ── Enforcer: No __future__ annotations with SQLAlchemy ──────────────────────
+
 
 def _enforce_no_future_with_sqlalchemy(
     fname: str, code: str, uses_sqlalchemy: bool
@@ -174,9 +180,14 @@ def _enforce_no_future_with_sqlalchemy(
 
     # Check if this file uses SQLAlchemy ORM features
     sqlalchemy_markers = [
-        "Mapped[", "mapped_column(", "DeclarativeBase",
-        "relationship(", "Column(", "ForeignKey(",
-        "from sqlalchemy", "import sqlalchemy",
+        "Mapped[",
+        "mapped_column(",
+        "DeclarativeBase",
+        "relationship(",
+        "Column(",
+        "ForeignKey(",
+        "from sqlalchemy",
+        "import sqlalchemy",
     ]
 
     has_sqlalchemy = any(m in code for m in sqlalchemy_markers)
@@ -187,22 +198,23 @@ def _enforce_no_future_with_sqlalchemy(
         fixed = code.replace("from __future__ import annotations\n", "")
         fixed = fixed.replace("from __future__ import annotations", "")
 
-        return [Violation(
-            covenant="no_future_with_sqlalchemy",
-            file=fname,
-            line=1,
-            message="Removed `from __future__ import annotations` (breaks SQLAlchemy Mapped types)",
-            auto_fix=fixed,
-        )]
+        return [
+            Violation(
+                covenant="no_future_with_sqlalchemy",
+                file=fname,
+                line=1,
+                message="Removed `from __future__ import annotations` (breaks SQLAlchemy Mapped types)",
+                auto_fix=fixed,
+            )
+        ]
 
     return []
 
 
 # ── Enforcer: SQLAlchemy Mapped/mapped_column imports ────────────────────────
 
-def _enforce_sqlalchemy_imports(
-    fname: str, code: str, uses_sqlalchemy: bool
-) -> list[Violation]:
+
+def _enforce_sqlalchemy_imports(fname: str, code: str, uses_sqlalchemy: bool) -> list[Violation]:
     """Covenant 5: Files using Mapped[] or mapped_column() must import them."""
     if not uses_sqlalchemy:
         return []
@@ -214,12 +226,8 @@ def _enforce_sqlalchemy_imports(
         return []
 
     # Check if already imported
-    has_mapped_import = re.search(
-        r'from\s+sqlalchemy\.orm\s+import\s+.*\bMapped\b', code
-    )
-    has_mc_import = re.search(
-        r'from\s+sqlalchemy\.orm\s+import\s+.*\bmapped_column\b', code
-    )
+    has_mapped_import = re.search(r"from\s+sqlalchemy\.orm\s+import\s+.*\bMapped\b", code)
+    has_mc_import = re.search(r"from\s+sqlalchemy\.orm\s+import\s+.*\bmapped_column\b", code)
 
     missing = []
     if uses_mapped and not has_mapped_import:
@@ -232,9 +240,7 @@ def _enforce_sqlalchemy_imports(
 
     # Auto-fix: add the import
     # Check if there's already a sqlalchemy.orm import line
-    existing_import = re.search(
-        r'(from\s+sqlalchemy\.orm\s+import\s+)([^\n]+)', code
-    )
+    existing_import = re.search(r"(from\s+sqlalchemy\.orm\s+import\s+)([^\n]+)", code)
 
     if existing_import:
         # Add to existing import
@@ -265,45 +271,68 @@ def _enforce_sqlalchemy_imports(
     except SyntaxError:
         return []  # Don't apply broken fix
 
-    return [Violation(
-        covenant="sqlalchemy_mapped_imports",
-        file=fname,
-        message=f"Added missing import: {', '.join(missing)}",
-        auto_fix=fixed,
-    )]
+    return [
+        Violation(
+            covenant="sqlalchemy_mapped_imports",
+            file=fname,
+            message=f"Added missing import: {', '.join(missing)}",
+            auto_fix=fixed,
+        )
+    ]
 
 
 # ── Enforcer: File length limit ──────────────────────────────────────────────
 
-def _enforce_file_length(
-    fname: str, code: str, uses_sqlalchemy: bool
-) -> list[Violation]:
+
+def _enforce_file_length(fname: str, code: str, uses_sqlalchemy: bool) -> list[Violation]:
     """Covenant 2: No generated file should exceed 200 lines."""
     line_count = code.count("\n") + 1
     if line_count <= 200:
         return []
 
-    return [Violation(
-        covenant="max_200_lines",
-        file=fname,
-        message=f"{fname} is {line_count} lines (max 200)",
-        severity="warning",  # Can't auto-fix — needs file splitting
-    )]
+    return [
+        Violation(
+            covenant="max_200_lines",
+            file=fname,
+            message=f"{fname} is {line_count} lines (max 200)",
+            severity="warning",  # Can't auto-fix — needs file splitting
+        )
+    ]
 
 
 # ── Enforcer: Explicit stdlib imports ────────────────────────────────────────
 
 _STDLIB_NAMES = {
-    "datetime", "uuid", "enum", "os", "sys", "re", "json", "pathlib",
-    "logging", "time", "hashlib", "secrets", "typing", "collections",
-    "functools", "itertools", "dataclasses", "abc", "math", "random",
-    "copy", "io", "contextlib", "textwrap", "shutil", "tempfile",
+    "datetime",
+    "uuid",
+    "enum",
+    "os",
+    "sys",
+    "re",
+    "json",
+    "pathlib",
+    "logging",
+    "time",
+    "hashlib",
+    "secrets",
+    "typing",
+    "collections",
+    "functools",
+    "itertools",
+    "dataclasses",
+    "abc",
+    "math",
+    "random",
+    "copy",
+    "io",
+    "contextlib",
+    "textwrap",
+    "shutil",
+    "tempfile",
 }
 
 
-def _enforce_stdlib_imports(
-    fname: str, code: str, uses_sqlalchemy: bool
-) -> list[Violation]:
+def _enforce_stdlib_imports(fname: str, code: str, uses_sqlalchemy: bool) -> list[Violation]:
     """Covenant 1: Every stdlib module used must be explicitly imported."""
     try:
         tree = ast.parse(code)
@@ -323,7 +352,7 @@ def _enforce_stdlib_imports(
     violations = []
     for name in _STDLIB_NAMES:
         # Check if the name is used in the code (as a module reference)
-        if re.search(rf'\b{name}\.\w+', code) and name not in imported:
+        if re.search(rf"\b{name}\.\w+", code) and name not in imported:
             # Auto-fix: add the import
             lines = code.split("\n")
             # Find insert position (after __future__, before other imports)
@@ -341,12 +370,14 @@ def _enforce_stdlib_imports(
 
             try:
                 ast.parse(fixed)
-                violations.append(Violation(
-                    covenant="explicit_stdlib_imports",
-                    file=fname,
-                    message=f"Added missing `import {name}`",
-                    auto_fix=fixed,
-                ))
+                violations.append(
+                    Violation(
+                        covenant="explicit_stdlib_imports",
+                        file=fname,
+                        message=f"Added missing `import {name}`",
+                        auto_fix=fixed,
+                    )
+                )
                 code = fixed  # Update for subsequent checks
             except SyntaxError:
                 pass
@@ -357,17 +388,73 @@ def _enforce_stdlib_imports(
 # ── Enforcer: No stdlib in requirements.txt ──────────────────────────────────
 
 _STDLIB_PACKAGES = {
-    "__future__", "abc", "argparse", "ast", "asyncio", "base64",
-    "collections", "configparser", "contextlib", "copy", "csv",
-    "dataclasses", "datetime", "decimal", "enum", "email", "functools",
-    "glob", "hashlib", "html", "http", "importlib", "inspect", "io",
-    "itertools", "json", "locale", "logging", "math", "multiprocessing",
-    "numbers", "operator", "os", "pathlib", "pickle", "platform",
-    "pprint", "queue", "random", "re", "secrets", "shutil", "signal",
-    "site", "socket", "sqlite3", "string", "struct", "subprocess",
-    "sys", "tempfile", "textwrap", "threading", "time", "traceback",
-    "typing", "typing_extensions", "unicodedata", "unittest", "urllib",
-    "uuid", "venv", "warnings", "weakref", "xml", "zipfile", "zlib",
+    "__future__",
+    "abc",
+    "argparse",
+    "ast",
+    "asyncio",
+    "base64",
+    "collections",
+    "configparser",
+    "contextlib",
+    "copy",
+    "csv",
+    "dataclasses",
+    "datetime",
+    "decimal",
+    "enum",
+    "email",
+    "functools",
+    "glob",
+    "hashlib",
+    "html",
+    "http",
+    "importlib",
+    "inspect",
+    "io",
+    "itertools",
+    "json",
+    "locale",
+    "logging",
+    "math",
+    "multiprocessing",
+    "numbers",
+    "operator",
+    "os",
+    "pathlib",
+    "pickle",
+    "platform",
+    "pprint",
+    "queue",
+    "random",
+    "re",
+    "secrets",
+    "shutil",
+    "signal",
+    "site",
+    "socket",
+    "sqlite3",
+    "string",
+    "struct",
+    "subprocess",
+    "sys",
+    "tempfile",
+    "textwrap",
+    "threading",
+    "time",
+    "traceback",
+    "typing",
+    "typing_extensions",
+    "unicodedata",
+    "unittest",
+    "urllib",
+    "uuid",
+    "venv",
+    "warnings",
+    "weakref",
+    "xml",
+    "zipfile",
+    "zlib",
 }
 
 
@@ -394,19 +481,20 @@ def _enforce_no_stdlib_in_requirements(
 
     fixed = "\n".join(clean_lines) + "\n" if clean_lines else "# No external dependencies\n"
 
-    return [Violation(
-        covenant="no_stdlib_in_requirements",
-        file=fname,
-        message=f"Removed stdlib from requirements.txt: {', '.join(removed)}",
-        auto_fix=fixed,
-    )]
+    return [
+        Violation(
+            covenant="no_stdlib_in_requirements",
+            file=fname,
+            message=f"Removed stdlib from requirements.txt: {', '.join(removed)}",
+            auto_fix=fixed,
+        )
+    ]
 
 
 # ── Enforcer: No bare except clauses ─────────────────────────────────────────
 
-def _enforce_no_bare_except(
-    fname: str, code: str, uses_sqlalchemy: bool
-) -> list[Violation]:
+
+def _enforce_no_bare_except(fname: str, code: str, uses_sqlalchemy: bool) -> list[Violation]:
     """Covenant 7: Never use bare 'except:' or 'except Exception:' with pass.
 
     Bare excepts swallow all errors silently, making debugging impossible.
@@ -441,17 +529,18 @@ def _enforce_no_bare_except(
             if node.type is None and "except:" in line:
                 lines[line_idx] = line.replace("except:", "except Exception:")
                 modified = True
-                violations.append(Violation(
-                    covenant="no_bare_except",
-                    file=fname,
-                    line=node.lineno,
-                    message="Replaced bare 'except:' with 'except Exception:'",
-                    severity="warning",
-                ))
+                violations.append(
+                    Violation(
+                        covenant="no_bare_except",
+                        file=fname,
+                        line=node.lineno,
+                        message="Replaced bare 'except:' with 'except Exception:'",
+                        severity="warning",
+                    )
+                )
 
             # except ...: pass (swallows error silently)
-            if (node.body and len(node.body) == 1
-                    and isinstance(node.body[0], ast.Pass)):
+            if node.body and len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
                 pass_line_idx = node.body[0].lineno - 1
                 if pass_line_idx < len(lines):
                     indent = len(lines[pass_line_idx]) - len(lines[pass_line_idx].lstrip())

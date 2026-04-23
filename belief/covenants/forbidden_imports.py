@@ -35,7 +35,6 @@ import logging
 import re
 import sys
 from dataclasses import dataclass
-from typing import Iterable
 
 logger = logging.getLogger("belief.covenants.forbidden_imports")
 
@@ -46,28 +45,30 @@ logger = logging.getLogger("belief.covenants.forbidden_imports")
 
 # sys.stdlib_module_names is a frozenset of top-level stdlib module
 # names for the running Python version.  We snapshot it at import time.
-STDLIB_NAMES: frozenset[str] = frozenset(
-    getattr(sys, "stdlib_module_names", frozenset())
-)
+STDLIB_NAMES: frozenset[str] = frozenset(getattr(sys, "stdlib_module_names", frozenset()))
 
 # Historical / cross-version / Windows-only names that Python 3.10+
 # may not list but that were stdlib at some point and still sometimes
 # appear in LLM-generated requirements.txt (often because the LLM
 # pattern-matched on older Stack Overflow answers).
-_STDLIB_EXTRAS: frozenset[str] = frozenset({
-    "typing_extensions",   # only in some distributions; commonly confused
-    "__future__",
-    "collections-extended",  # real pypi pkg but easy confusion — keep out
-    "typing-extensions",
-})
+_STDLIB_EXTRAS: frozenset[str] = frozenset(
+    {
+        "typing_extensions",  # only in some distributions; commonly confused
+        "__future__",
+        "collections-extended",  # real pypi pkg but easy confusion — keep out
+        "typing-extensions",
+    }
+)
 # Note: typing_extensions is actually a real PyPI package.  We don't
 # include it in the blocklist — it belongs there if the project really
 # needs it.  Keeping as an example; do not add it back.
-_STDLIB_EXTRAS = frozenset({
-    # Names historically shipped as stdlib that still show up in
-    # hallucinated requirements.txt lines.
-    "__future__",
-})
+_STDLIB_EXTRAS = frozenset(
+    {
+        # Names historically shipped as stdlib that still show up in
+        # hallucinated requirements.txt lines.
+        "__future__",
+    }
+)
 
 # Canonical per-line regex: optional leading whitespace, package name,
 # optional version specifier (==, >=, <=, ~=, <, >, !=), extras
@@ -165,18 +166,19 @@ def apply_forbidden_imports_covenant(
         name = match.group("name") or ""
         if is_stdlib_name(name):
             logger.info(
-                "forbidden_imports: stripping stdlib package %r from %s "
-                "(line %d)",
+                "forbidden_imports: stripping stdlib package %r from %s (line %d)",
                 name,
                 filename or "requirements.txt",
                 i,
             )
-            applied.append(CovenantApplied(
-                rule="forbidden_imports.stdlib_in_requirements",
-                detail=f"stripped stdlib name: {name}",
-                line=i,
-                file=filename,
-            ))
+            applied.append(
+                CovenantApplied(
+                    rule="forbidden_imports.stdlib_in_requirements",
+                    detail=f"stripped stdlib name: {name}",
+                    line=i,
+                    file=filename,
+                )
+            )
             continue
         out_lines.append(line)
 

@@ -70,9 +70,7 @@ def _cell(verdict: str, score: float) -> str:
 
 
 def format_report(report: CompareReport) -> str:
-    header = (
-        f"{'Challenge':<22} | {'Cloud':<10} | {'Local':<10} | Delta"
-    )
+    header = f"{'Challenge':<22} | {'Cloud':<10} | {'Local':<10} | Delta"
     sep = "-" * len(header)
     lines = [header, sep]
     for row in report.rows:
@@ -94,14 +92,10 @@ def format_report(report: CompareReport) -> str:
     cloud_cost = report.cloud_cost_overall
     local_cost = report.local_cost_overall
     cost_delta = local_cost - cloud_cost
-    lines.append(
-        f"{'Cost':<22} | ${cloud_cost:<9.2f} | ${local_cost:<9.2f} | ${cost_delta:+.2f}"
-    )
+    lines.append(f"{'Cost':<22} | ${cloud_cost:<9.2f} | ${local_cost:<9.2f} | ${cost_delta:+.2f}")
     if not report.local_available:
         lines.append("")
-        lines.append(
-            f"(local run skipped: {report.local_skipped_reason or 'Ollama unavailable'})"
-        )
+        lines.append(f"(local run skipped: {report.local_skipped_reason or 'Ollama unavailable'})")
     return "\n".join(lines)
 
 
@@ -147,6 +141,7 @@ async def run_benchmark_compare(
 
     # Probe Ollama availability
     if ollama_probe is None:
+
         async def _default_probe() -> bool:
             try:
                 from belief.llm import AsyncOllamaClient

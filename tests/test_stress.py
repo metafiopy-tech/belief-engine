@@ -38,11 +38,13 @@ BELIEF_PKG = REPO_ROOT / "belief"
 # 1. TYPESCRIPT SCAFFOLD GENERATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestTypeScriptScaffold:
     """Test the TypeScript adapter's project scaffolding."""
 
     def setup_method(self):
         from belief.languages.typescript_adapter import TypeScriptAdapter
+
         self.adapter = TypeScriptAdapter()
 
     def test_esm_mode_always_set(self):
@@ -126,11 +128,13 @@ class TestTypeScriptScaffold:
 # 2. COVENANT ENFORCER — ALL 11 RULES
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestCovenantEnforcer:
     """Test every covenant rule with positive and negative cases."""
 
     def setup_method(self):
         from belief.validators.typescript_covenants import enforce_ts_covenants
+
         self.enforce = enforce_ts_covenants
 
     def _check(self, files, expected_covenant=None, should_fix=False, should_flag=False):
@@ -138,18 +142,19 @@ class TestCovenantEnforcer:
         if expected_covenant:
             matching = [v for v in result.violations if v.covenant.startswith(expected_covenant)]
             if should_fix:
-                assert any(v.auto_fixed for v in matching), \
+                assert any(v.auto_fixed for v in matching), (
                     f"Expected auto-fix for {expected_covenant}, got none"
+                )
             if should_flag:
-                assert len(matching) > 0, \
-                    f"Expected violation for {expected_covenant}, got none"
+                assert len(matching) > 0, f"Expected violation for {expected_covenant}, got none"
         return fixed, result
 
     # C1: .js extensions
     def test_c1_relative_import_missing_extension(self):
         self._check(
             {"src/a.ts": "import { x } from './b';"},
-            "C1", should_fix=True,
+            "C1",
+            should_fix=True,
         )
 
     def test_c1_already_has_extension(self):
@@ -177,13 +182,16 @@ class TestCovenantEnforcer:
     # C2: MCP bare import
     def test_c2_bare_mcp_import(self):
         self._check(
-            {"src/a.ts": '''import { McpServer } from "@modelcontextprotocol/sdk";'''},
-            "C2", should_flag=True,
+            {"src/a.ts": """import { McpServer } from "@modelcontextprotocol/sdk";"""},
+            "C2",
+            should_flag=True,
         )
 
     def test_c2_subpath_import_ok(self):
         _, result = self._check(
-            {"src/a.ts": '''import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";'''},
+            {
+                "src/a.ts": """import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";"""
+            },
         )
         c2 = [v for v in result.violations if v.covenant.startswith("C2")]
         assert len(c2) == 0
@@ -191,19 +199,21 @@ class TestCovenantEnforcer:
     # C3: Nonexistent x402 packages
     def test_c3_x402_types_doesnt_exist(self):
         self._check(
-            {"src/a.ts": '''import { Config } from "@x402/types";'''},
-            "C3", should_flag=True,
+            {"src/a.ts": """import { Config } from "@x402/types";"""},
+            "C3",
+            should_flag=True,
         )
 
     def test_c3_x402_client_doesnt_exist(self):
         self._check(
-            {"src/a.ts": '''import { Client } from "@x402/client";'''},
-            "C3", should_flag=True,
+            {"src/a.ts": """import { Client } from "@x402/client";"""},
+            "C3",
+            should_flag=True,
         )
 
     def test_c3_x402_core_is_valid(self):
         _, result = self._check(
-            {"src/a.ts": '''import { x402ResourceServer } from "@x402/core/server";'''},
+            {"src/a.ts": """import { x402ResourceServer } from "@x402/core/server";"""},
         )
         c3 = [v for v in result.violations if v.covenant.startswith("C3")]
         assert len(c3) == 0
@@ -212,7 +222,8 @@ class TestCovenantEnforcer:
     def test_c4_dirname_flagged(self):
         self._check(
             {"src/a.ts": "const dir = __dirname;"},
-            "C4", should_flag=True,
+            "C4",
+            should_flag=True,
         )
 
     def test_c4_import_meta_dirname_ok(self):
@@ -234,13 +245,16 @@ class TestCovenantEnforcer:
     def test_c5_require_flagged(self):
         self._check(
             {"src/a.ts": 'const fs = require("fs");'},
-            "C5", should_flag=True,
+            "C5",
+            should_flag=True,
         )
 
     def test_c5_createRequire_ok(self):
         """createRequire is a legitimate ESM pattern."""
         _, result = self._check(
-            {"src/a.ts": 'import { createRequire } from "node:module";\nconst require = createRequire(import.meta.url);\nconst pkg = require("./package.json");'},
+            {
+                "src/a.ts": 'import { createRequire } from "node:module";\nconst require = createRequire(import.meta.url);\nconst pkg = require("./package.json");'
+            },
         )
         c5 = [v for v in result.violations if v.covenant.startswith("C5")]
         assert len(c5) == 0
@@ -249,13 +263,15 @@ class TestCovenantEnforcer:
     def test_c7_ethers_providers(self):
         self._check(
             {"src/a.ts": "const p = new ethers.providers.JsonRpcProvider();"},
-            "C7", should_flag=True,
+            "C7",
+            should_flag=True,
         )
 
     def test_c7_bignumber(self):
         self._check(
             {"src/a.ts": "const x = BigNumber.from(42);"},
-            "C7", should_flag=True,
+            "C7",
+            should_flag=True,
         )
 
     def test_c7_top_level_import_ok(self):
@@ -277,8 +293,9 @@ class TestCovenantEnforcer:
     # C9: @ethersproject/* auto-fix
     def test_c9_ethersproject_replaced(self):
         fixed, _ = self._check(
-            {"src/a.ts": '''import { JsonRpcProvider } from "@ethersproject/providers";'''},
-            "C9", should_fix=True,
+            {"src/a.ts": """import { JsonRpcProvider } from "@ethersproject/providers";"""},
+            "C9",
+            should_fix=True,
         )
         assert "'ethers'" in fixed["src/a.ts"]
 
@@ -286,7 +303,8 @@ class TestCovenantEnforcer:
     def test_c10_jest_fn_replaced(self):
         fixed, _ = self._check(
             {"src/a.test.ts": "const mock = jest.fn();"},
-            "C10", should_fix=True,
+            "C10",
+            should_fix=True,
         )
         assert "vi.fn()" in fixed["src/a.test.ts"]
 
@@ -301,14 +319,19 @@ class TestCovenantEnforcer:
     # C11: missing vitest import
     def test_c11_vitest_import_added(self):
         fixed, _ = self._check(
-            {"src/a.test.ts": 'describe("test", () => { it("works", () => { expect(1).toBe(1); }); });'},
-            "C11", should_fix=True,
+            {
+                "src/a.test.ts": 'describe("test", () => { it("works", () => { expect(1).toBe(1); }); });'
+            },
+            "C11",
+            should_fix=True,
         )
         assert "from 'vitest'" in fixed["src/a.test.ts"]
 
     def test_c11_already_imported_ok(self):
         _, result = self._check(
-            {"src/a.test.ts": "import { describe, it, expect } from 'vitest';\ndescribe('x', () => {});"},
+            {
+                "src/a.test.ts": "import { describe, it, expect } from 'vitest';\ndescribe('x', () => {});"
+            },
         )
         c11 = [v for v in result.violations if v.covenant.startswith("C11")]
         assert len(c11) == 0
@@ -330,43 +353,45 @@ class TestCovenantEnforcer:
 # 3. TYPESCRIPT ADAPTER VERIFICATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestTypeScriptVerification:
     """Test the adapter's verify_code and parse_exports."""
 
     def setup_method(self):
         from belief.languages.typescript_adapter import TypeScriptAdapter
+
         self.adapter = TypeScriptAdapter()
 
     def test_valid_code_passes(self):
-        code = '''import { foo } from './bar.js';\nexport function hello(): string { return "world"; }'''
+        code = """import { foo } from './bar.js';\nexport function hello(): string { return "world"; }"""
         result = self.adapter.verify_code(code, "src/index.ts")
         assert result.success
 
     def test_missing_extension_fails(self):
-        code = '''import { foo } from './bar';'''
+        code = """import { foo } from './bar';"""
         result = self.adapter.verify_code(code, "src/index.ts")
         assert not result.success
         assert any("extension" in e.lower() for e in result.errors)
 
     def test_dirname_fails(self):
-        code = '''const x = __dirname;'''
+        code = """const x = __dirname;"""
         result = self.adapter.verify_code(code, "src/index.ts")
         assert not result.success
 
     def test_require_fails(self):
-        code = '''const fs = require("fs");'''
+        code = """const fs = require("fs");"""
         result = self.adapter.verify_code(code, "src/index.ts")
         assert not result.success
 
     def test_unmatched_braces_fails(self):
         """Two or more unmatched braces should fail verification."""
         # Adapter tolerates off-by-one (abs > 1 triggers failure)
-        code = '''function a() { if (true) { if (false) { return 1; }'''
+        code = """function a() { if (true) { if (false) { return 1; }"""
         result = self.adapter.verify_code(code, "src/index.ts")
         assert not result.success
 
     def test_parse_exports_all_types(self):
-        code = '''
+        code = """
 export interface Config { name: string; }
 export class Server { start() {} }
 export async function main(): Promise<void> {}
@@ -375,7 +400,7 @@ export type ID = string | number;
 export enum Status { Active, Inactive }
 export default class App {}
 export { Config, Server };
-'''
+"""
         exports = self.adapter.parse_exports(code, "src/index.ts")
         kinds = {e.kind for e in exports}
         assert "interface" in kinds
@@ -395,6 +420,7 @@ export { Config, Server };
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. EXECUTOR LANGUAGE ROUTING
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestExecutorRouting:
     """Test that the executor correctly routes Python vs TypeScript."""
@@ -423,11 +449,17 @@ class TestExecutorRouting:
 # 5. SICA SAFETY BOUNDARIES
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestSICASafety:
     """Test that SICA respects scaffold boundaries."""
 
     def setup_method(self):
-        from belief.evolution.scaffold import ScaffoldDecomposition, FIXED_SCAFFOLD, EVOLVABLE_PRIORITY
+        from belief.evolution.scaffold import (
+            ScaffoldDecomposition,
+            FIXED_SCAFFOLD,
+            EVOLVABLE_PRIORITY,
+        )
+
         self.decomp = ScaffoldDecomposition.from_project(str(REPO_ROOT))
         self.FIXED = FIXED_SCAFFOLD
         self.EVOLVABLE = EVOLVABLE_PRIORITY
@@ -506,11 +538,13 @@ class TestSICASafety:
 # 6. HARDENING
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestHardening:
     """Test security scanning and budget enforcement."""
 
     def test_scan_detects_os_system(self):
         from belief.hardening import scan_all_files
+
         files = {"evil.py": "import os\nos.system('rm -rf /')"}
         violations = scan_all_files(files)
         critical = [v for v in violations if v.severity == "critical"]
@@ -518,18 +552,21 @@ class TestHardening:
 
     def test_scan_detects_subprocess_shell(self):
         from belief.hardening import scan_all_files
+
         files = {"evil.py": "import subprocess\nsubprocess.run('ls', shell=True)"}
         violations = scan_all_files(files)
         assert len(violations) > 0, "Should detect subprocess with shell=True"
 
     def test_scan_detects_eval(self):
         from belief.hardening import scan_all_files
+
         files = {"evil.py": "result = eval(user_input)"}
         violations = scan_all_files(files)
         assert len(violations) > 0, "Should detect eval()"
 
     def test_scan_clean_code_passes(self):
         from belief.hardening import scan_all_files
+
         files = {"safe.py": "def add(a, b):\n    return a + b\n"}
         violations = scan_all_files(files)
         critical = [v for v in violations if v.severity == "critical"]
@@ -538,21 +575,25 @@ class TestHardening:
     def test_scan_ignores_non_python(self):
         """Security scanner should skip non-Python files."""
         from belief.hardening import scan_all_files
+
         files = {"script.sh": "rm -rf /", "evil.js": "eval('alert(1)')"}
-        violations = scan_all_files(files)
-        # Should either skip or handle gracefully
-        # Don't assert zero — some scanners check all files
+        # Return value intentionally unchecked — the assertion is that
+        # the call does not raise on non-Python inputs.  Some scanners
+        # legitimately return findings for shell/js; that's fine.
+        scan_all_files(files)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 7. PROTOCOL SKELETON INTEGRITY
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestProtocolSkeletons:
     """Test that protocol skeletons are syntactically valid and covenant-clean."""
 
     def test_all_skeletons_exist(self):
         from belief.prompts.protocol_skeletons import get_all_protocol_names, get_skeleton
+
         for proto in get_all_protocol_names():
             skel = get_skeleton(proto)
             assert len(skel) > 0, f"Empty skeleton for {proto}"
@@ -565,10 +606,13 @@ class TestProtocolSkeletons:
             skel = get_skeleton(proto)
             _, result = enforce_ts_covenants(skel, auto_fix=False)
             critical = [v for v in result.violations if v.severity == "critical"]
-            assert len(critical) == 0, f"{proto} has critical violations: {[v.message for v in critical]}"
+            assert len(critical) == 0, (
+                f"{proto} has critical violations: {[v.message for v in critical]}"
+            )
 
     def test_x402_skeleton_has_correct_imports(self):
         from belief.prompts.protocol_skeletons import get_skeleton
+
         skel = get_skeleton("x402")
         all_code = "\n".join(skel.values())
         assert "@x402/evm/exact/server" in all_code
@@ -577,6 +621,7 @@ class TestProtocolSkeletons:
 
     def test_mcp_skeleton_uses_subpaths(self):
         from belief.prompts.protocol_skeletons import get_skeleton
+
         skel = get_skeleton("mcp")
         code = list(skel.values())[0]
         assert "@modelcontextprotocol/sdk/server/mcp.js" in code
@@ -584,15 +629,17 @@ class TestProtocolSkeletons:
 
     def test_erc8004_uses_ethers_v6(self):
         from belief.prompts.protocol_skeletons import get_skeleton
+
         skel = get_skeleton("erc8004")
         code = list(skel.values())[0]
         # Should use top-level imports, not ethers.providers.*
-        assert "from \"ethers\"" in code or "from 'ethers'" in code
+        assert 'from "ethers"' in code or "from 'ethers'" in code
         assert "ethers.providers" not in code.split("//")[0]  # Ignore comments
 
     def test_x402_skeleton_separates_app_and_server(self):
         """x402 skeleton should separate app (for testing) from server (for running)."""
         from belief.prompts.protocol_skeletons import get_skeleton
+
         skel = get_skeleton("x402")
         assert "src/app.ts" in skel, "Missing app.ts (testable app export)"
         assert "src/index.ts" in skel, "Missing index.ts (server entry point)"
@@ -604,12 +651,14 @@ class TestProtocolSkeletons:
 # 8. ADVERSARIAL INPUTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestAdversarialInputs:
     """Test system resilience against malicious or malformed inputs."""
 
     def test_covenant_enforcer_on_huge_file(self):
         """Covenant enforcer shouldn't crash on very large files."""
         from belief.validators.typescript_covenants import enforce_ts_covenants
+
         big_code = "const x = 1;\n" * 10000
         _, result = enforce_ts_covenants({"src/big.ts": big_code})
         # Should complete without error
@@ -617,6 +666,7 @@ class TestAdversarialInputs:
     def test_covenant_enforcer_on_binary_content(self):
         """Covenant enforcer should handle non-UTF8 content gracefully."""
         from belief.validators.typescript_covenants import enforce_ts_covenants
+
         try:
             _, result = enforce_ts_covenants({"src/binary.ts": "\x00\x01\x02\xff"})
         except Exception:
@@ -625,13 +675,15 @@ class TestAdversarialInputs:
     def test_covenant_enforcer_unicode(self):
         """Covenant enforcer should handle unicode in code."""
         from belief.validators.typescript_covenants import enforce_ts_covenants
-        code = '''import { café } from './utils.js';\nconst ñ = "hello 世界";'''
+
+        code = """import { café } from './utils.js';\nconst ñ = "hello 世界";"""
         _, result = enforce_ts_covenants({"src/unicode.ts": code})
         # Should not crash
 
     def test_scaffold_project_empty_name(self):
         """Scaffold should handle empty project name."""
         from belief.languages.typescript_adapter import TypeScriptAdapter
+
         adapter = TypeScriptAdapter()
         files = adapter.scaffold_project("", [])
         pkg = json.loads(files["package.json"])
@@ -640,6 +692,7 @@ class TestAdversarialInputs:
     def test_scaffold_project_special_chars(self):
         """Scaffold should handle special characters in project name."""
         from belief.languages.typescript_adapter import TypeScriptAdapter
+
         adapter = TypeScriptAdapter()
         files = adapter.scaffold_project("my project!@#$", ["express"])
         pkg = json.loads(files["package.json"])
@@ -648,6 +701,7 @@ class TestAdversarialInputs:
     def test_deeply_nested_imports(self):
         """Covenant enforcer should handle deeply nested relative imports."""
         from belief.validators.typescript_covenants import enforce_ts_covenants
+
         code = "import { x } from '../../../../deeply/nested/module';"
         fixed, result = enforce_ts_covenants({"src/deep/path/file.ts": code}, auto_fix=True)
         assert ".js" in fixed["src/deep/path/file.ts"]
@@ -655,6 +709,7 @@ class TestAdversarialInputs:
     def test_multiple_imports_on_same_line(self):
         """Edge case: multiple imports on the same line."""
         from belief.validators.typescript_covenants import enforce_ts_covenants
+
         code = "import { a } from './a'; import { b } from './b';"
         fixed, result = enforce_ts_covenants({"src/a.ts": code}, auto_fix=True)
         # At least the first import should get fixed
@@ -663,6 +718,7 @@ class TestAdversarialInputs:
     def test_sica_apply_empty_proposal(self):
         """SICA should reject empty proposals gracefully."""
         from belief.evolution.sica import SelfImprovementCycle
+
         cycle = SelfImprovementCycle(str(REPO_ROOT))
         with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
             f.write("x = 1\n")
@@ -794,6 +850,7 @@ class TestAdversarialHardening:
         assert repaired is not None
         # Repaired string must be valid JSON (possibly with null fills)
         import json as _json
+
         try:
             _json.loads(repaired)
         except Exception:
@@ -825,9 +882,7 @@ class TestAdversarialHardening:
         """BreakerAsyncClient with an allowlist must block unlisted domains."""
         from belief.core.http import BreakerAsyncClient
 
-        client = BreakerAsyncClient(
-            allowed_domains=frozenset({"api.example.com"})
-        )
+        client = BreakerAsyncClient(allowed_domains=frozenset({"api.example.com"}))
         # _check_domain is synchronous; it raises before any network call
         with pytest.raises(ValueError, match="not in the allowed domain list"):
             client._check_domain("https://evil.example.net/data")
@@ -836,9 +891,7 @@ class TestAdversarialHardening:
         """_check_domain must not raise for an explicitly allowed host."""
         from belief.core.http import BreakerAsyncClient
 
-        client = BreakerAsyncClient(
-            allowed_domains=frozenset({"api.example.com"})
-        )
+        client = BreakerAsyncClient(allowed_domains=frozenset({"api.example.com"}))
         # Should not raise — just the domain check, not a real HTTP call
         client._check_domain("https://api.example.com/v1/messages")
 
@@ -869,6 +922,7 @@ class TestAdversarialHardening:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 9. CODEBASE HEALTH AUDIT
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestCodebaseHealth:
     """Audit the codebase for common issues."""
@@ -909,7 +963,7 @@ class TestCodebaseHealth:
         for i, line in enumerate(lines, 1):
             if "TODO" in line and not line.strip().startswith("#"):
                 # Exclude lines that instruct the LLM to NOT use TODOs
-                if "no TODO" in line or "no placeholders" in line or "no \"implement" in line:
+                if "no TODO" in line or "no placeholders" in line or 'no "implement' in line:
                     continue
                 suspicious.append(f"Line {i}: {line.strip()[:80]}")
         assert not suspicious, "TODOs in prompts:\n" + "\n".join(suspicious)
@@ -946,6 +1000,7 @@ class TestCodebaseHealth:
 # 10. BITTENSOR MINER LOGIC
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBittensorMiner:
     """Test the miner's challenge handling logic."""
 
@@ -960,6 +1015,7 @@ class TestBittensorMiner:
         """Empty challenges should return success=False with error."""
         import asyncio
         from belief.bittensor.miner import SWEBenchInstance
+
         result = asyncio.run(self.miner.solve(SWEBenchInstance()))
         assert not result.success
         assert result.error != ""
@@ -968,6 +1024,7 @@ class TestBittensorMiner:
         """Challenge with goal should attempt pipeline (will fail without API key)."""
         import asyncio
         from belief.bittensor.miner import SWEBenchInstance
+
         instance = SWEBenchInstance(
             instance_id="test-1",
             problem_statement="print hello",
@@ -998,7 +1055,10 @@ class TestBittensorMiner:
         ]
         for challenge, expected in test_cases:
             goal = (
-                challenge.get("goal") or challenge.get("description") or
-                challenge.get("issue") or challenge.get("prompt") or ""
+                challenge.get("goal")
+                or challenge.get("description")
+                or challenge.get("issue")
+                or challenge.get("prompt")
+                or ""
             )
             assert goal == expected

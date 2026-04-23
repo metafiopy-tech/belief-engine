@@ -27,6 +27,7 @@ logger = logging.getLogger("belief.deploy.autonomous")
 @dataclass
 class AutonomousResult:
     """Result of the full autonomous cycle."""
+
     goal: str
     build_success: bool = False
     deploy_success: bool = False
@@ -145,6 +146,7 @@ async def autonomous_build_and_deploy(
                     # Redeploy with fixed code
                     logger.info("Autonomous: redeploying with fix...")
                     from belief.deploy import deploy as redeploy
+
                     await redeploy(remediation.code_files, config)
 
             # Run monitoring for the specified duration
@@ -199,12 +201,20 @@ async def _run_build(goal: str, max_cost: float) -> dict[str, Any]:
         exec_r = final_state.get("execution_result")
         success = False
         if exec_r:
-            success = exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
+            success = (
+                exec_r.get("success")
+                if isinstance(exec_r, dict)
+                else getattr(exec_r, "success", False)
+            )
 
         validation = final_state.get("validation_result")
         verdict = "unknown"
         if validation:
-            verdict = validation.get("verdict") if isinstance(validation, dict) else getattr(validation, "verdict", "unknown")
+            verdict = (
+                validation.get("verdict")
+                if isinstance(validation, dict)
+                else getattr(validation, "verdict", "unknown")
+            )
             if hasattr(verdict, "value"):
                 verdict = verdict.value
 
@@ -212,7 +222,11 @@ async def _run_build(goal: str, max_cost: float) -> dict[str, Any]:
         cost = 0.0
         budget = final_state.get("build_budget")
         if budget:
-            cost = budget.get("total_cost", 0.0) if isinstance(budget, dict) else getattr(budget, "total_cost", 0.0)
+            cost = (
+                budget.get("total_cost", 0.0)
+                if isinstance(budget, dict)
+                else getattr(budget, "total_cost", 0.0)
+            )
 
         return {
             "success": success or verdict == "pass",

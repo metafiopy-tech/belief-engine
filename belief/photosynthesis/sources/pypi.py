@@ -121,9 +121,7 @@ def _load_keyword_set(config: "PhotoConfig") -> set[str]:
     return {str(k).lower() for k in (data or {}).get("keywords", [])}
 
 
-async def _maybe_fetch_packument(
-    client: "BreakerAsyncClient", name: str
-) -> Optional[dict]:
+async def _maybe_fetch_packument(client: "BreakerAsyncClient", name: str) -> Optional[dict]:
     """Fetch https://pypi.org/pypi/{name}/json for extra metadata. Best-effort."""
     if not name:
         return None

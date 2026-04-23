@@ -41,6 +41,7 @@ logger = logging.getLogger("belief.codebase.patch_sampler")
 @dataclass
 class PatchCandidate:
     """A single candidate patch."""
+
     id: int
     file_path: str
     old_code: str
@@ -54,6 +55,7 @@ class PatchCandidate:
 @dataclass
 class ReproductionTest:
     """A test designed to fail on unfixed code, pass on fixed code."""
+
     id: int
     code: str
     name: str
@@ -62,6 +64,7 @@ class ReproductionTest:
 @dataclass
 class SamplerResult:
     """Result of the self-play sampling process."""
+
     best_patch: PatchCandidate | None = None
     candidates: list[PatchCandidate] = field(default_factory=list)
     tests: list[ReproductionTest] = field(default_factory=list)
@@ -99,9 +102,7 @@ class PatchSampler:
             return result
 
         # Step 1: Generate N candidate patches (BugFixer role)
-        patches = await self._generate_patches(
-            location, issue, current_code, llm, n_patches
-        )
+        patches = await self._generate_patches(location, issue, current_code, llm, n_patches)
         result.candidates = patches
         valid_patches = [p for p in patches if p.syntax_valid]
 
@@ -112,9 +113,7 @@ class PatchSampler:
         logger.info(f"PatchSampler: {len(valid_patches)}/{len(patches)} valid patches")
 
         # Step 2: Generate M reproduction tests (TestWriter role)
-        tests = await self._generate_reproduction_tests(
-            location, issue, current_code, llm, n_tests
-        )
+        tests = await self._generate_reproduction_tests(location, issue, current_code, llm, n_tests)
         result.tests = tests
 
         if not tests:
@@ -127,9 +126,7 @@ class PatchSampler:
 
         # Step 3: Execute all patches against all tests (agreement matrix)
         for patch in valid_patches:
-            passed = await self._execute_patch_tests(
-                codebase, location, patch, tests
-            )
+            passed = await self._execute_patch_tests(codebase, location, patch, tests)
             patch.tests_passed = frozenset(passed)
 
         # Step 4: CodeT ranking
@@ -158,8 +155,7 @@ class PatchSampler:
         context = location.context or current_code[:3000]
 
         tasks = [
-            self._generate_one_patch(location, issue, context, llm, i, temps[i])
-            for i in range(n)
+            self._generate_one_patch(location, issue, context, llm, i, temps[i]) for i in range(n)
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -262,13 +258,17 @@ Import from the module being tested."""
 
             tests = []
             import re
+
             # Extract test functions
-            func_pattern = re.compile(r'((?:async\s+)?def\s+test_\w+\s*\([^)]*\).*?)(?=(?:async\s+)?def\s+test_|\Z)', re.DOTALL)
+            func_pattern = re.compile(
+                r"((?:async\s+)?def\s+test_\w+\s*\([^)]*\).*?)(?=(?:async\s+)?def\s+test_|\Z)",
+                re.DOTALL,
+            )
             matches = func_pattern.findall(response)
 
             for i, match in enumerate(matches[:n]):
                 test_code = match.strip()
-                name_match = re.search(r'def\s+(test_\w+)', test_code)
+                name_match = re.search(r"def\s+(test_\w+)", test_code)
                 name = name_match.group(1) if name_match else f"test_repro_{i}"
                 tests.append(ReproductionTest(id=i, code=test_code, name=name))
 
@@ -320,10 +320,11 @@ Import from the module being tested."""
             for test in tests:
                 try:
                     proc = subprocess.run(
-                        [sys.executable, "-m", "pytest", "-xvs",
-                         f"test_repro.py::{test.name}"],
-                        capture_output=True, text=True,
-                        timeout=15, cwd=str(tmp_path),
+                        [sys.executable, "-m", "pytest", "-xvs", f"test_repro.py::{test.name}"],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        cwd=str(tmp_path),
                         env={**__import__("os").environ, "PYTHONPATH": str(tmp_path)},
                     )
                     if proc.returncode == 0:
@@ -378,9 +379,9 @@ def _parse_patch_response(response: str) -> tuple[str, str, str]:
     explanation = ""
 
     # Try structured markers
-    old_match = re.search(r'OLD_CODE:\s*\n(.*?)(?=NEW_CODE:)', response, re.DOTALL)
-    new_match = re.search(r'NEW_CODE:\s*\n(.*?)(?=EXPLANATION:|$)', response, re.DOTALL)
-    exp_match = re.search(r'EXPLANATION:\s*\n(.*?)$', response, re.DOTALL)
+    old_match = re.search(r"OLD_CODE:\s*\n(.*?)(?=NEW_CODE:)", response, re.DOTALL)
+    new_match = re.search(r"NEW_CODE:\s*\n(.*?)(?=EXPLANATION:|$)", response, re.DOTALL)
+    exp_match = re.search(r"EXPLANATION:\s*\n(.*?)$", response, re.DOTALL)
 
     if old_match:
         old_code = old_match.group(1).strip().strip("`").strip()
@@ -393,6 +394,7 @@ def _parse_patch_response(response: str) -> tuple[str, str, str]:
     if not old_code:
         try:
             import json
+
             match = re.search(r'\{[^{}]*"old_str"[^{}]*\}', response, re.DOTALL)
             if match:
                 data = json.loads(match.group())

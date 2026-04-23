@@ -84,10 +84,9 @@ class BaseAgent(ABC):
 
         # Hydrate state from dict
         try:
-            forge_state = UnifiedState(**{
-                k: v for k, v in state.items()
-                if k in UnifiedState.model_fields
-            })
+            forge_state = UnifiedState(
+                **{k: v for k, v in state.items() if k in UnifiedState.model_fields}
+            )
         except Exception as e:
             logger.error(f"{self.name}: state deserialization failed: {e}", exc_info=True)
             failed: dict[str, Any] = dict(state)
@@ -112,8 +111,7 @@ class BaseAgent(ABC):
             existing_raw = output.get("token_usage")
             if existing_raw:
                 existing = (
-                    TokenUsage(**existing_raw)
-                    if isinstance(existing_raw, dict) else existing_raw
+                    TokenUsage(**existing_raw) if isinstance(existing_raw, dict) else existing_raw
                 )
                 output["token_usage"] = existing.merge(agent_usage).model_dump()
             elif agent_usage.total_prompt_tokens > 0:

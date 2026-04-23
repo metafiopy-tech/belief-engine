@@ -55,11 +55,11 @@ SYMBIOSIS_MARGIN = 1  # A+B together must beat the better one by >= this many pa
 class TrophicRelation:
     """Outcome of a single fragment-vs-fragment competition."""
 
-    predator_id: Optional[str] = None   # Nutrient that won, or None on tie/symbiosis
-    prey_id: Optional[str] = None        # Nutrient that lost, or None
-    relation: str = "competition"        # predation | symbiosis | competition
+    predator_id: Optional[str] = None  # Nutrient that won, or None on tie/symbiosis
+    prey_id: Optional[str] = None  # Nutrient that lost, or None
+    relation: str = "competition"  # predation | symbiosis | competition
     test_id: str = ""
-    margin: float = 0.0                  # pass-rate margin in [0, 1]
+    margin: float = 0.0  # pass-rate margin in [0, 1]
     passes_a: int = 0
     passes_b: int = 0
     tests_run: int = 0
@@ -268,9 +268,7 @@ def _run_one(
     if fn is None:
         return (False, "no top-level function found")
     driver = _build_driver(fragment, fn, test_case)
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
         f.write(driver)
         script_path = f.name
     try:

@@ -26,12 +26,14 @@ logger = logging.getLogger("belief.agents.parallel_planner")
 
 class FileLevel(BaseModel):
     """A group of files at the same dependency depth — parallelizable."""
+
     level: int
     files: list[str]  # Filenames in this level
 
 
 class ParallelBuildPlan(BaseModel):
     """Files organized into dependency levels for ordered generation."""
+
     levels: list[FileLevel] = Field(default_factory=list)
     total_files: int = 0
 
@@ -146,6 +148,7 @@ def _resolve_level_from_deps(
 
 
 # ── Plan builders ────────────────────────────────────────────────────────────
+
 
 def build_plan_from_manifest(manifest) -> ParallelBuildPlan:
     """Build a ParallelBuildPlan from a FileManifestPlan.

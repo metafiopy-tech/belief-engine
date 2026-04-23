@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 # Package evaluation
 # ---------------------------------------------------------------------------
 
+
 class PackageSource(str, Enum):
     PYPI = "pypi"
     NPM = "npm"
@@ -37,6 +38,7 @@ class PackageSource(str, Enum):
 @dataclass
 class PackageCandidate:
     """A candidate package found during research."""
+
     name: str
     source: PackageSource = PackageSource.PYPI
     version: Optional[str] = None
@@ -61,6 +63,7 @@ class PackageCandidate:
         - Maintained (20 points)
         """
         import math
+
         dl_score = min(30, math.log10(max(self.downloads_monthly, 1)) * 5)
         rank_score = min(30, self.source_rank)
         star_score = min(20, math.log10(max(self.stars, 1)) * 5)
@@ -74,54 +77,94 @@ class PackageCandidate:
 
 WELL_KNOWN_PACKAGES: dict[str, PackageCandidate] = {
     "fastapi": PackageCandidate(
-        name="fastapi", description="Modern web framework for APIs",
-        downloads_monthly=20_000_000, stars=70000, source_rank=28,
-        license="MIT", maintained=True,
+        name="fastapi",
+        description="Modern web framework for APIs",
+        downloads_monthly=20_000_000,
+        stars=70000,
+        source_rank=28,
+        license="MIT",
+        maintained=True,
     ),
     "httpx": PackageCandidate(
-        name="httpx", description="Async HTTP client",
-        downloads_monthly=15_000_000, stars=12000, source_rank=25,
-        license="BSD-3", maintained=True,
+        name="httpx",
+        description="Async HTTP client",
+        downloads_monthly=15_000_000,
+        stars=12000,
+        source_rank=25,
+        license="BSD-3",
+        maintained=True,
     ),
     "pydantic": PackageCandidate(
-        name="pydantic", description="Data validation using Python type annotations",
-        downloads_monthly=50_000_000, stars=18000, source_rank=30,
-        license="MIT", maintained=True,
+        name="pydantic",
+        description="Data validation using Python type annotations",
+        downloads_monthly=50_000_000,
+        stars=18000,
+        source_rank=30,
+        license="MIT",
+        maintained=True,
     ),
     "fastmcp": PackageCandidate(
-        name="fastmcp", description="Fast MCP server framework",
-        downloads_monthly=100_000, stars=2000, source_rank=15,
-        license="MIT", maintained=True,
+        name="fastmcp",
+        description="Fast MCP server framework",
+        downloads_monthly=100_000,
+        stars=2000,
+        source_rank=15,
+        license="MIT",
+        maintained=True,
     ),
     "uvicorn": PackageCandidate(
-        name="uvicorn", description="ASGI server",
-        downloads_monthly=20_000_000, stars=7000, source_rank=26,
-        license="BSD-3", maintained=True,
+        name="uvicorn",
+        description="ASGI server",
+        downloads_monthly=20_000_000,
+        stars=7000,
+        source_rank=26,
+        license="BSD-3",
+        maintained=True,
     ),
     "sqlalchemy": PackageCandidate(
-        name="sqlalchemy", description="SQL toolkit and ORM",
-        downloads_monthly=30_000_000, stars=8000, source_rank=29,
-        license="MIT", maintained=True,
+        name="sqlalchemy",
+        description="SQL toolkit and ORM",
+        downloads_monthly=30_000_000,
+        stars=8000,
+        source_rank=29,
+        license="MIT",
+        maintained=True,
     ),
     "celery": PackageCandidate(
-        name="celery", description="Distributed task queue",
-        downloads_monthly=10_000_000, stars=23000, source_rank=27,
-        license="BSD-3", maintained=True,
+        name="celery",
+        description="Distributed task queue",
+        downloads_monthly=10_000_000,
+        stars=23000,
+        source_rank=27,
+        license="BSD-3",
+        maintained=True,
     ),
     "beautifulsoup4": PackageCandidate(
-        name="beautifulsoup4", description="HTML/XML parser",
-        downloads_monthly=25_000_000, stars=0, source_rank=24,
-        license="MIT", maintained=True,
+        name="beautifulsoup4",
+        description="HTML/XML parser",
+        downloads_monthly=25_000_000,
+        stars=0,
+        source_rank=24,
+        license="MIT",
+        maintained=True,
     ),
     "scrapy": PackageCandidate(
-        name="scrapy", description="Web scraping framework",
-        downloads_monthly=5_000_000, stars=50000, source_rank=26,
-        license="BSD-3", maintained=True,
+        name="scrapy",
+        description="Web scraping framework",
+        downloads_monthly=5_000_000,
+        stars=50000,
+        source_rank=26,
+        license="BSD-3",
+        maintained=True,
     ),
     "pytest": PackageCandidate(
-        name="pytest", description="Testing framework",
-        downloads_monthly=50_000_000, stars=11000, source_rank=30,
-        license="MIT", maintained=True,
+        name="pytest",
+        description="Testing framework",
+        downloads_monthly=50_000_000,
+        stars=11000,
+        source_rank=30,
+        license="MIT",
+        maintained=True,
     ),
 }
 
@@ -157,15 +200,17 @@ def evaluate_package(name: str, api_result: Optional[dict] = None) -> Optional[P
 # Composition decision
 # ---------------------------------------------------------------------------
 
+
 class ComponentStrategy(str, Enum):
-    USE_LIBRARY = "use_library"      # Use existing package
-    GENERATE = "generate"            # Generate from scratch
-    WRAP_LIBRARY = "wrap_library"    # Use library + generate wrapper
+    USE_LIBRARY = "use_library"  # Use existing package
+    GENERATE = "generate"  # Generate from scratch
+    WRAP_LIBRARY = "wrap_library"  # Use library + generate wrapper
 
 
 @dataclass
 class ComponentDecision:
     """Decision for a single component: use library or generate."""
+
     component_name: str
     strategy: ComponentStrategy
     package: Optional[PackageCandidate] = None
@@ -228,15 +273,18 @@ def decide_component_strategy(
 # Composition Planner
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CompositionPlan:
     """Complete plan of what to build vs what to reuse."""
+
     decisions: list[ComponentDecision] = field(default_factory=list)
 
     @property
     def libraries_to_install(self) -> list[str]:
         return [
-            d.package.name for d in self.decisions
+            d.package.name
+            for d in self.decisions
             if d.strategy in (ComponentStrategy.USE_LIBRARY, ComponentStrategy.WRAP_LIBRARY)
             and d.package
         ]
@@ -244,7 +292,8 @@ class CompositionPlan:
     @property
     def components_to_generate(self) -> list[str]:
         return [
-            d.component_name for d in self.decisions
+            d.component_name
+            for d in self.decisions
             if d.strategy in (ComponentStrategy.GENERATE, ComponentStrategy.WRAP_LIBRARY)
         ]
 
@@ -254,7 +303,9 @@ class CompositionPlan:
         gen = [d for d in self.decisions if d.strategy == ComponentStrategy.GENERATE]
         return (
             f"Composition Plan: {len(use)} use-library, {len(wrap)} wrap-library, {len(gen)} generate\n"
-            + "\n".join(f"  {d.component_name}: {d.strategy.value} — {d.reason}" for d in self.decisions)
+            + "\n".join(
+                f"  {d.component_name}: {d.strategy.value} — {d.reason}" for d in self.decisions
+            )
         )
 
 

@@ -50,12 +50,14 @@ try:  # pragma: no cover - import-time toggle
         stop_after_attempt,
         wait_exponential_jitter,
     )
+
     _TENACITY_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _TENACITY_AVAILABLE = False
 
 try:  # pragma: no cover - import-time toggle
     import pybreaker  # type: ignore
+
     _PYBREAKER_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PYBREAKER_AVAILABLE = False
@@ -73,7 +75,7 @@ ROLE_BUDGETS: dict[str, float] = {
     "intake": 60.0,
     "research": 180.0,
     "planner": 120.0,
-    "architect": 600.0,   # largest — most complex output
+    "architect": 600.0,  # largest — most complex output
     "builder": 300.0,
     "debugger": 180.0,
     "tester": 120.0,
@@ -94,8 +96,8 @@ ROLE_BUDGETS: dict[str, float] = {
 # against the next resident model.  The cloud-only tier is handled by
 # LLMClient._call_with_role (it already tracks the fallback counter).
 GRACEFUL_DEGRADATION_CASCADE: list[str] = [
-    "qwen2.5-coder:14b",   # primary
-    "qwen2.5-coder:7b",    # fallback_1 (resident per OLLAMA_MAX_LOADED_MODELS=2)
+    "qwen2.5-coder:14b",  # primary
+    "qwen2.5-coder:7b",  # fallback_1 (resident per OLLAMA_MAX_LOADED_MODELS=2)
     # fallback_2 is cloud Anthropic Haiku — LLMClient handles that path.
 ]
 
@@ -114,11 +116,11 @@ GRACEFUL_DEGRADATION_CASCADE: list[str] = [
 # prefix gives the ~18x TTFT speedup the research report describes.
 # DO NOT lower num_keep below the longest system prompt length in tokens.
 _SESSION1_OPTION_DEFAULTS: dict[str, Any] = {
-    "num_gpu": 99,           # offload all layers to GPU on Metal
-    "num_thread": 6,         # M2 Air has 4 perf + 4 efficiency cores
-    "num_batch": 256,        # batch size for prompt eval
-    "num_keep": 512,         # KV-cache pin for system-prompt prefix
-    "mirostat": 0,           # greedy sampling — predictable throughput
+    "num_gpu": 99,  # offload all layers to GPU on Metal
+    "num_thread": 6,  # M2 Air has 4 perf + 4 efficiency cores
+    "num_batch": 256,  # batch size for prompt eval
+    "num_keep": 512,  # KV-cache pin for system-prompt prefix
+    "mirostat": 0,  # greedy sampling — predictable throughput
     # repeat_penalty is set by local_models.py per model; 1.05 is the
     # session-1 default only when the model config doesn't specify one.
 }
@@ -232,9 +234,7 @@ def _classify_ollama_error(status_code: int, body_text: str) -> OllamaError:
             f"Ollama rejected request (HTTP {status_code}): {body_text[:300]}"
         )
     # 5xx, 429, etc. are transient — retry may succeed.
-    return OllamaTransientError(
-        f"Ollama transient error (HTTP {status_code}): {body_text[:300]}"
-    )
+    return OllamaTransientError(f"Ollama transient error (HTTP {status_code}): {body_text[:300]}")
 
 
 async def health_ok(base_url: str = "http://localhost:11434", timeout_s: float = 5.0) -> bool:
@@ -251,6 +251,7 @@ async def health_ok(base_url: str = "http://localhost:11434", timeout_s: float =
             return r.status_code == 200
     except Exception:
         return False
+
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -358,6 +359,7 @@ class AsyncOllamaClient:
         # unless overridden by kwargs or env vars.  Unknown models fall
         # back to the conservative DEFAULT_LOCAL_MODEL_CONFIG.
         from belief.config.local_models import get_model_config
+
         model_config = get_model_config(model)
         self._model_config = model_config
 
@@ -368,9 +370,7 @@ class AsyncOllamaClient:
         elif env_keep_alive:
             self.keep_alive = env_keep_alive
         else:
-            self.keep_alive = str(
-                model_config.get("keep_alive", self._DEFAULT_KEEP_ALIVE)
-            )
+            self.keep_alive = str(model_config.get("keep_alive", self._DEFAULT_KEEP_ALIVE))
 
         env_num_ctx = os.environ.get("BELIEF_OLLAMA_NUM_CTX", "").strip()
         if num_ctx is not None:
@@ -417,14 +417,10 @@ class AsyncOllamaClient:
                 # Session-1 default: unbounded read so the per-chunk
                 # watchdog owns stall detection; short connect/write
                 # so a dead Ollama fails in <10s instead of 300.
-                timeout_arg: Any = httpx.Timeout(
-                    connect=10.0, read=None, write=10.0, pool=10.0
-                )
+                timeout_arg: Any = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
             else:
                 timeout_arg = self._timeout
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url, timeout=timeout_arg
-            )
+            self._client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout_arg)
         return self._client
 
     async def close(self) -> None:
@@ -596,13 +592,9 @@ class AsyncOllamaClient:
         # is disabled or unavailable.
         use_stream = self._stream and hasattr(client, "stream")
         if not use_stream:
-            return await self._generate_post(
-                client, target_model, payload_messages, options
-            )
+            return await self._generate_post(client, target_model, payload_messages, options)
 
-        return await self._generate_stream(
-            client, target_model, payload_messages, options
-        )
+        return await self._generate_stream(client, target_model, payload_messages, options)
 
     async def _generate_post(
         self,
@@ -651,12 +643,8 @@ class AsyncOllamaClient:
 
         data = resp.json()
         text = (data.get("message") or {}).get("content", "") or ""
-        system_txt = next(
-            (m["content"] for m in messages if m.get("role") == "system"), ""
-        )
-        user_txt = next(
-            (m["content"] for m in messages if m.get("role") == "user"), ""
-        )
+        system_txt = next((m["content"] for m in messages if m.get("role") == "system"), "")
+        user_txt = next((m["content"] for m in messages if m.get("role") == "user"), "")
         in_tokens = int(
             data.get("prompt_eval_count") or _estimate_tokens(f"{system_txt} {user_txt}")
         )
@@ -706,9 +694,7 @@ class AsyncOllamaClient:
         eval_count = 0
 
         try:
-            async with client.stream(
-                "POST", "/api/chat", json=payload
-            ) as response:
+            async with client.stream("POST", "/api/chat", json=payload) as response:
                 status_code = response.status_code
                 if 400 <= status_code < 600:
                     # Read the body so we can classify it.
@@ -720,9 +706,7 @@ class AsyncOllamaClient:
                                 break
                     except Exception:
                         pass
-                    raise _classify_ollama_error(
-                        status_code, body_bytes.decode(errors="replace")
-                    )
+                    raise _classify_ollama_error(status_code, body_bytes.decode(errors="replace"))
 
                 aiter = response.aiter_lines()
                 while True:
@@ -735,8 +719,7 @@ class AsyncOllamaClient:
                         break
                     except asyncio.TimeoutError as e:
                         logger.warning(
-                            "Ollama stream stalled after %.0fs on %s — "
-                            "requesting runner unload",
+                            "Ollama stream stalled after %.0fs on %s — requesting runner unload",
                             self.inactivity_s,
                             target_model,
                         )
@@ -778,12 +761,8 @@ class AsyncOllamaClient:
             raise OllamaTransientError(f"timeout during stream: {e}") from e
 
         text = "".join(chunks)
-        system_txt = next(
-            (m["content"] for m in messages if m.get("role") == "system"), ""
-        )
-        user_txt = next(
-            (m["content"] for m in messages if m.get("role") == "user"), ""
-        )
+        system_txt = next((m["content"] for m in messages if m.get("role") == "system"), "")
+        user_txt = next((m["content"] for m in messages if m.get("role") == "user"), "")
         in_tokens = prompt_eval_count or _estimate_tokens(f"{system_txt} {user_txt}")
         out_tokens = eval_count or _estimate_tokens(text)
         return {
@@ -870,6 +849,7 @@ class LLMClient:
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             from belief.config.settings import settings
+
             self._client = httpx.AsyncClient(
                 timeout=120.0,
                 headers={
@@ -957,9 +937,7 @@ class LLMClient:
                     # logged at WARNING because the cloud call is
                     # unlikely to succeed either, but we still try.
                     log_level = (
-                        logging.ERROR
-                        if isinstance(e, OllamaPermanentError)
-                        else logging.WARNING
+                        logging.ERROR if isinstance(e, OllamaPermanentError) else logging.WARNING
                     )
                     logger.log(
                         log_level,
@@ -991,11 +969,18 @@ class LLMClient:
         )
         return data, cloud_model, "cloud"
 
-    def _record_usage(self, role: str, model: str,
-                      prompt_tokens: int, completion_tokens: int,
-                      cache_read_tokens: int = 0, cache_create_tokens: int = 0) -> None:
-        cost = _cost_usd(model, prompt_tokens, completion_tokens,
-                         cache_read_tokens, cache_create_tokens)
+    def _record_usage(
+        self,
+        role: str,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_create_tokens: int = 0,
+    ) -> None:
+        cost = _cost_usd(
+            model, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens
+        )
         usage = _usage_ctx.get()
         if usage is not None:
             usage.add_call(role, prompt_tokens, completion_tokens, cost)
@@ -1008,8 +993,14 @@ class LLMClient:
             f"tokens={prompt_tokens}+{completion_tokens}{cache_info} cost=${cost:.4f}"
         )
 
-    async def _call(self, model: str, system: str, messages: list[dict],
-                    max_tokens: int = 4096, temperature: float = 0.3) -> dict:
+    async def _call(
+        self,
+        model: str,
+        system: str,
+        messages: list[dict],
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+    ) -> dict:
         """Raw API call. Returns the full response dict.
 
         Uses prompt caching on system prompts for 90% input cost reduction.
@@ -1071,7 +1062,8 @@ class LLMClient:
         role_str = role.value if isinstance(role, ModelRole) else role
 
         data, model, backend = await self._call_with_role(
-            role, system,
+            role,
+            system,
             [{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=temperature,
@@ -1086,7 +1078,8 @@ class LLMClient:
         if backend == "cloud":
             usage = data.get("usage", {})
             self._record_usage(
-                role_str, model,
+                role_str,
+                model,
                 usage.get("input_tokens", 0),
                 usage.get("output_tokens", 0),
                 usage.get("cache_read_input_tokens", 0),
@@ -1121,7 +1114,8 @@ class LLMClient:
         )
 
         data, model, backend = await self._call_with_role(
-            role, augmented_system,
+            role,
+            augmented_system,
             [{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=temperature,
@@ -1133,7 +1127,8 @@ class LLMClient:
         if backend == "cloud":
             usage = data.get("usage", {})
             self._record_usage(
-                role_str, model,
+                role_str,
+                model,
                 usage.get("input_tokens", 0),
                 usage.get("output_tokens", 0),
                 usage.get("cache_read_input_tokens", 0),
@@ -1193,7 +1188,7 @@ def _parse_structured(raw: str, schema: Type[T]) -> T:
         elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                json_str = text[brace_start: i + 1]
+                json_str = text[brace_start : i + 1]
                 break
 
     if json_str:
@@ -1319,7 +1314,7 @@ def _convert_single_to_double_quotes(text: str) -> str:
                     break
                 j += 1
             if j < len(text):
-                inner = text[i + 1: j]
+                inner = text[i + 1 : j]
                 # Escape any embedded double-quotes
                 inner = inner.replace("\\'", "'").replace('"', '\\"')
                 out.append('"')
@@ -1339,9 +1334,7 @@ def _convert_single_to_double_quotes(text: str) -> str:
 
 
 # Regex for unquoted keys — matches `{ foo: ` or `, bar: ` and adds quotes
-_UNQUOTED_KEY_RE = re.compile(
-    r'(?P<sep>[{,]\s*)(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*:'
-)
+_UNQUOTED_KEY_RE = re.compile(r"(?P<sep>[{,]\s*)(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*:")
 
 
 def _quote_unquoted_keys(text: str) -> str:
@@ -1351,6 +1344,7 @@ def _quote_unquoted_keys(text: str) -> str:
     to the outside-string parts so apostrophes / colons inside strings
     aren't mistaken for keys.
     """
+
     def _process_chunk(chunk: str) -> str:
         return _UNQUOTED_KEY_RE.sub(r'\g<sep>"\g<key>":', chunk)
 
@@ -1370,7 +1364,7 @@ def _quote_unquoted_keys(text: str) -> str:
             elif c == '"':
                 in_str = False
                 # String just closed; flush from buf_start..i+1 verbatim
-                pieces.append(text[buf_start: i + 1])
+                pieces.append(text[buf_start : i + 1])
                 buf_start = i + 1
             i += 1
             continue
@@ -1415,7 +1409,7 @@ def _strip_trailing_commas(text: str) -> str:
                 escape = True
             elif c == '"':
                 in_str = False
-                pieces.append(text[buf_start: i + 1])
+                pieces.append(text[buf_start : i + 1])
                 buf_start = i + 1
             i += 1
             continue
@@ -1485,14 +1479,9 @@ def _regex_extract_fields(text: str, schema: Type[BaseModel]) -> dict | None:
                 break
 
     # Were any required fields missed? If so, don't return a partial.
-    missing_required = [
-        n for n, f in fields.items()
-        if n not in salvaged and f.is_required()
-    ]
+    missing_required = [n for n, f in fields.items() if n not in salvaged and f.is_required()]
     if missing_required:
-        logger.debug(
-            f"regex salvage missing required fields: {missing_required}"
-        )
+        logger.debug(f"regex salvage missing required fields: {missing_required}")
         return None
 
     return salvaged if salvaged else None
@@ -1500,7 +1489,7 @@ def _regex_extract_fields(text: str, schema: Type[BaseModel]) -> dict | None:
 
 def _repair_json(text: str) -> str | None:
     """Repair truncated JSON by closing unclosed brackets and braces.
-    
+
     Strategy: walk the JSON tracking the stack of open delimiters.
     When we find the text is truncated, roll back to the last position
     where the JSON was structurally valid, then close the remaining stack.
@@ -1530,17 +1519,17 @@ def _repair_json(text: str) -> str | None:
             continue
 
         # Outside strings
-        if c == '{':
-            stack.append('}')
-        elif c == '[':
-            stack.append(']')
-        elif c in ('}', ']'):
+        if c == "{":
+            stack.append("}")
+        elif c == "[":
+            stack.append("]")
+        elif c in ("}", "]"):
             if stack and stack[-1] == c:
                 stack.pop()
             last_complete = i + 1
-        elif c == ',':
+        elif c == ",":
             last_complete = i
-        elif c == ':':
+        elif c == ":":
             pass  # After a key, before a value
 
     # If we ended inside a string, roll back to last complete position
@@ -1554,7 +1543,7 @@ def _repair_json(text: str) -> str | None:
             if esc:
                 esc = False
                 continue
-            if c == '\\':
+            if c == "\\":
                 if in_str:
                     esc = True
                 continue
@@ -1563,20 +1552,20 @@ def _repair_json(text: str) -> str | None:
                 continue
             if in_str:
                 continue
-            if c == '{':
-                stack.append('}')
-            elif c == '[':
-                stack.append(']')
-            elif c in ('}', ']'):
+            if c == "{":
+                stack.append("}")
+            elif c == "[":
+                stack.append("]")
+            elif c in ("}", "]"):
                 if stack and stack[-1] == c:
                     stack.pop()
 
     # Remove trailing comma
     s = s.rstrip()
-    if s and s[-1] == ',':
+    if s and s[-1] == ",":
         s = s[:-1]
 
     # Close the stack in reverse order (innermost first)
-    s += ''.join(reversed(stack))
+    s += "".join(reversed(stack))
 
     return s if s else None

@@ -12,6 +12,7 @@ from belief.prompts import TESTER_SYSTEM, TESTER_PROMPT
 
 logger = logging.getLogger("belief.agents.tester")
 
+
 class TesterAgent(BaseAgent):
     role = ModelRole.TESTER
     name = "Tester"
@@ -37,12 +38,13 @@ class TesterAgent(BaseAgent):
             skeleton = state.skeleton_artifact
             if skeleton:
                 from belief.models.skeleton import SkeletonArtifact
+
                 if isinstance(skeleton, dict):
                     try:
                         skeleton = SkeletonArtifact.model_validate(skeleton)
                     except Exception:
                         skeleton = None
-                if skeleton and hasattr(skeleton, 'format_contract'):
+                if skeleton and hasattr(skeleton, "format_contract"):
                     contract = skeleton.format_contract()
                     if contract:
                         contract_context = f"\n{contract}\n"
@@ -69,14 +71,19 @@ class TesterAgent(BaseAgent):
 
             prompt = TESTER_PROMPT.format(
                 goal=spec.goal,
-                acceptance_criteria="\n".join(f"  {i}. {c}" for i, c in enumerate(spec.acceptance_criteria, 1)),
+                acceptance_criteria="\n".join(
+                    f"  {i}. {c}" for i, c in enumerate(spec.acceptance_criteria, 1)
+                ),
                 code_files=code_context + contract_context,
                 test_count=test_count,
                 countdown_markers=countdown_markers,
             )
             raw = await llm.generate_text(
-                role=self.role, system=TESTER_SYSTEM, prompt=prompt,
-                temperature=0.2, complexity=state.complexity_score,
+                role=self.role,
+                system=TESTER_SYSTEM,
+                prompt=prompt,
+                temperature=0.2,
+                complexity=state.complexity_score,
             )
             # Parse ###FILE: format
             test_files = _parse_test_files(raw)
@@ -116,12 +123,12 @@ class TesterAgent(BaseAgent):
         # 1. Repo map — definitive list of what's importable (Move 4)
         try:
             from belief.agents.repo_map import RepoMap
+
             repo_map = RepoMap.from_code_files(state.code_files)
             overview = repo_map.format_overview(max_tokens=2000)
             if overview:
                 parts.append(
-                    "## PROJECT API MAP (these are the ONLY importable symbols)\n"
-                    f"{overview}"
+                    f"## PROJECT API MAP (these are the ONLY importable symbols)\n{overview}"
                 )
         except Exception as e:
             logger.debug(f"Repo map failed in tester: {e}")
@@ -143,7 +150,9 @@ class TesterAgent(BaseAgent):
             if len(c) <= 3000:
                 parts.append(f"--- {f} ---\n{c}")
             else:
-                parts.append(f"--- {f} ({len(c)} chars, truncated) ---\n{c[:2000]}\n... (truncated)")
+                parts.append(
+                    f"--- {f} ({len(c)} chars, truncated) ---\n{c[:2000]}\n... (truncated)"
+                )
 
         return "\n\n".join(parts)
 
@@ -215,10 +224,21 @@ class TesterAgent(BaseAgent):
             # fixture that needs a conftest.py. Previous approach used a whitelist
             # which missed db_session, test_client, api_client, sample_data, etc.
             _PYTEST_BUILTINS = {
-                "self", "request", "tmp_path", "tmpdir", "monkeypatch",
-                "capsys", "capfd", "caplog", "pytestconfig", "cache",
-                "record_property", "record_testsuite_property", "recwarn",
-                "tmp_path_factory", "tmpdir_factory",
+                "self",
+                "request",
+                "tmp_path",
+                "tmpdir",
+                "monkeypatch",
+                "capsys",
+                "capfd",
+                "caplog",
+                "pytestconfig",
+                "cache",
+                "record_property",
+                "record_testsuite_property",
+                "recwarn",
+                "tmp_path_factory",
+                "tmpdir_factory",
             }
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -231,7 +251,8 @@ class TesterAgent(BaseAgent):
             # Check for imports from non-existent local modules
             source_modules = {
                 f.replace("/", ".").replace(".py", "").split(".")[-1]
-                for f in code_files if f.endswith(".py")
+                for f in code_files
+                if f.endswith(".py")
             }
             source_modules.add("conftest")  # Will be generated if needed
 
@@ -245,16 +266,24 @@ class TesterAgent(BaseAgent):
             processed[fname] = content
 
         # Generate conftest.py if tests need fixtures
-        if needs_conftest and "conftest.py" not in processed and "tests/conftest.py" not in processed:
+        if (
+            needs_conftest
+            and "conftest.py" not in processed
+            and "tests/conftest.py" not in processed
+        ):
             conftest = self._generate_conftest(conftest_imports, code_files)
 
             # Always generate at root level — pytest discovers fixtures from conftest.py
             # in the rootdir regardless of where test files live
             processed["conftest.py"] = conftest
-            logger.info(f"Tester: generated conftest.py with fixtures: {', '.join(sorted(conftest_imports))}")
+            logger.info(
+                f"Tester: generated conftest.py with fixtures: {', '.join(sorted(conftest_imports))}"
+            )
 
             # Also generate in tests/ subdir if tests live there
-            test_dirs = {fname.split("/")[0] for fname in processed if "/" in fname and fname.endswith(".py")}
+            test_dirs = {
+                fname.split("/")[0] for fname in processed if "/" in fname and fname.endswith(".py")
+            }
             for d in test_dirs:
                 if d.startswith("test"):
                     subdir_path = f"{d}/conftest.py"
@@ -270,23 +299,27 @@ class TesterAgent(BaseAgent):
 
         return processed
 
-    def _generate_conftest(
-        self, needed_fixtures: set[str], code_files: dict[str, str]
-    ) -> str:
+    def _generate_conftest(self, needed_fixtures: set[str], code_files: dict[str, str]) -> str:
         """Generate a conftest.py with commonly needed fixtures."""
-        lines = ['"""Auto-generated conftest.py with shared test fixtures."""', "",
-                 "import pytest", ""]
+        lines = [
+            '"""Auto-generated conftest.py with shared test fixtures."""',
+            "",
+            "import pytest",
+            "",
+        ]
 
         # Detect if it's a FastAPI project
         is_fastapi = any("FastAPI" in c or "fastapi" in c for c in code_files.values())
         is_click = any("click" in c or "Click" in c for c in code_files.values())
 
         if is_fastapi:
-            lines.extend([
-                "from fastapi.testclient import TestClient",
-                "",
-                "# Import the app — adjust path if needed",
-            ])
+            lines.extend(
+                [
+                    "from fastapi.testclient import TestClient",
+                    "",
+                    "# Import the app — adjust path if needed",
+                ]
+            )
             # Find the app
             for fname, content in code_files.items():
                 if "app = FastAPI" in content or "app=FastAPI" in content:
@@ -296,71 +329,78 @@ class TesterAgent(BaseAgent):
             else:
                 lines.append("from main import app")
 
-            lines.extend([
-                "",
-                "",
-                "@pytest.fixture",
-                "def client():",
-                '    """Test client for FastAPI app."""',
-                "    with TestClient(app) as c:",
-                "        yield c",
-                "",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "",
+                    "@pytest.fixture",
+                    "def client():",
+                    '    """Test client for FastAPI app."""',
+                    "    with TestClient(app) as c:",
+                    "        yield c",
+                    "",
+                ]
+            )
 
         if is_click:
-            lines.extend([
-                "from click.testing import CliRunner",
-                "",
-                "",
-                "@pytest.fixture",
-                "def runner():",
-                '    """Click CLI test runner."""',
-                "    return CliRunner()",
-                "",
-            ])
+            lines.extend(
+                [
+                    "from click.testing import CliRunner",
+                    "",
+                    "",
+                    "@pytest.fixture",
+                    "def runner():",
+                    '    """Click CLI test runner."""',
+                    "    return CliRunner()",
+                    "",
+                ]
+            )
             # Find the CLI entry point — the function decorated with @click.group/@click.command
             for fname, content in code_files.items():
                 if "@click.group" in content or "@click.command" in content:
                     module = fname.replace("/", ".").replace(".py", "")
                     # Find the function name that follows a Click decorator
                     import re
+
                     # Match: @click.group() or @click.command() followed by def func_name(
                     match = re.search(
-                        r'@click\.(?:group|command)\s*\([^)]*\)\s*\n\s*def\s+(\w+)\s*\(',
+                        r"@click\.(?:group|command)\s*\([^)]*\)\s*\n\s*def\s+(\w+)\s*\(",
                         content,
                     )
                     if not match:
                         # Fallback: @cli.command or @app.command pattern
                         match = re.search(
-                            r'@\w+\.(?:group|command)\s*\([^)]*\)\s*\n\s*def\s+(\w+)\s*\(',
+                            r"@\w+\.(?:group|command)\s*\([^)]*\)\s*\n\s*def\s+(\w+)\s*\(",
                             content,
                         )
                     if not match:
                         # Last resort: look for common CLI names
                         for name in ("cli", "main", "app"):
                             if f"def {name}(" in content:
-                                match = re.search(rf'def\s+({name})\s*\(', content)
+                                match = re.search(rf"def\s+({name})\s*\(", content)
                                 break
                     if match:
                         func_name = match.group(1)
-                        lines.extend([
-                            f"from {module} import {func_name}",
-                            "",
-                            "",
-                            "@pytest.fixture",
-                            "def run_cli(runner):",
-                            '    """Helper to invoke CLI commands."""',
-                            "    def _run(*args):",
-                            f"        return runner.invoke({func_name}, args)",
-                            "    return _run",
-                            "",
-                            "",
-                            "@pytest.fixture",
-                            "def cli_app():",
-                            '    """The Click app object for direct invocation."""',
-                            f"    return {func_name}",
-                            "",
-                        ])
+                        lines.extend(
+                            [
+                                f"from {module} import {func_name}",
+                                "",
+                                "",
+                                "@pytest.fixture",
+                                "def run_cli(runner):",
+                                '    """Helper to invoke CLI commands."""',
+                                "    def _run(*args):",
+                                f"        return runner.invoke({func_name}, args)",
+                                "    return _run",
+                                "",
+                                "",
+                                "@pytest.fixture",
+                                "def cli_app():",
+                                '    """The Click app object for direct invocation."""',
+                                f"    return {func_name}",
+                                "",
+                            ]
+                        )
                     break
 
         # Add any other needed fixtures — generate smart stubs based on name patterns
@@ -376,104 +416,155 @@ class TesterAgent(BaseAgent):
             if "db" in fixture_lower or "session" in fixture_lower:
                 # Database session fixture
                 if is_fastapi:
-                    lines.extend([
-                        "@pytest.fixture",
-                        f"def {fixture}():",
-                        '    """Database session for testing."""',
-                        "    from database import SessionLocal, init_db, engine, Base",
-                        "    Base.metadata.create_all(bind=engine)",
-                        "    db = SessionLocal()",
-                        "    try:",
-                        "        yield db",
-                        "    finally:",
-                        "        db.close()",
-                        "        Base.metadata.drop_all(bind=engine)",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            "@pytest.fixture",
+                            f"def {fixture}():",
+                            '    """Database session for testing."""',
+                            "    from database import SessionLocal, init_db, engine, Base",
+                            "    Base.metadata.create_all(bind=engine)",
+                            "    db = SessionLocal()",
+                            "    try:",
+                            "        yield db",
+                            "    finally:",
+                            "        db.close()",
+                            "        Base.metadata.drop_all(bind=engine)",
+                            "",
+                        ]
+                    )
                 else:
-                    lines.extend([
-                        "@pytest.fixture",
-                        f"def {fixture}():",
-                        '    """Database session stub."""',
-                        "    yield None  # TODO: implement with real DB session",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            "@pytest.fixture",
+                            f"def {fixture}():",
+                            '    """Database session stub."""',
+                            "    yield None  # TODO: implement with real DB session",
+                            "",
+                        ]
+                    )
             elif "client" in fixture_lower or "api" in fixture_lower:
                 # API/test client variant
                 if is_fastapi:
-                    lines.extend([
-                        "@pytest.fixture",
-                        f"def {fixture}():",
-                        '    """Test client for the API."""',
-                        "    with TestClient(app) as c:",
-                        "        yield c",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            "@pytest.fixture",
+                            f"def {fixture}():",
+                            '    """Test client for the API."""',
+                            "    with TestClient(app) as c:",
+                            "        yield c",
+                            "",
+                        ]
+                    )
                 else:
-                    lines.extend([
-                        "@pytest.fixture",
-                        f"def {fixture}():",
-                        '    """Test client stub."""',
-                        "    yield None  # TODO: implement",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            "@pytest.fixture",
+                            f"def {fixture}():",
+                            '    """Test client stub."""',
+                            "    yield None  # TODO: implement",
+                            "",
+                        ]
+                    )
             elif "app" in fixture_lower:
                 # App instance fixture
                 if is_fastapi:
-                    lines.extend([
-                        "@pytest.fixture",
-                        f"def {fixture}():",
-                        '    """FastAPI app instance."""',
-                        "    return app",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            "@pytest.fixture",
+                            f"def {fixture}():",
+                            '    """FastAPI app instance."""',
+                            "    return app",
+                            "",
+                        ]
+                    )
                 else:
-                    lines.extend([
-                        "@pytest.fixture",
-                        f"def {fixture}():",
-                        '    """App instance stub."""',
-                        "    yield None  # TODO: implement",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            "@pytest.fixture",
+                            f"def {fixture}():",
+                            '    """App instance stub."""',
+                            "    yield None  # TODO: implement",
+                            "",
+                        ]
+                    )
             elif "cli" in fixture_lower or "invoke" in fixture_lower:
                 # CLI runner variant
                 if is_click:
-                    lines.extend([
-                        "@pytest.fixture",
-                        f"def {fixture}():",
-                        '    """CLI runner fixture."""',
-                        "    return CliRunner()",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            "@pytest.fixture",
+                            f"def {fixture}():",
+                            '    """CLI runner fixture."""',
+                            "    return CliRunner()",
+                            "",
+                        ]
+                    )
                 else:
-                    lines.extend([
-                        "@pytest.fixture",
-                        f"def {fixture}():",
-                        '    """CLI fixture stub."""',
-                        "    yield None  # TODO: implement",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            "@pytest.fixture",
+                            f"def {fixture}():",
+                            '    """CLI fixture stub."""',
+                            "    yield None  # TODO: implement",
+                            "",
+                        ]
+                    )
             else:
                 # Generic stub — at least yield something non-None
-                lines.extend([
-                    "@pytest.fixture",
-                    f"def {fixture}():",
-                    f'    """Auto-generated fixture for {fixture}."""',
-                    "    yield {}  # TODO: implement with real test data",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        "@pytest.fixture",
+                        f"def {fixture}():",
+                        f'    """Auto-generated fixture for {fixture}."""',
+                        "    yield {}  # TODO: implement with real test data",
+                        "",
+                    ]
+                )
 
         return "\n".join(lines)
 
 
 _KNOWN_PACKAGES = {
-    "pytest", "click", "fastapi", "pydantic", "sqlalchemy", "uvicorn",
-    "httpx", "starlette", "requests", "rich", "typer", "os", "sys",
-    "json", "pathlib", "datetime", "typing", "re", "tempfile", "unittest",
-    "collections", "functools", "dataclasses", "enum", "abc", "io",
-    "uuid", "hashlib", "time", "logging", "math", "random", "shutil",
-    "subprocess", "asyncio", "contextlib", "copy", "textwrap",
+    "pytest",
+    "click",
+    "fastapi",
+    "pydantic",
+    "sqlalchemy",
+    "uvicorn",
+    "httpx",
+    "starlette",
+    "requests",
+    "rich",
+    "typer",
+    "os",
+    "sys",
+    "json",
+    "pathlib",
+    "datetime",
+    "typing",
+    "re",
+    "tempfile",
+    "unittest",
+    "collections",
+    "functools",
+    "dataclasses",
+    "enum",
+    "abc",
+    "io",
+    "uuid",
+    "hashlib",
+    "time",
+    "logging",
+    "math",
+    "random",
+    "shutil",
+    "subprocess",
+    "asyncio",
+    "contextlib",
+    "copy",
+    "textwrap",
 }
+
 
 def _parse_test_files(raw: str) -> dict[str, str]:
     if "###FILE:" not in raw:
@@ -487,10 +578,14 @@ def _parse_test_files(raw: str) -> dict[str, str]:
         fname = part[:nl].strip()
         if not fname:
             continue
-        content = re.sub(r"###END\s*$", "", part[nl + 1:])
+        content = re.sub(r"###END\s*$", "", part[nl + 1 :])
         content = re.sub(r"^```[a-zA-Z]*\n?", "", content)
         content = re.sub(r"\n?```\s*$", "", content)
-        if os.path.basename(fname).startswith("test_") or "conftest" in fname or fname.endswith("__init__.py"):
+        if (
+            os.path.basename(fname).startswith("test_")
+            or "conftest" in fname
+            or fname.endswith("__init__.py")
+        ):
             files[fname] = content
     return files
 
@@ -572,13 +667,19 @@ def _filter_and_cap_tests(
                 tier = 2  # Default: P2 (edge case)
                 # Check for tier markers in the function or decorators
                 func_start = node.lineno - 1
-                func_end = node.end_lineno if hasattr(node, "end_lineno") and node.end_lineno else func_start + 10
-                func_lines = lines[func_start:min(func_end, len(lines))]
+                func_end = (
+                    node.end_lineno
+                    if hasattr(node, "end_lineno") and node.end_lineno
+                    else func_start + 10
+                )
+                func_lines = lines[func_start : min(func_end, len(lines))]
                 func_text = "\n".join(func_lines)
 
                 if "# P0" in func_text or "# p0" in func_text or "SMOKE" in func_text.upper():
                     tier = 0
-                elif "# P1" in func_text or "# p1" in func_text or "FUNCTIONAL" in func_text.upper():
+                elif (
+                    "# P1" in func_text or "# p1" in func_text or "FUNCTIONAL" in func_text.upper()
+                ):
                     tier = 1
 
                 # Import-bad files get deprioritized
@@ -621,7 +722,8 @@ def _filter_and_cap_tests(
 
         # Find all test function names in this file
         all_funcs_in_file = [
-            node.name for node in ast.walk(tree)
+            node.name
+            for node in ast.walk(tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name.startswith("test_")
         ]
@@ -720,8 +822,18 @@ def _cap_test_count(test_files: dict[str, str], max_tests_per_file: int = 20) ->
 
             # Check if we've reached a new top-level definition (end of dropped function)
             if skip_until_next_def:
-                if stripped and not stripped.startswith("#") and not line.startswith(" ") and not line.startswith("\t"):
-                    if stripped.startswith("def ") or stripped.startswith("async def ") or stripped.startswith("class ") or stripped.startswith("@"):
+                if (
+                    stripped
+                    and not stripped.startswith("#")
+                    and not line.startswith(" ")
+                    and not line.startswith("\t")
+                ):
+                    if (
+                        stripped.startswith("def ")
+                        or stripped.startswith("async def ")
+                        or stripped.startswith("class ")
+                        or stripped.startswith("@")
+                    ):
                         skip_until_next_def = False
                     else:
                         continue
@@ -731,7 +843,9 @@ def _cap_test_count(test_files: dict[str, str], max_tests_per_file: int = 20) ->
             new_lines.append(line)
 
         capped_content = "\n".join(new_lines)
-        logger.info(f"Tester: capped {fname} from {len(test_funcs)} to {max_tests_per_file} tests (dropped {len(drop)})")
+        logger.info(
+            f"Tester: capped {fname} from {len(test_funcs)} to {max_tests_per_file} tests (dropped {len(drop)})"
+        )
         capped[fname] = capped_content
 
     return capped
@@ -758,9 +872,12 @@ def _global_test_cap(test_files: dict[str, str], max_total: int = 14) -> dict[st
             continue
         try:
             tree = _ast.parse(content)
-            count = sum(1 for node in _ast.walk(tree)
-                       if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef))
-                       and node.name.startswith("test_"))
+            count = sum(
+                1
+                for node in _ast.walk(tree)
+                if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef))
+                and node.name.startswith("test_")
+            )
             file_test_counts.append((fname, count))
             total += count
         except SyntaxError:
@@ -783,7 +900,9 @@ def _global_test_cap(test_files: dict[str, str], max_total: int = 14) -> dict[st
             remaining -= count
         else:
             # Truncate this file to fit remaining budget
-            result[fname] = _cap_test_count({fname: test_files[fname]}, max_tests_per_file=remaining)[fname]
+            result[fname] = _cap_test_count(
+                {fname: test_files[fname]}, max_tests_per_file=remaining
+            )[fname]
             logger.info(f"Global cap: truncated {fname} from {count} to {remaining} tests")
             remaining = 0
 
@@ -793,5 +912,7 @@ def _global_test_cap(test_files: dict[str, str], max_total: int = 14) -> dict[st
             result[fname] = content
 
     dropped = total - max_total
-    logger.info(f"Global cap: {total} → {max_total} tests across {len(file_test_counts)} files (dropped {dropped})")
+    logger.info(
+        f"Global cap: {total} → {max_total} tests across {len(file_test_counts)} files (dropped {dropped})"
+    )
     return result

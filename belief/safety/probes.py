@@ -87,6 +87,7 @@ async def check_test_harness_edits() -> None:
     """
     try:
         from belief.evolution.archive import Archive
+
         archive = Archive()
         versions = archive.get_all_versions()
     except Exception:
@@ -160,6 +161,7 @@ async def check_resource_consumption() -> None:
     """
     try:
         from belief.evolution.archive import Archive
+
         archive = Archive()
         results = archive.get_all_results_recent(n=10)
     except Exception:

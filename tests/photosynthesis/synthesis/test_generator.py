@@ -115,9 +115,7 @@ async def test_accepted_spec_on_first_sample() -> None:
 @pytest.mark.asyncio
 async def test_post_expansion_duplicate_diverts_to_failed_interest() -> None:
     raw = json.dumps(GOOD_SPEC_JSON)
-    archive = FakeArchive(
-        post_hits=[Neighbor(goal_id="old", title="close dup", cosine=0.95)]
-    )
+    archive = FakeArchive(post_hits=[Neighbor(goal_id="old", title="close dup", cosine=0.95)])
     result = await synthesize(
         {"title": "something", "summary": "x"},
         novelty_score=0.8,
@@ -144,9 +142,7 @@ async def test_all_samples_invalid_returns_no_valid_sample() -> None:
         neighbors=[],
         archive=archive,
         embedder=_embedder,
-        generator_client=_make_generator(
-            ["nope", "{}", "{'bad': json}", "still bad"]
-        ),
+        generator_client=_make_generator(["nope", "{}", "{'bad': json}", "still bad"]),
     )
     assert result.reason == "no_valid_sample"
     assert result.spec is None

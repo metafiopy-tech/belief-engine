@@ -35,40 +35,31 @@ _IMPORT_TO_PACKAGE: Final[dict[str, str]] = {
     "cv2": "opencv-python",
     "PIL": "Pillow",
     "skimage": "scikit-image",
-    "fitz": "PyMuPDF",            # PyMuPDF docs routinely use "import fitz"
-
+    "fitz": "PyMuPDF",  # PyMuPDF docs routinely use "import fitz"
     # Machine learning / data
     "sklearn": "scikit-learn",
     "yaml": "PyYAML",
-
     # Web / scraping
     "bs4": "beautifulsoup4",
     "dotenv": "python-dotenv",
-
     # Auth / crypto
     "jwt": "PyJWT",
     "Crypto": "pycryptodome",
-
     # Databases
     "MySQLdb": "mysqlclient",
-
     # Docs & office
     "docx": "python-docx",
     "pptx": "python-pptx",
-    "xlrd": "xlrd",               # same, listed for completeness
-    "openpyxl": "openpyxl",       # same, listed so grep finds it
-
+    "xlrd": "xlrd",  # same, listed for completeness
+    "openpyxl": "openpyxl",  # same, listed so grep finds it
     # Messaging / RPC
     "grpc": "grpcio",
     "zmq": "pyzmq",
-
     # Community APIs with quirky package names
     "discord": "discord.py",
     "google.generativeai": "google-generativeai",
-
     # Attrs — the import is ``attr`` (historical), package is ``attrs``
     "attr": "attrs",
-
     # Qt binding libs (identity mappings but common source of confusion —
     # grep-find-friendly)
     "PyQt5": "PyQt5",

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from belief.repomap import RepoMap
 
@@ -26,12 +25,10 @@ def _fixture_repo(root: Path) -> None:
         "class Helper:\n    def method(self):\n        return foo()\n"
     )
     (root / "app.py").write_text(
-        "from helpers import foo\n\n"
-        "def main():\n    return foo() + foo() + foo()\n"
+        "from helpers import foo\n\ndef main():\n    return foo() + foo() + foo()\n"
     )
     (root / "bar.py").write_text(
-        "from helpers import foo\n\n"
-        "class Bar:\n    def run(self):\n        return foo()\n"
+        "from helpers import foo\n\nclass Bar:\n    def run(self):\n        return foo()\n"
     )
 
 
@@ -82,9 +79,9 @@ class TestPersonalization:
     def test_chat_fnames_biases_output(self, tmp_path: Path) -> None:
         _fixture_repo(tmp_path)
         rm = RepoMap(root=tmp_path, cache_dir=tmp_path / ".cache")
-        out_default = rm.get_ranked_tags_map(max_tokens=2000)
         out_biased = rm.get_ranked_tags_map(
-            chat_fnames=["bar.py"], max_tokens=2000,
+            chat_fnames=["bar.py"],
+            max_tokens=2000,
         )
         # Both outputs mention bar.py, but biased version should list
         # it at or near the top (before app.py).
@@ -107,7 +104,7 @@ class TestBudget:
     def test_tight_budget_truncates(self, tmp_path: Path) -> None:
         _fixture_repo(tmp_path)
         rm = RepoMap(root=tmp_path, cache_dir=tmp_path / ".cache")
-        tight = rm.get_ranked_tags_map(max_tokens=20)     # ~80 chars
+        tight = rm.get_ranked_tags_map(max_tokens=20)  # ~80 chars
         generous = rm.get_ranked_tags_map(max_tokens=2000)  # ~8000 chars
         assert len(tight) <= len(generous)
         # Tight should still return something non-empty.
@@ -137,16 +134,16 @@ class TestCache:
 
     def test_mtime_invalidates_cache(self, tmp_path: Path) -> None:
         import os
+
         _fixture_repo(tmp_path)
         cache_dir = tmp_path / ".cache"
         rm = RepoMap(root=tmp_path, cache_dir=cache_dir)
-        out1 = rm.get_ranked_tags_map(max_tokens=2000)
+        # Warm the cache (return value unused — we only care about the
+        # subsequent call, which should re-read after mtime bump).
+        rm.get_ranked_tags_map(max_tokens=2000)
         # Modify helpers.py — bump mtime + content.
         helpers = tmp_path / "helpers.py"
-        helpers.write_text(
-            "def foo():\n    return 99\n\n"
-            "def brand_new():\n    return 'hello'\n"
-        )
+        helpers.write_text("def foo():\n    return 99\n\ndef brand_new():\n    return 'hello'\n")
         # Ensure mtime actually changes (filesystem-resolution safe).
         now = helpers.stat().st_mtime + 2
         os.utime(helpers, (now, now))

@@ -39,7 +39,7 @@ class ExperimentResult:
     experiment_id: str
     challenge_id: str
     goal: str
-    condition: str          # "engine_cloud" | "engine_local" | "raw_local"
+    condition: str  # "engine_cloud" | "engine_local" | "raw_local"
     model: str
     passed: bool
     tests_passed: int
@@ -47,7 +47,7 @@ class ExperimentResult:
     weighted_score: float
     cost_usd: float
     time_seconds: float
-    soil_size: int          # builds in soil at time of run
+    soil_size: int  # builds in soil at time of run
     covenant_count: int
     tool_count: int
     error: Optional[str] = None
@@ -230,6 +230,7 @@ def get_engine_state() -> tuple[int, int, int]:
     try:
         from belief.config.settings import settings
         from belief.memory.store import BuildStore
+
         store = BuildStore(Path(settings.db_path).expanduser())
         soil_size = store.count()
         store.close()
@@ -239,6 +240,7 @@ def get_engine_state() -> tuple[int, int, int]:
     try:
         from belief.memory.soil import Soil
         from belief.memory.collections import CollectionName
+
         soil = Soil()
         # Count covenant entries in the belief_covenants collection
         col = soil.get_collection(CollectionName.COVENANTS)
@@ -250,6 +252,7 @@ def get_engine_state() -> tuple[int, int, int]:
     try:
         from belief.memory.soil import Soil
         from belief.memory.tool_registry import ToolRegistry
+
         soil = Soil()
         reg = ToolRegistry(soil)
         tool_count = len(reg.get_active_tools())
@@ -284,9 +287,7 @@ async def run_experiment(
         experiment_id
     """
     if experiment_id is None:
-        experiment_id = (
-            "exp-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        )
+        experiment_id = "exp-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     if conditions is None:
         conditions = list(_ALL_CONDITIONS)
 
@@ -302,8 +303,7 @@ async def run_experiment(
             (
                 experiment_id,
                 datetime.now(timezone.utc).isoformat(),
-                f"A/B test: {len(challenges)} challenge(s), "
-                f"conditions: {', '.join(conditions)}",
+                f"A/B test: {len(challenges)} challenge(s), conditions: {', '.join(conditions)}",
                 json.dumps([c["id"] for c in challenges]),
                 "running",
             ),

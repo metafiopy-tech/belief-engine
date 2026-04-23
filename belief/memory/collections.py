@@ -72,9 +72,7 @@ DEFAULT_COLLECTION = "belief_episodes"
 
 def get_or_create_collections(
     client: chromadb.Client,
-    embedding_fn: Optional[
-        Union[EmbeddingFunction, dict[str, EmbeddingFunction]]
-    ] = None,
+    embedding_fn: Optional[Union[EmbeddingFunction, dict[str, EmbeddingFunction]]] = None,
 ) -> dict[str, chromadb.Collection]:
     """Create or retrieve all 5 collections with cosine distance.
 

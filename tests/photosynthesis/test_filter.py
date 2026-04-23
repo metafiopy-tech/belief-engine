@@ -27,9 +27,7 @@ from belief.photosynthesis.filter.cascade import (
 @pytest.fixture()
 def keywords_file(tmp_path: Path) -> Path:
     p = tmp_path / "keywords.yaml"
-    p.write_text(
-        "keywords:\n  - fastapi\n  - langgraph\n  - mcp\n  - pydantic\n"
-    )
+    p.write_text("keywords:\n  - fastapi\n  - langgraph\n  - mcp\n  - pydantic\n")
     return p
 
 

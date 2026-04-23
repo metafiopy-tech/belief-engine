@@ -17,53 +17,56 @@ from __future__ import annotations
 import logging
 import re
 
+from pydantic import BaseModel
+
 from belief.refinement import RefinementState
 
 logger = logging.getLogger("belief.refinement.analyzer")
 
 # ── pytest output parsing ────────────────────────────────────────────────────
 
+
 def parse_test_results(output: str) -> tuple[int, int, list[str], list[str]]:
     """Parse pytest output to extract pass/fail counts and details.
-    
+
     Returns: (passed, total, failed_test_ids, failure_details)
     """
     # Extract summary line: "5 passed, 15 failed"
     passed = 0
     failed = 0
-    
-    summary = re.search(r'(\d+) passed', output)
+
+    summary = re.search(r"(\d+) passed", output)
     if summary:
         passed = int(summary.group(1))
-    
-    fail_match = re.search(r'(\d+) failed', output)
+
+    fail_match = re.search(r"(\d+) failed", output)
     if fail_match:
         failed = int(fail_match.group(1))
-    
-    error_match = re.search(r'(\d+) error', output)
+
+    error_match = re.search(r"(\d+) error", output)
     if error_match:
         failed += int(error_match.group(1))
-    
+
     total = passed + failed
-    
+
     # Extract individual failing test names
-    failed_ids = re.findall(r'FAILED\s+(\S+)', output)
+    failed_ids = re.findall(r"FAILED\s+(\S+)", output)
     if not failed_ids:
         # Try alternative format: "test_file.py::test_name"
-        failed_ids = re.findall(r'(?:ERROR|FAIL)\s+(\S+::\S+)', output)
-    
+        failed_ids = re.findall(r"(?:ERROR|FAIL)\s+(\S+::\S+)", output)
+
     # Extract failure details (tracebacks)
     failure_blocks = []
     # Split on FAILED or ERROR markers
-    sections = re.split(r'_{5,}\s+(?:FAILED|ERROR)', output)
+    sections = re.split(r"_{5,}\s+(?:FAILED|ERROR)", output)
     for section in sections[1:]:  # Skip preamble
         # Take first 500 chars of each failure
         failure_blocks.append(section[:500].strip())
-    
+
     # If no structured failures found, take the last 1000 chars
     if not failure_blocks and failed > 0:
         failure_blocks = [output[-1000:]]
-    
+
     return passed, total, failed_ids, failure_blocks[:5]  # Max 5 failures
 
 
@@ -124,27 +127,39 @@ or asserting the wrong value — the bug is in the TEST, not the code."""
 
 async def analyze_failures(state: RefinementState, llm) -> dict:
     """Analyze test failures and generate a verbal diagnosis.
-    
+
     Returns dict with 'diagnosis', 'target_file', 'target_function', 'bug_location'.
     bug_location is 'code' or 'test' — tells the fixer which file pool to target.
     """
     # Build file list (source files only, not tests)
     file_list = "\n".join(
-        f"  {f} ({len(c)} chars, {c.count(chr(10))+1} lines)"
+        f"  {f} ({len(c)} chars, {c.count(chr(10)) + 1} lines)"
         for f, c in sorted(state.code_files.items())
         if f.endswith(".py") and "/test" not in f and not f.startswith("test")
     )
-    
+
     # Build test file list
-    test_file_list = "\n".join(
-        f"  {f} ({len(c)} chars, {c.count(chr(10))+1} lines)"
-        for f, c in sorted(state.test_files.items())
-        if f.endswith(".py")
-    ) if state.test_files else "  (no test files)"
-    
-    previous = "\n".join(f"  - {p}" for p in state.previous_fixes) if state.previous_fixes else "  (none — first cycle)"
-    reflections = "\n".join(f"  - {r}" for r in state.reflections) if hasattr(state, 'reflections') and state.reflections else "  (none — first cycle)"
-    
+    test_file_list = (
+        "\n".join(
+            f"  {f} ({len(c)} chars, {c.count(chr(10)) + 1} lines)"
+            for f, c in sorted(state.test_files.items())
+            if f.endswith(".py")
+        )
+        if state.test_files
+        else "  (no test files)"
+    )
+
+    previous = (
+        "\n".join(f"  - {p}" for p in state.previous_fixes)
+        if state.previous_fixes
+        else "  (none — first cycle)"
+    )
+    reflections = (
+        "\n".join(f"  - {r}" for r in state.reflections)
+        if hasattr(state, "reflections") and state.reflections
+        else "  (none — first cycle)"
+    )
+
     prompt = ANALYZER_PROMPT.format(
         test_output=state.test_output[-3000:],  # Last 3K chars of test output
         file_list=file_list,
@@ -152,15 +167,15 @@ async def analyze_failures(state: RefinementState, llm) -> dict:
         previous_fixes=previous,
         reflections=reflections,
     )
-    
+
     try:
         from belief.config import ModelRouter
         from belief.llm import LLMClient
-        
+
         if llm is None:
             router = ModelRouter()
             llm = LLMClient(router)
-        
+
         result = await llm.generate_structured(
             role="debugger",
             system=ANALYZER_SYSTEM,
@@ -169,17 +184,17 @@ async def analyze_failures(state: RefinementState, llm) -> dict:
             temperature=0.2,
             max_tokens=1000,
         )
-        
+
         diagnosis = result.diagnosis
         target_file = result.target_file
         target_function = result.target_function or ""
         bug_location = result.bug_location or "code"
-        
+
         # Validate target file exists — search BOTH code and test files
         all_files = dict(state.code_files)
         if state.test_files:
             all_files.update(state.test_files)
-        
+
         if target_file not in all_files:
             # Try to find a close match in all files
             for f in all_files:
@@ -190,13 +205,19 @@ async def analyze_failures(state: RefinementState, llm) -> dict:
                 # Fall back to heuristic based on bug_location
                 if bug_location == "test" and state.test_files:
                     target_file = list(state.test_files.keys())[0]
-                    logger.warning(f"Analyzer: target '{result.target_file}' not found, using first test file")
+                    logger.warning(
+                        f"Analyzer: target '{result.target_file}' not found, using first test file"
+                    )
                 else:
-                    logger.warning(f"Analyzer: target '{result.target_file}' not found, using heuristic")
+                    logger.warning(
+                        f"Analyzer: target '{result.target_file}' not found, using heuristic"
+                    )
                     target_file = _guess_target_file(state.test_output, state.code_files)
-        
-        logger.info(f"Analyzer: [{bug_location}] {target_file}::{target_function} — {diagnosis[:80]}...")
-        
+
+        logger.info(
+            f"Analyzer: [{bug_location}] {target_file}::{target_function} — {diagnosis[:80]}..."
+        )
+
         return {
             "diagnosis": diagnosis,
             "target_file": target_file,
@@ -204,7 +225,7 @@ async def analyze_failures(state: RefinementState, llm) -> dict:
             "test_name": result.test_name,
             "bug_location": bug_location,
         }
-        
+
     except Exception as e:
         logger.warning(f"Analyzer failed: {e}")
         # Fallback: guess from test output
@@ -226,7 +247,7 @@ def _guess_target_file(test_output: str, code_files: dict[str, str]) -> str:
             # Count mentions of the filename in test output
             base = fname.split("/")[-1].replace(".py", "")
             counts[fname] = test_output.lower().count(base.lower())
-    
+
     if counts:
         return max(counts, key=counts.get)
     return list(code_files.keys())[0]
@@ -234,7 +255,6 @@ def _guess_target_file(test_output: str, code_files: dict[str, str]) -> str:
 
 # ── Pydantic model for structured LLM output ────────────────────────────────
 
-from pydantic import BaseModel
 
 class _AnalysisResult(BaseModel):
     test_name: str = ""

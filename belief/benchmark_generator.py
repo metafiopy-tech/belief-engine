@@ -35,6 +35,7 @@ logger = logging.getLogger("belief.benchmark_generator")
 @dataclass
 class GeneratedChallenge:
     """A procedurally generated benchmark challenge."""
+
     id: str
     tier: int
     goal: str
@@ -47,9 +48,21 @@ class GeneratedChallenge:
 # ── Parameter Templates ──────────────────────────────────────────────────────
 
 _DOMAINS = [
-    "library", "restaurant", "hospital", "university", "warehouse",
-    "theater", "gym", "hotel", "airline", "bank",
-    "pharmacy", "garage", "farm", "museum", "studio",
+    "library",
+    "restaurant",
+    "hospital",
+    "university",
+    "warehouse",
+    "theater",
+    "gym",
+    "hotel",
+    "airline",
+    "bank",
+    "pharmacy",
+    "garage",
+    "farm",
+    "museum",
+    "studio",
 ]
 
 _ENTITIES = {
@@ -96,6 +109,7 @@ _AUTH_LEVELS = [
 
 
 # ── Generator ────────────────────────────────────────────────────────────────
+
 
 def generate_challenges(
     n: int = 10,

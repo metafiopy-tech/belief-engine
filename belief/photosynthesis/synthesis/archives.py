@@ -81,9 +81,7 @@ class ArchiveManager:
         try:
             import chromadb  # type: ignore[import-untyped]
         except ImportError:
-            logger.warning(
-                "chromadb not available; ArchiveManager is running in no-op mode."
-            )
+            logger.warning("chromadb not available; ArchiveManager is running in no-op mode.")
             self._available = False
             return
         self._client = chromadb.PersistentClient(path=str(self.persist_dir))
@@ -96,9 +94,7 @@ class ArchiveManager:
             return None
         if name in self._collections:
             return self._collections[name]
-        col = self._client.get_or_create_collection(
-            name=name, metadata={"hnsw:space": "cosine"}
-        )
+        col = self._client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
         self._collections[name] = col
         return col
 
@@ -160,10 +156,7 @@ class ArchiveManager:
     ) -> None:
         """Upsert a goal into the named collection."""
         if collection not in ARCHIVE_NAMES:
-            raise ValueError(
-                f"unknown archive collection: {collection!r}. "
-                f"Valid: {ARCHIVE_NAMES}"
-            )
+            raise ValueError(f"unknown archive collection: {collection!r}. Valid: {ARCHIVE_NAMES}")
         col = self.ensure(collection)
         if col is None:
             return  # no-op when chromadb unavailable
@@ -219,7 +212,7 @@ class ArchiveManager:
             return []
 
         tag_counts: dict[str, int] = {}
-        for meta in (res.get("metadatas") or []):
+        for meta in res.get("metadatas") or []:
             for tag in (meta or {}).get("domain_tags", []) or []:
                 tag_counts[str(tag)] = tag_counts.get(str(tag), 0) + 1
         sorted_tags = sorted(tag_counts.items(), key=lambda kv: kv[1], reverse=True)

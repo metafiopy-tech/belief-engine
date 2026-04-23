@@ -141,17 +141,14 @@ class TestFailureCluster:
         assert len(clusters) >= 2
 
         # The import cluster should have count >= 3
-        import_cluster = next(
-            (c for c in clusters if c.error_type == "missing_import"), None
-        )
+        import_cluster = next((c for c in clusters if c.error_type == "missing_import"), None)
         assert import_cluster is not None
         assert import_cluster.count >= 3
 
     def test_cluster_sorted_by_count(self):
-        failures = (
-            [{"content": "ImportError: no module named 'x'"}] * 5
-            + [{"content": "SyntaxError: invalid syntax"}] * 2
-        )
+        failures = [{"content": "ImportError: no module named 'x'"}] * 5 + [
+            {"content": "SyntaxError: invalid syntax"}
+        ] * 2
         clusters = cluster_failures(failures)
         if len(clusters) >= 2:
             assert clusters[0].count >= clusters[1].count
@@ -322,6 +319,7 @@ class TestToolRegistry:
     @pytest.fixture
     def registry(self, tmp_path):
         from belief.memory.soil import Soil
+
         soil = Soil(persist_dir=tmp_path / "soil")
         return ToolRegistry(soil)
 
@@ -351,16 +349,20 @@ class TestToolRegistry:
         assert all(t.name != "lapsed_tool" or t.fsrs_decay_state != "lapsed" for t in active)
 
     def test_find_tools_for_goal(self, registry):
-        registry.register_tool(_make_tool(
-            id="t1",
-            name="fastapi_validator",
-            description="Validates FastAPI routes",
-        ))
-        registry.register_tool(_make_tool(
-            id="t2",
-            name="import_checker",
-            description="Checks Python imports",
-        ))
+        registry.register_tool(
+            _make_tool(
+                id="t1",
+                name="fastapi_validator",
+                description="Validates FastAPI routes",
+            )
+        )
+        registry.register_tool(
+            _make_tool(
+                id="t2",
+                name="import_checker",
+                description="Checks Python imports",
+            )
+        )
 
         results = registry.find_tools_for_goal("Build a FastAPI API")
         assert len(results) >= 1
@@ -381,6 +383,7 @@ class TestUsageTracking:
     @pytest.fixture
     def registry(self, tmp_path):
         from belief.memory.soil import Soil
+
         soil = Soil(persist_dir=tmp_path / "soil")
         return ToolRegistry(soil)
 
@@ -570,12 +573,14 @@ class TestEndToEnd:
 
 # ── SICA dispatch tests ──────────────────────────────────────────────────────
 
+
 class TestSICANewToolDispatch:
     """Verify SICA has the NEW_TOOL dispatch path wired in."""
 
     def test_should_propose_new_tool_exists(self, tmp_path):
         """_should_propose_new_tool method exists and is callable."""
         from belief.evolution.sica import SelfImprovementCycle
+
         sica = SelfImprovementCycle(
             project_root=tmp_path,
             archive_path=tmp_path / "archive.json",

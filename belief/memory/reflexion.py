@@ -43,10 +43,26 @@ async def generate_reflexion(
     if llm is None:
         return None
 
-    verdict = validation_result.get("verdict", "unknown") if isinstance(validation_result, dict) else getattr(validation_result, "verdict", "unknown")
-    tests_passed = validation_result.get("tests_passed", 0) if isinstance(validation_result, dict) else getattr(validation_result, "tests_passed", 0)
-    tests_total = validation_result.get("tests_total", 0) if isinstance(validation_result, dict) else getattr(validation_result, "tests_total", 0)
-    summary = validation_result.get("summary", "") if isinstance(validation_result, dict) else getattr(validation_result, "summary", "")
+    verdict = (
+        validation_result.get("verdict", "unknown")
+        if isinstance(validation_result, dict)
+        else getattr(validation_result, "verdict", "unknown")
+    )
+    tests_passed = (
+        validation_result.get("tests_passed", 0)
+        if isinstance(validation_result, dict)
+        else getattr(validation_result, "tests_passed", 0)
+    )
+    tests_total = (
+        validation_result.get("tests_total", 0)
+        if isinstance(validation_result, dict)
+        else getattr(validation_result, "tests_total", 0)
+    )
+    summary = (
+        validation_result.get("summary", "")
+        if isinstance(validation_result, dict)
+        else getattr(validation_result, "summary", "")
+    )
 
     # Build a compact view of what was generated
     file_list = ", ".join(sorted(code_files.keys())[:10])

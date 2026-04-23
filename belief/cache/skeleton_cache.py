@@ -42,8 +42,7 @@ DEFAULT_CACHE_DIR = Path("~/.belief-engine/skeleton_cache").expanduser()
 
 def _canonical_json(obj: Any) -> str:
     """JSON dump with sorted keys and no whitespace for stable hashing."""
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False)
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def fingerprint_spec(spec: dict) -> str:
@@ -57,9 +56,7 @@ def fingerprint_spec(spec: dict) -> str:
     try:
         payload = _canonical_json(spec)
     except TypeError:
-        payload = _canonical_json(
-            {str(k): str(v) for k, v in dict(spec).items()}
-        )
+        payload = _canonical_json({str(k): str(v) for k, v in dict(spec).items()})
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -121,9 +118,7 @@ def cache_skeleton(
         _atomic_write(target / "skeleton.json", skeleton)
         _atomic_write(target / "meta.json", meta)
     except OSError as exc:
-        logger.warning(
-            f"skeleton_cache: store failed for key={key}: {exc}"
-        )
+        logger.warning(f"skeleton_cache: store failed for key={key}: {exc}")
     return key
 
 
@@ -148,13 +143,9 @@ def get_cached_skeleton(
 
     try:
         cached_spec = json.loads(spec_path.read_text(encoding="utf-8"))
-        cached_skeleton = json.loads(
-            skeleton_path.read_text(encoding="utf-8")
-        )
+        cached_skeleton = json.loads(skeleton_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        logger.debug(
-            f"skeleton_cache: corrupt entry {key}, treating as miss: {exc}"
-        )
+        logger.debug(f"skeleton_cache: corrupt entry {key}, treating as miss: {exc}")
         return None
 
     meta: dict = {}
@@ -180,7 +171,9 @@ def get_cached_skeleton(
 
 
 def invalidate(
-    spec: dict, *, base_dir: Path = DEFAULT_CACHE_DIR,
+    spec: dict,
+    *,
+    base_dir: Path = DEFAULT_CACHE_DIR,
 ) -> bool:
     """Delete the cached entry for *spec*, if any.
 
@@ -329,6 +322,7 @@ def _cached_ast_parse_by_hash(code_hash: str, source: str):
     code but hash collisions can't return the wrong tree.
     """
     import ast as _ast
+
     return _ast.parse(source)
 
 

@@ -29,8 +29,8 @@ CENTROID_COLLECTION = "domain_profile"
 
 @dataclass
 class TaskBiaser:
-    mirror: Any               # SwebenchMirror
-    archive: Any              # ArchiveManager
+    mirror: Any  # SwebenchMirror
+    archive: Any  # ArchiveManager
     embedder: Callable[[str], Any]
     n_samples: int = 50
 

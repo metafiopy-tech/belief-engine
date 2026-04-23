@@ -40,6 +40,7 @@ class NutrientType(str, Enum):
 
 class NutrientTier(int, Enum):
     """Which build complexity tier produced this nutrient."""
+
     TIER_1 = 1  # Single file scripts
     TIER_2 = 2  # MCP servers, simple APIs
     TIER_3 = 3  # Multi-file packages
@@ -53,12 +54,12 @@ _FSRS_FACTOR = 0.9 ** (-1.0 / _FSRS_DECAY) - 1  # ≈ 19/81
 
 # Tunable FSRS weight parameters — reasonable defaults, can be tuned
 # after accumulating build data
-_W8 = 1.5    # Base stability growth rate
-_W9 = 0.2    # Diminishing returns on high stability
-_W10 = 0.5   # Spacing effect strength (bigger = more reward for spaced reuse)
-_W11 = 0.5   # Lapse stability floor multiplier
-_W12 = 0.2   # Lapse difficulty scaling
-_W13 = 0.2   # Lapse stability recovery
+_W8 = 1.5  # Base stability growth rate
+_W9 = 0.2  # Diminishing returns on high stability
+_W10 = 0.5  # Spacing effect strength (bigger = more reward for spaced reuse)
+_W11 = 0.5  # Lapse stability floor multiplier
+_W12 = 0.2  # Lapse difficulty scaling
+_W13 = 0.2  # Lapse stability recovery
 
 
 def _now_ts() -> float:
@@ -85,15 +86,15 @@ class Nutrient(BaseModel):
     tier: NutrientTier = NutrientTier.TIER_1
 
     # Content
-    content: str                               # The knowledge itself
-    embedding_text: str                        # What gets embedded (NL description)
-    code_sample: Optional[str] = None          # Representative code if applicable
+    content: str  # The knowledge itself
+    embedding_text: str  # What gets embedded (NL description)
+    code_sample: Optional[str] = None  # Representative code if applicable
 
     # FSRS parameters (no stored confidence — use retrievability())
-    stability: float = 1.0                     # Days until 90% retrievability
-    difficulty: float = 5.0                    # 1-10 scale (simple idioms=2, arch patterns=8)
+    stability: float = 1.0  # Days until 90% retrievability
+    difficulty: float = 5.0  # 1-10 scale (simple idioms=2, arch patterns=8)
     reinforcement_count: int = 0
-    lapse_count: int = 0                       # Times found incorrect
+    lapse_count: int = 0  # Times found incorrect
 
     # Timestamps (stored as UTC floats for FSRS math)
     created_at: float = Field(default_factory=_now_ts)
@@ -110,9 +111,7 @@ class Nutrient(BaseModel):
     valid_until: float = 0.0
     invalidation_reason: str = ""
 
-    @field_validator(
-        "created_at", "last_reinforced", "valid_from", "valid_until", mode="before"
-    )
+    @field_validator("created_at", "last_reinforced", "valid_from", "valid_until", mode="before")
     @classmethod
     def _parse_ts(cls, v):
         """Accept float | int | ISO-8601 string for stored timestamps.
@@ -142,7 +141,7 @@ class Nutrient(BaseModel):
 
     # Categorization
     tags: list[str] = Field(default_factory=list)
-    framework: Optional[str] = None            # e.g., "fastapi", "fastmcp"
+    framework: Optional[str] = None  # e.g., "fastapi", "fastmcp"
 
     def retrievability(self) -> float:
         """Calculate current retrievability using FSRS power-law decay.
@@ -160,7 +159,7 @@ class Nutrient(BaseModel):
         if inner <= 0:
             # Extreme elapsed time — nutrient is effectively forgotten
             return 0.0
-        return inner ** _FSRS_DECAY
+        return inner**_FSRS_DECAY
 
     def reinforce(self) -> None:
         """Called when this nutrient is successfully reused in a build.
@@ -183,7 +182,7 @@ class Nutrient(BaseModel):
         growth = (
             math.exp(_W8)
             * (11.0 - self.difficulty)
-            * (self.stability ** -_W9)
+            * (self.stability**-_W9)
             * (math.exp(_W10 * (1.0 - r)) - 1.0)
             + 1.0
         )
@@ -199,11 +198,7 @@ class Nutrient(BaseModel):
         S_new = w11 * D^(-w12) * ((S+1)^w13 - 1)
         """
         self.lapse_count += 1
-        new_s = (
-            _W11
-            * (self.difficulty ** -_W12)
-            * ((self.stability + 1.0) ** _W13 - 1.0)
-        )
+        new_s = _W11 * (self.difficulty**-_W12) * ((self.stability + 1.0) ** _W13 - 1.0)
         self.stability = max(0.5, new_s)  # Floor at 0.5 days
 
     def is_valid_at(self, ts: Optional[float] = None) -> bool:
@@ -331,6 +326,7 @@ class NutrientProfile(BaseModel):
     When soil is empty, format_context_block() returns "" — no empty
     INSTITUTIONAL MEMORY header (review correction #5).
     """
+
     covenants: list[Nutrient] = Field(default_factory=list)
     antipatterns: list[Nutrient] = Field(default_factory=list)
     patterns: list[Nutrient] = Field(default_factory=list)
@@ -338,7 +334,9 @@ class NutrientProfile(BaseModel):
 
     @property
     def total_nutrients(self) -> int:
-        return len(self.covenants) + len(self.antipatterns) + len(self.patterns) + len(self.skeletons)
+        return (
+            len(self.covenants) + len(self.antipatterns) + len(self.patterns) + len(self.skeletons)
+        )
 
     @property
     def is_empty(self) -> bool:
@@ -383,12 +381,12 @@ class NutrientProfile(BaseModel):
         """
         covenants = list(self.covenants)
         if max_covenants is not None:
-            covenants = covenants[:max(0, int(max_covenants))]
+            covenants = covenants[: max(0, int(max_covenants))]
         return NutrientProfile(
             covenants=covenants,
-            antipatterns=list(self.antipatterns[:max(0, int(max_antipatterns))]),
-            patterns=list(self.patterns[:max(0, int(max_patterns))]),
-            skeletons=list(self.skeletons[:max(0, int(max_skeletons))]),
+            antipatterns=list(self.antipatterns[: max(0, int(max_antipatterns))]),
+            patterns=list(self.patterns[: max(0, int(max_patterns))]),
+            skeletons=list(self.skeletons[: max(0, int(max_skeletons))]),
         )
 
     def format_context_block_compact(self, complexity: int = 3) -> str:
@@ -444,7 +442,9 @@ class NutrientProfile(BaseModel):
                     sections.append(f"- {n.content}")
             sections.append("")
 
-        sections.append("Adapt these insights to the current build. Do not blindly copy — use as guidance.")
+        sections.append(
+            "Adapt these insights to the current build. Do not blindly copy — use as guidance."
+        )
 
         block = "\n".join(sections)
 
@@ -492,5 +492,7 @@ class NutrientProfile(BaseModel):
             sections.append("(truncated for token budget)")
             sections.append("")
 
-        sections.append("Adapt these insights to the current build. Do not blindly copy — use as guidance.")
+        sections.append(
+            "Adapt these insights to the current build. Do not blindly copy — use as guidance."
+        )
         return "\n".join(sections)

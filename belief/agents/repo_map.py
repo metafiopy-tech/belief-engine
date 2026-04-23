@@ -149,7 +149,9 @@ def extract_signatures_brief(code: str, filename: str = "") -> str:
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
             classes.append(node.name)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith(
+            "_"
+        ):
             functions.append(node.name)
 
     parts = []
@@ -171,7 +173,7 @@ class RepoMap:
 
     def __init__(self, signatures: dict[str, str], briefs: dict[str, str]) -> None:
         self._signatures = signatures  # Full signatures per file
-        self._briefs = briefs          # Brief one-liners per file
+        self._briefs = briefs  # Brief one-liners per file
 
     @classmethod
     def from_code_files(cls, code_files: dict[str, str]) -> RepoMap:
@@ -218,8 +220,7 @@ class RepoMap:
                     sections.append("")
 
         # Everything else gets brief one-liners
-        other_files = [f for f in sorted(self._briefs.keys())
-                       if f != target_file and f not in deps]
+        other_files = [f for f in sorted(self._briefs.keys()) if f != target_file and f not in deps]
         if other_files:
             sections.append("## Other Project Files:")
             for fname in other_files:
@@ -263,11 +264,12 @@ class RepoMap:
 
         result = "\n".join(lines)
         if len(result) > max_tokens * 4:
-            result = result[:max_tokens * 4] + "\n# ... (truncated)"
+            result = result[: max_tokens * 4] + "\n# ... (truncated)"
         return result
 
 
 # ── AST helpers ──────────────────────────────────────────────────────────────
+
 
 def _name_str(node) -> str:
     """Convert an AST name node to string."""

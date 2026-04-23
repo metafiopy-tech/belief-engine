@@ -45,14 +45,15 @@ logger = logging.getLogger("belief.bittensor.miner")
 @dataclass
 class SWEBenchInstance:
     """A single SWE-bench problem instance."""
+
     instance_id: str = ""
-    repo: str = ""            # e.g., "django/django"
-    base_commit: str = ""     # commit to check out
+    repo: str = ""  # e.g., "django/django"
+    base_commit: str = ""  # commit to check out
     problem_statement: str = ""  # issue description
-    hints_text: str = ""      # optional hints
-    test_patch: str = ""      # gold test patch (for evaluation)
-    patch: str = ""           # gold fix patch (for reference, not given to agent)
-    version: str = ""         # repo version tag
+    hints_text: str = ""  # optional hints
+    test_patch: str = ""  # gold test patch (for evaluation)
+    patch: str = ""  # gold fix patch (for reference, not given to agent)
+    version: str = ""  # repo version tag
 
     @classmethod
     def from_dict(cls, d: dict) -> SWEBenchInstance:
@@ -69,8 +70,9 @@ class SWEBenchInstance:
 @dataclass
 class AgentResult:
     """Result of solving one SWE-bench instance."""
+
     instance_id: str
-    model_patch: str = ""     # unified diff output
+    model_patch: str = ""  # unified diff output
     success: bool = False
     error: str = ""
     duration_seconds: float = 0.0
@@ -130,7 +132,8 @@ class BeliefMiner:
 
                 proc = subprocess.run(
                     ["git", "clone", repo_url, str(repo_path)],
-                    capture_output=True, text=True,
+                    capture_output=True,
+                    text=True,
                     timeout=120,
                 )
                 if proc.returncode != 0:
@@ -142,7 +145,8 @@ class BeliefMiner:
                 if instance.base_commit:
                     subprocess.run(
                         ["git", "checkout", instance.base_commit],
-                        capture_output=True, cwd=str(repo_path),
+                        capture_output=True,
+                        cwd=str(repo_path),
                         timeout=30,
                     )
 
@@ -169,12 +173,12 @@ class BeliefMiner:
                     result.model_patch = diff
                     result.success = True
                     self.problems_solved += 1
-                    logger.info(f"Miner: SOLVED {instance.instance_id} ({time.time()-t0:.1f}s)")
+                    logger.info(f"Miner: SOLVED {instance.instance_id} ({time.time() - t0:.1f}s)")
                 else:
                     result.error = fix_result.error or "No valid patch found"
                     logger.info(f"Miner: FAILED {instance.instance_id}: {result.error}")
 
-                result.cost_usd = fix_result.cost_usd if hasattr(fix_result, 'cost_usd') else 0.0
+                result.cost_usd = fix_result.cost_usd if hasattr(fix_result, "cost_usd") else 0.0
                 self.total_cost += result.cost_usd
 
             except asyncio.TimeoutError:
@@ -187,7 +191,10 @@ class BeliefMiner:
         return result
 
     def _make_unified_diff(
-        self, file_path: str, old_code: str, new_code: str,
+        self,
+        file_path: str,
+        old_code: str,
+        new_code: str,
     ) -> str:
         """Convert old/new code to unified diff format.
 
@@ -199,7 +206,8 @@ class BeliefMiner:
         new_lines = new_code.splitlines(keepends=True)
 
         diff = difflib.unified_diff(
-            old_lines, new_lines,
+            old_lines,
+            new_lines,
             fromfile=f"a/{file_path}",
             tofile=f"b/{file_path}",
             lineterm="",
@@ -207,12 +215,13 @@ class BeliefMiner:
         return "\n".join(diff)
 
     async def solve_batch(
-        self, instances: list[SWEBenchInstance],
+        self,
+        instances: list[SWEBenchInstance],
     ) -> list[AgentResult]:
         """Solve multiple SWE-bench instances sequentially."""
         results = []
         for i, instance in enumerate(instances):
-            logger.info(f"Miner: [{i+1}/{len(instances)}] {instance.instance_id}")
+            logger.info(f"Miner: [{i + 1}/{len(instances)}] {instance.instance_id}")
             result = await asyncio.wait_for(
                 self.solve(instance),
                 timeout=self.timeout,
@@ -320,12 +329,12 @@ def main():
         instances = []
         dataset_path = Path(args.dataset)
         if dataset_path.suffix == ".jsonl":
-            for line in dataset_path.read_text().strip().split("\n")[:args.limit]:
+            for line in dataset_path.read_text().strip().split("\n")[: args.limit]:
                 instances.append(SWEBenchInstance.from_dict(json.loads(line)))
         elif dataset_path.suffix == ".json":
             data = json.loads(dataset_path.read_text())
             if isinstance(data, list):
-                instances = [SWEBenchInstance.from_dict(d) for d in data[:args.limit]]
+                instances = [SWEBenchInstance.from_dict(d) for d in data[: args.limit]]
 
         results = asyncio.run(miner.solve_batch(instances))
         solved = sum(1 for r in results if r.success)

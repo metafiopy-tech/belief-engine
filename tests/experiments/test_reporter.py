@@ -8,7 +8,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-import pytest
 
 from belief.experiments.ab_runner import ExperimentResult, init_db, store_result
 from belief.experiments.reporter import comparison_table, longitudinal_report
@@ -73,7 +72,6 @@ def _seed_db(db_path: Path) -> None:
 
 
 class TestComparisonTable:
-
     def test_returns_string(self, tmp_path: Path):
         db = tmp_path / "exp.db"
         _seed_db(db)
@@ -163,7 +161,6 @@ class TestComparisonTable:
 
 
 class TestLongitudinalReport:
-
     def _seed_two_experiments(self, db: Path) -> None:
         init_db(db)
         for exp_id, date, soil in [
@@ -180,9 +177,13 @@ class TestLongitudinalReport:
             conn.commit()
             conn.close()
             store_result(
-                _row(exp_id, "c1", "engine_local",
-                     passed=(exp_id == "exp-b"),  # second experiment passes
-                     soil=soil),
+                _row(
+                    exp_id,
+                    "c1",
+                    "engine_local",
+                    passed=(exp_id == "exp-b"),  # second experiment passes
+                    soil=soil,
+                ),
                 db,
             )
             store_result(

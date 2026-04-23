@@ -42,3 +42,24 @@ warnings.filterwarnings(
 # If langsmith ever emits the same warning (it imports langchain_core.v1
 # internally), the filter above catches it too because the message regex
 # is what's checked first.  No separate rule needed.
+
+
+# ---------------------------------------------------------------------------
+# Session 8.5a (2026-04-23): skip Finder / iCloud duplicate files
+# ---------------------------------------------------------------------------
+#
+# macOS Finder and iCloud Drive will occasionally fork a file into
+# ``foo 2.py`` / ``foo 3.py`` when a process rewrites it while sync is
+# active.  ``.gitignore`` already matches the pattern (``*\ [0-9]*``) so
+# they stay out of git, but *pytest does not read ``.gitignore``* — it
+# will collect those duplicates as real test modules if we don't tell it
+# otherwise.  In session 8.5a a pre-commit rewrite triggered the fork on
+# 243 files, blowing the boundary test and doubling the pytest runtime.
+#
+# ``collect_ignore_glob`` is a repo-root conftest hook that pytest
+# consults during collection.  Globs are relative to this conftest's
+# directory.
+collect_ignore_glob = [
+    "**/* [0-9].py",  # `foo 2.py`, `bar 10.py`
+    "**/* [0-9]*.py",  # covers multi-digit + trailing-descriptor forms
+]

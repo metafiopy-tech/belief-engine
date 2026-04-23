@@ -5,7 +5,6 @@ All tests are pure-function — no network, no subprocess.
 
 from __future__ import annotations
 
-import pytest
 
 from belief.experiments.raw_runner import parse_file_blocks, parse_pytest_output
 
@@ -16,14 +15,8 @@ from belief.experiments.raw_runner import parse_file_blocks, parse_pytest_output
 
 
 class TestParseFileBlocks:
-
     def test_single_python_file(self):
-        text = (
-            "### FILE: main.py\n"
-            "```python\n"
-            "print('hello')\n"
-            "```\n"
-        )
+        text = "### FILE: main.py\n```python\nprint('hello')\n```\n"
         files = parse_file_blocks(text)
         assert list(files.keys()) == ["main.py"]
         assert "print('hello')" in files["main.py"]
@@ -106,7 +99,6 @@ class TestParseFileBlocks:
 
 
 class TestParsePytestOutput:
-
     def test_all_passed(self):
         out = "3 passed in 0.12s"
         assert parse_pytest_output(out) == (3, 3)

@@ -32,17 +32,14 @@ def comparison_table(
     try:
         if experiment_id is None:
             row = conn.execute(
-                "SELECT experiment_id FROM experiment_meta "
-                "ORDER BY created_at DESC LIMIT 1"
+                "SELECT experiment_id FROM experiment_meta ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
             if not row:
                 return "No experiments found."
             experiment_id = row["experiment_id"]
 
         rows = conn.execute(
-            "SELECT * FROM results "
-            "WHERE experiment_id = ? "
-            "ORDER BY challenge_id, condition",
+            "SELECT * FROM results WHERE experiment_id = ? ORDER BY challenge_id, condition",
             (experiment_id,),
         ).fetchall()
     finally:
@@ -67,9 +64,9 @@ def comparison_table(
     )
     lines.append("-" * 75)
 
-    totals: dict[str, dict] = defaultdict(lambda: {
-        "passed": 0, "total": 0, "cost": 0.0, "time": 0.0
-    })
+    totals: dict[str, dict] = defaultdict(
+        lambda: {"passed": 0, "total": 0, "cost": 0.0, "time": 0.0}
+    )
 
     for cid in sorted(by_challenge):
         conditions = by_challenge[cid]
@@ -113,17 +110,13 @@ def comparison_table(
         el_rate = el["passed"] / el["total"]
         rl_rate = rl["passed"] / rl["total"]
         lift = el_rate - rl_rate
-        direction = "adds value" if lift > 0.0 else ("neutral" if lift == 0.0 else "subtracts value")
-        lines.append(
-            f"  Soil Lift: {lift:+.1%}  — Engine+Local vs Raw Local"
+        direction = (
+            "adds value" if lift > 0.0 else ("neutral" if lift == 0.0 else "subtracts value")
         )
-        lines.append(
-            f"  Interpretation: {direction}."
-        )
+        lines.append(f"  Soil Lift: {lift:+.1%}  — Engine+Local vs Raw Local")
+        lines.append(f"  Interpretation: {direction}.")
         if lift <= 0.0:
-            lines.append(
-                "  Note: run more experiments to distinguish signal from noise."
-            )
+            lines.append("  Note: run more experiments to distinguish signal from noise.")
     lines.append("")
 
     return "\n".join(lines)
@@ -144,8 +137,7 @@ def longitudinal_report(db_path: Path = DEFAULT_DB_PATH) -> str:
 
     try:
         experiments = conn.execute(
-            "SELECT experiment_id, created_at FROM experiment_meta "
-            "ORDER BY created_at"
+            "SELECT experiment_id, created_at FROM experiment_meta ORDER BY created_at"
         ).fetchall()
 
         if not experiments:
@@ -172,8 +164,7 @@ def longitudinal_report(db_path: Path = DEFAULT_DB_PATH) -> str:
             date = exp["created_at"][:10]
 
             rows = conn.execute(
-                "SELECT condition, passed, soil_size "
-                "FROM results WHERE experiment_id=?",
+                "SELECT condition, passed, soil_size FROM results WHERE experiment_id=?",
                 (eid,),
             ).fetchall()
 
@@ -191,8 +182,7 @@ def longitudinal_report(db_path: Path = DEFAULT_DB_PATH) -> str:
             rl_cell = f"{rl_pass}/{rl_total} ({rl_rate:.0%})" if rl_total else "—"
 
             lines.append(
-                f"{eid:<28} {date:<12} {soil:>6}  "
-                f"{el_cell:>12}  {rl_cell:>12}  {lift:>+7.1%}"
+                f"{eid:<28} {date:<12} {soil:>6}  {el_cell:>12}  {rl_cell:>12}  {lift:>+7.1%}"
             )
 
     finally:

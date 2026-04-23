@@ -92,10 +92,7 @@ def combined_value(
     raw = 0.40 * n + 0.35 * z + 0.15 * cg + 0.10 * sq
 
     boosted = False
-    if (
-        bittensor_cosine is not None
-        and bittensor_cosine >= BITTENSOR_BIAS_COSINE_CUTOFF
-    ):
+    if bittensor_cosine is not None and bittensor_cosine >= BITTENSOR_BIAS_COSINE_CUTOFF:
         raw *= BITTENSOR_BIAS_MULTIPLIER
         boosted = True
 

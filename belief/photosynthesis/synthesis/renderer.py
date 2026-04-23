@@ -107,9 +107,7 @@ def write_session(
     md_path.write_text(md_text, encoding="utf-8")
 
     sidecar: dict[str, Any] = json.loads(spec.model_dump_json())
-    json_path.write_text(
-        json.dumps(sidecar, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    json_path.write_text(json.dumps(sidecar, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return md_path, json_path
 
 

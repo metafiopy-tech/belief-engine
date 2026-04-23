@@ -218,6 +218,7 @@ def _count_ruff_errors(code_files: dict[str, str]) -> int:
       being treated as "clean file" because stdout was empty.
     """
     import shutil as _shutil
+
     ruff = _shutil.which("ruff")
     if ruff is None:
         logger.debug("ruff missing; treating as 0 errors (cannot gate on this signal)")
@@ -236,13 +237,18 @@ def _count_ruff_errors(code_files: dict[str, str]) -> int:
                 p.write_text(content)
             proc = subprocess.run(
                 [
-                    ruff, "check",
+                    ruff,
+                    "check",
                     "--no-cache",
-                    "--select", RUFF_SELECT,
-                    "--output-format", "json",
+                    "--select",
+                    RUFF_SELECT,
+                    "--output-format",
+                    "json",
                     str(td_path),
                 ],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
     except (subprocess.TimeoutExpired, OSError) as e:
         logger.debug("ruff check timed out/failed: %s", e)
@@ -267,6 +273,7 @@ def _count_ruff_errors(code_files: dict[str, str]) -> int:
         return 0
     try:
         import json as _json
+
         findings = _json.loads(proc.stdout)
         return len(findings) if isinstance(findings, list) else 0
     except Exception as e:
@@ -280,6 +287,7 @@ def _max_cyclomatic_complexity(code_files: dict[str, str]) -> int | None:
     is missing or the sweep fails.
     """
     import shutil as _shutil
+
     radon = _shutil.which("radon")
     if radon is None:
         logger.debug("radon missing; skipping cyclomatic complexity signal")
@@ -297,7 +305,9 @@ def _max_cyclomatic_complexity(code_files: dict[str, str]) -> int | None:
                 p.write_text(content)
             proc = subprocess.run(
                 [radon, "cc", "-s", "-j", str(td_path)],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
     except (subprocess.TimeoutExpired, OSError) as e:
         logger.debug("radon cc timed out/failed: %s", e)
@@ -307,6 +317,7 @@ def _max_cyclomatic_complexity(code_files: dict[str, str]) -> int | None:
         return 0
     try:
         import json as _json
+
         data = _json.loads(proc.stdout)
     except Exception as e:
         logger.debug("radon output parse failed: %s", e)

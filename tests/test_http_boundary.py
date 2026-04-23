@@ -28,6 +28,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BELIEF_ROOT = REPO_ROOT / "belief"
 
 
+# macOS Finder / iCloud Drive occasionally forks files into "foo 2.py"
+# style duplicates.  The tree-walk below should skip them — they're
+# snapshots of tracked files, not real sources.  Conftest's
+# ``collect_ignore_glob`` handles pytest collection; this regex is the
+# equivalent for our own tree walks.
+_FINDER_DUPE_RE = re.compile(r" \d+(?:\s.*)?\.py$")
+
+
+def _is_finder_dupe(path: Path) -> bool:
+    return bool(_FINDER_DUPE_RE.search(path.name))
+
+
 # ---------------------------------------------------------------------------
 # Patterns + exemptions (see docs/architecture/http_boundary.md)
 # ---------------------------------------------------------------------------
@@ -82,13 +94,19 @@ BOUNDARY_RULES: list[tuple[str, str, set[str]]] = [
 
 
 def _belief_py_files() -> list[Path]:
-    """Every .py under belief/, excluding generated test fixtures and
-    __pycache__ directories.  Ordered for deterministic output on
-    failure."""
+    """Every .py under belief/, excluding generated test fixtures,
+    __pycache__ directories, and macOS Finder/iCloud duplicate files.
+    Ordered for deterministic output on failure."""
     files: list[Path] = []
     for path in BELIEF_ROOT.rglob("*.py"):
         # Skip compiled-cache + vendored content if any ever lands.
         if "__pycache__" in path.parts:
+            continue
+        # Skip Finder/iCloud duplicates ("foo 2.py").  They're
+        # gitignored but iCloud sync re-creates them during file
+        # rewrites; they'd otherwise cause this boundary test to
+        # fail against a pre-fix snapshot of the real file.
+        if _is_finder_dupe(path):
             continue
         files.append(path)
     return sorted(files)
@@ -126,9 +144,7 @@ def _contains_bare_pattern(file_path: Path, pattern: re.Pattern[str]) -> bool:
     BOUNDARY_RULES,
     ids=[label for _, label, _ in BOUNDARY_RULES],
 )
-def test_no_boundary_bypass(
-    pattern_src: str, label: str, exempt_paths: set[str]
-) -> None:
+def test_no_boundary_bypass(pattern_src: str, label: str, exempt_paths: set[str]) -> None:
     """For each forbidden pattern, assert no non-exempt belief/*.py file
     contains it.  On failure, list every offender — operators should
     see the full set, not one file at a time."""

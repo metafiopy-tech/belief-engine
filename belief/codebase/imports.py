@@ -27,6 +27,7 @@ logger = logging.getLogger("belief.codebase.imports")
 @dataclass
 class ImportIssue:
     """A cross-module import that can't be resolved."""
+
     source_file: str
     target_module: str
     symbol: str
@@ -85,14 +86,16 @@ def verify_imports(code_files: dict[str, str]) -> list[ImportIssue]:
                 if sym not in available:
                     # Find suggestion
                     suggestion = _find_closest(sym, available)
-                    issues.append(ImportIssue(
-                        source_file=fpath,
-                        target_module=module,
-                        symbol=sym,
-                        issue_type="missing_symbol",
-                        available_symbols=sorted(available)[:10],
-                        suggestion=suggestion,
-                    ))
+                    issues.append(
+                        ImportIssue(
+                            source_file=fpath,
+                            target_module=module,
+                            symbol=sym,
+                            issue_type="missing_symbol",
+                            available_symbols=sorted(available)[:10],
+                            suggestion=suggestion,
+                        )
+                    )
 
     return issues
 
@@ -100,22 +103,34 @@ def verify_imports(code_files: dict[str, str]) -> list[ImportIssue]:
 # Symbols that must NEVER be auto-renamed — they are infrastructure names
 # used by SQLAlchemy, FastAPI, and other frameworks. Renaming these destroys
 # skeleton-generated database.py, models.py, etc.
-_NEVER_RENAME_SYMBOLS = frozenset({
-    "Base", "engine", "SessionLocal", "get_db", "init_db",
-    "DeclarativeBase", "Session", "app", "router",
-    "metadata", "create_engine", "sessionmaker",
-})
+_NEVER_RENAME_SYMBOLS = frozenset(
+    {
+        "Base",
+        "engine",
+        "SessionLocal",
+        "get_db",
+        "init_db",
+        "DeclarativeBase",
+        "Session",
+        "app",
+        "router",
+        "metadata",
+        "create_engine",
+        "sessionmaker",
+    }
+)
 
 # Files that should never be modified by the import fixer — they are
 # generated deterministically by the skeleton builder.
-_SKELETON_FILE_NAMES = frozenset({
-    "database.py", "db.py",
-})
+_SKELETON_FILE_NAMES = frozenset(
+    {
+        "database.py",
+        "db.py",
+    }
+)
 
 
-def auto_fix_imports(
-    code_files: dict[str, str], issues: list[ImportIssue]
-) -> dict[str, str]:
+def auto_fix_imports(code_files: dict[str, str], issues: list[ImportIssue]) -> dict[str, str]:
     """Automatically fix import issues where possible.
 
     Fixes:
@@ -140,7 +155,9 @@ def auto_fix_imports(
             continue
 
         # Never modify skeleton database files
-        source_basename = issue.source_file.rsplit("/", 1)[-1] if "/" in issue.source_file else issue.source_file
+        source_basename = (
+            issue.source_file.rsplit("/", 1)[-1] if "/" in issue.source_file else issue.source_file
+        )
         if source_basename in _SKELETON_FILE_NAMES:
             logger.debug(f"Import fix: skipping skeleton file '{issue.source_file}'")
             continue
@@ -160,7 +177,7 @@ def auto_fix_imports(
             # Also replace uses of the symbol in the code body
             # Only replace whole-word matches
             new_code = re.sub(
-                rf'\b{re.escape(issue.symbol)}\b',
+                rf"\b{re.escape(issue.symbol)}\b",
                 issue.suggestion,
                 new_code,
             )
@@ -169,10 +186,7 @@ def auto_fix_imports(
             try:
                 ast.parse(new_code)
                 fixed[issue.source_file] = new_code
-                logger.info(
-                    f"Import fix: {issue.source_file}: "
-                    f"{issue.symbol} → {issue.suggestion}"
-                )
+                logger.info(f"Import fix: {issue.source_file}: {issue.symbol} → {issue.suggestion}")
             except SyntaxError:
                 pass  # Skip invalid fixes
 
@@ -180,6 +194,7 @@ def auto_fix_imports(
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
+
 
 def _build_module_map(code_files: dict[str, str]) -> dict[str, str]:
     """Map module names to file paths.
@@ -254,10 +269,33 @@ def _is_external_module(module: str, code_files: dict[str, str]) -> bool:
     """Check if a module is external (stdlib or third-party)."""
     # Common stdlib modules
     stdlib = {
-        "os", "sys", "re", "json", "typing", "dataclasses", "enum", "pathlib",
-        "collections", "functools", "itertools", "abc", "ast", "logging",
-        "datetime", "time", "math", "hashlib", "uuid", "asyncio", "subprocess",
-        "tempfile", "shutil", "copy", "io", "contextlib", "inspect",
+        "os",
+        "sys",
+        "re",
+        "json",
+        "typing",
+        "dataclasses",
+        "enum",
+        "pathlib",
+        "collections",
+        "functools",
+        "itertools",
+        "abc",
+        "ast",
+        "logging",
+        "datetime",
+        "time",
+        "math",
+        "hashlib",
+        "uuid",
+        "asyncio",
+        "subprocess",
+        "tempfile",
+        "shutil",
+        "copy",
+        "io",
+        "contextlib",
+        "inspect",
     }
     root = module.split(".")[0]
     if root in stdlib:
@@ -265,10 +303,27 @@ def _is_external_module(module: str, code_files: dict[str, str]) -> bool:
 
     # Common third-party
     third_party = {
-        "fastapi", "pydantic", "uvicorn", "httpx", "sqlalchemy", "alembic",
-        "pytest", "starlette", "click", "typer", "rich", "dotenv",
-        "chromadb", "anthropic", "langchain", "langgraph",
-        "flask", "django", "celery", "redis", "requests",
+        "fastapi",
+        "pydantic",
+        "uvicorn",
+        "httpx",
+        "sqlalchemy",
+        "alembic",
+        "pytest",
+        "starlette",
+        "click",
+        "typer",
+        "rich",
+        "dotenv",
+        "chromadb",
+        "anthropic",
+        "langchain",
+        "langgraph",
+        "flask",
+        "django",
+        "celery",
+        "redis",
+        "requests",
     }
     if root in third_party:
         return True

@@ -19,6 +19,7 @@ logger = logging.getLogger("belief.polarity.incompleteness")
 
 class Remainder(BaseModel):
     """A single incompleteness observation."""
+
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     action: str = ""
     result_summary: str = ""
@@ -43,8 +44,12 @@ class IncompletenessLoop:
         self.max_remainders = max_remainders
 
     async def extract_remainder(
-        self, action: str, result: str, goal: str,
-        llm=None, role: str = "latios",
+        self,
+        action: str,
+        result: str,
+        goal: str,
+        llm=None,
+        role: str = "latios",
     ) -> str:
         """Extract what the action failed to account for.
 
@@ -81,7 +86,7 @@ class IncompletenessLoop:
 
         # Prune to max
         if len(self.remainders) > self.max_remainders:
-            self.remainders = self.remainders[-self.max_remainders:]
+            self.remainders = self.remainders[-self.max_remainders :]
 
         logger.debug(f"Remainder: {remainder_text[:80]}")
         return remainder_text

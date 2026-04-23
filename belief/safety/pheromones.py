@@ -167,8 +167,7 @@ def deposit_pheromone(
             fh.write(json.dumps(asdict(trail), ensure_ascii=False) + "\n")
     except OSError as exc:
         logger.warning(
-            f"pheromone deposit failed for {module!r}: {exc}; "
-            f"continuing without persistent trail"
+            f"pheromone deposit failed for {module!r}: {exc}; continuing without persistent trail"
         )
     return trail
 
@@ -195,18 +194,18 @@ def read_pheromones(
                     continue
                 try:
                     data = json.loads(line)
-                    trails.append(PheromoneTrail(
-                        module=str(data.get("module", module)),
-                        timestamp=float(data.get("timestamp", 0.0)),
-                        description=str(data.get("description", "")),
-                        outcome=str(data.get("outcome", "success")),
-                        source=str(data.get("source", "")),
-                        weight=float(data.get("weight", 1.0)),
-                    ))
-                except (json.JSONDecodeError, TypeError, ValueError) as exc:
-                    logger.debug(
-                        f"pheromone read: skipping {path}:{lineno}: {exc}"
+                    trails.append(
+                        PheromoneTrail(
+                            module=str(data.get("module", module)),
+                            timestamp=float(data.get("timestamp", 0.0)),
+                            description=str(data.get("description", "")),
+                            outcome=str(data.get("outcome", "success")),
+                            source=str(data.get("source", "")),
+                            weight=float(data.get("weight", 1.0)),
+                        )
                     )
+                except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                    logger.debug(f"pheromone read: skipping {path}:{lineno}: {exc}")
     except OSError as exc:
         logger.warning(f"pheromone read failed for {module!r}: {exc}")
     return trails
@@ -264,11 +263,16 @@ def is_hot_zone(
     Thin wrapper over :func:`pheromone_density` — kept separate so
     callers can express intent at the call site.
     """
-    return pheromone_density(
-        module,
-        base_dir=base_dir, now=now, half_life=half_life,
-        outcome_filter=outcome_filter,
-    ) >= threshold
+    return (
+        pheromone_density(
+            module,
+            base_dir=base_dir,
+            now=now,
+            half_life=half_life,
+            outcome_filter=outcome_filter,
+        )
+        >= threshold
+    )
 
 
 def clear_pheromones(

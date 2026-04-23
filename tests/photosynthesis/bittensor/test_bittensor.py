@@ -52,9 +52,7 @@ class InMemoryArchive:
         document: str,
         metadata: dict[str, Any],
     ) -> None:
-        self.upserts.append(
-            {"collection": collection, "goal_id": goal_id, "embedding": embedding}
-        )
+        self.upserts.append({"collection": collection, "goal_id": goal_id, "embedding": embedding})
         self._seen[goal_id] = list(embedding)
 
 
@@ -75,9 +73,7 @@ def test_mirror_ingest_and_count(mirror: SwebenchMirror) -> None:
 
 
 def test_mirror_ingest_is_idempotent(mirror: SwebenchMirror) -> None:
-    tasks = [
-        BittensorTask(id="task-0", problem_statement="dup", repo="x", ecosystem="python")
-    ]
+    tasks = [BittensorTask(id="task-0", problem_statement="dup", repo="x", ecosystem="python")]
     added = mirror.ingest_fixture(tasks)
     assert added == 0
     assert mirror.count() == 10
@@ -105,12 +101,8 @@ def test_biaser_cosine_matches_self_high(mirror: SwebenchMirror) -> None:
     # A seed whose text resembles the mirrored problem statements should
     # land high on the centroid cosine. A totally unrelated seed should
     # land lower.
-    high = biaser.cosine_to_centroid(
-        "fix null reference in module 7", centroid=centroid
-    )
-    low = biaser.cosine_to_centroid(
-        "xyz zz zz zzz zzzz bakery recipes", centroid=centroid
-    )
+    high = biaser.cosine_to_centroid("fix null reference in module 7", centroid=centroid)
+    low = biaser.cosine_to_centroid("xyz zz zz zzz zzzz bakery recipes", centroid=centroid)
     assert 0.0 <= low <= 1.0
     assert 0.0 <= high <= 1.0
     # Don't assert strict ordering on hash embeddings — they're too noisy —
@@ -132,11 +124,17 @@ def test_ranker_applies_1_5x_boost_above_cutoff() -> None:
     # With bittensor_cosine above the cutoff, the raw value becomes
     # 0.50 * 1.5 = 0.75 (still accepted).
     baseline = combined_value(
-        novelty=0.5, zpd_fit=0.5, coverage_gain=0.5, source_quality=0.5,
+        novelty=0.5,
+        zpd_fit=0.5,
+        coverage_gain=0.5,
+        source_quality=0.5,
         bittensor_cosine=BITTENSOR_BIAS_COSINE_CUTOFF - 0.01,
     )
     boosted = combined_value(
-        novelty=0.5, zpd_fit=0.5, coverage_gain=0.5, source_quality=0.5,
+        novelty=0.5,
+        zpd_fit=0.5,
+        coverage_gain=0.5,
+        source_quality=0.5,
         bittensor_cosine=BITTENSOR_BIAS_COSINE_CUTOFF + 0.01,
     )
     assert not baseline.bittensor_boosted

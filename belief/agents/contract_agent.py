@@ -37,6 +37,7 @@ async def contract_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     if isinstance(architecture, dict):
         try:
             from belief.models.service_architecture import ServiceArchitecture
+
             architecture = ServiceArchitecture.model_validate(architecture)
         except Exception as e:
             logger.warning(f"Contract agent: failed to parse architecture: {e}")
@@ -45,6 +46,7 @@ async def contract_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     try:
         # 1. Generate OpenAPI specs per service
         from belief.models.openapi import generate_openapi_specs, generate_shared_schemas_yaml
+
         openapi_specs = generate_openapi_specs(architecture)
         result["openapi_specs"] = openapi_specs
 
@@ -99,9 +101,7 @@ def _generate_compose(architecture) -> str:
             service_def["depends_on"] = {
                 "db": {"condition": "service_healthy"},
             }
-            service_def["environment"].append(
-                f"DATABASE_URL={_db_url(svc.database, svc.package)}"
-            )
+            service_def["environment"].append(f"DATABASE_URL={_db_url(svc.database, svc.package)}")
 
         # Add inter-service dependencies
         for dep in svc.depends_on:
@@ -117,7 +117,9 @@ def _generate_compose(architecture) -> str:
         services[svc.package] = service_def
 
     # Add database service if needed
-    db_services = {s.database for s in architecture.services if s.database and s.database != "sqlite"}
+    db_services = {
+        s.database for s in architecture.services if s.database and s.database != "sqlite"
+    }
     if "postgresql" in db_services or "postgres" in db_services:
         services["db"] = {
             "image": "postgres:16-alpine",

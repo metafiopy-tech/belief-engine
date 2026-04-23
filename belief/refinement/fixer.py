@@ -69,30 +69,34 @@ async def generate_fix(
     llm=None,
 ) -> dict:
     """Generate a search/replace fix for the target file.
-    
+
     Returns dict with 'old_str', 'new_str', 'explanation', 'success'.
     """
     file_content = state.code_files.get(target_file, "")
     if not file_content:
         return {"success": False, "explanation": f"File not found: {target_file}"}
-    
-    previous = "\n".join(f"  - {p}" for p in state.previous_fixes) if state.previous_fixes else "  (none — first cycle)"
-    
+
+    previous = (
+        "\n".join(f"  - {p}" for p in state.previous_fixes)
+        if state.previous_fixes
+        else "  (none — first cycle)"
+    )
+
     prompt = FIXER_PROMPT.format(
         diagnosis=diagnosis,
         target_file=target_file,
         file_content=file_content,
         previous_fixes=previous,
     )
-    
+
     try:
         from belief.config import ModelRouter
         from belief.llm import LLMClient
-        
+
         if llm is None:
             router = ModelRouter()
             llm = LLMClient(router)
-        
+
         result = await llm.generate_structured(
             role="debugger",
             system=FIXER_SYSTEM,
@@ -101,14 +105,14 @@ async def generate_fix(
             temperature=0.2,
             max_tokens=2000,
         )
-        
+
         old_str = result.old_str
         new_str = result.new_str
         explanation = result.explanation
-        
+
         if not old_str or not new_str:
             return {"success": False, "explanation": "Empty search/replace block"}
-        
+
         # Check that old_str exists in the file
         if old_str not in file_content:
             # Try fuzzy match — strip whitespace differences
@@ -117,11 +121,14 @@ async def generate_fix(
                 old_str = old_stripped
             else:
                 logger.warning(f"Fixer: old_str not found in {target_file}")
-                return {"success": False, "explanation": f"Search string not found in {target_file}"}
-        
+                return {
+                    "success": False,
+                    "explanation": f"Search string not found in {target_file}",
+                }
+
         # Apply the edit
         new_content = file_content.replace(old_str, new_str, 1)
-        
+
         # Validate the result is valid Python
         if target_file.endswith(".py"):
             try:
@@ -129,12 +136,12 @@ async def generate_fix(
             except SyntaxError as e:
                 logger.warning(f"Fixer: edit produces invalid Python: {e}")
                 return {"success": False, "explanation": f"Edit produces syntax error: {e}"}
-        
+
         logger.info(
             f"Fixer: {target_file} — {explanation[:60]}... "
             f"({len(old_str)} chars → {len(new_str)} chars)"
         )
-        
+
         return {
             "success": True,
             "target_file": target_file,
@@ -143,7 +150,7 @@ async def generate_fix(
             "new_content": new_content,
             "explanation": explanation,
         }
-        
+
     except Exception as e:
         logger.warning(f"Fixer failed: {e}")
         return {"success": False, "explanation": str(e)}
@@ -198,7 +205,9 @@ async def generate_multi_file_fix(
     if not file_context:
         return {"success": False, "edits": [], "summary": "No files found"}
 
-    previous = "\n".join(f"  - {p}" for p in state.previous_fixes) if state.previous_fixes else "  (none)"
+    previous = (
+        "\n".join(f"  - {p}" for p in state.previous_fixes) if state.previous_fixes else "  (none)"
+    )
 
     prompt = f"""## Diagnosis
 {diagnosis}
@@ -257,16 +266,20 @@ Generate search/replace edits across one or more files to fix this atomically.""
                     logger.warning(f"Multi-fixer: edit invalid in {fpath}: {e}")
                     continue
 
-            applied_edits.append({
-                "file": fpath,
-                "old_str": old_str,
-                "new_str": new_str,
-                "new_content": new_content,
-                "explanation": explanation,
-            })
+            applied_edits.append(
+                {
+                    "file": fpath,
+                    "old_str": old_str,
+                    "new_str": new_str,
+                    "new_content": new_content,
+                    "explanation": explanation,
+                }
+            )
 
         if applied_edits:
-            logger.info(f"Multi-fixer: {len(applied_edits)} edits across {len(set(e['file'] for e in applied_edits))} files — {result.summary[:60]}")
+            logger.info(
+                f"Multi-fixer: {len(applied_edits)} edits across {len(set(e['file'] for e in applied_edits))} files — {result.summary[:60]}"
+            )
 
         return {
             "success": len(applied_edits) > 0,

@@ -51,7 +51,6 @@ WRONG (V1 — will crash):
   "@x402/client"  // doesn't exist
   network: "base-sepolia"  // must be CAIP-2: "eip155:84532"
 """,
-
     "mcp": """## @modelcontextprotocol/sdk v1.26+ API
 CORRECT imports (ALL require .js extension with NodeNext):
   import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -68,7 +67,6 @@ TOOL REGISTRATION:
     content: [{ type: "text", text: result }]
   }));
 """,
-
     "ethers": """## ethers v6.16 API (NOT v5)
 ALL imports are top-level — NO namespaces:
   import { JsonRpcProvider, Wallet, Contract, parseEther, formatEther,
@@ -85,7 +83,6 @@ WRONG v5 patterns (LLMs generate these constantly):
   iface.parseLog(log) → returns null, doesn't throw — MUST null-check
   import from "@ethersproject/*" → import from "ethers"
 """,
-
     "express5": """## Express 5.2 API
 PATH MATCHING (breaking changes from v4):
   app.get("*", handler)      → app.get("/{*splat}", handler)
@@ -113,7 +110,15 @@ def get_api_docs_for_goal(goal: str) -> str:
     keyword_map = {
         "x402": ["x402", "payment gate", "paywall", "micropayment"],
         "mcp": ["mcp", "model context protocol", "mcp server", "mcp tool"],
-        "ethers": ["ethers", "erc-8004", "erc8004", "blockchain", "smart contract", "solidity", "web3"],
+        "ethers": [
+            "ethers",
+            "erc-8004",
+            "erc8004",
+            "blockchain",
+            "smart contract",
+            "solidity",
+            "web3",
+        ],
         "express5": ["express", "fastify", "rest api", "http server"],
     }
 
@@ -145,11 +150,8 @@ STREAMING_FIXES: list[tuple[str, str]] = [
     (r"ethers\.constants\.MaxUint256\b", "MaxUint256"),
     (r"new\s+Web3Provider\b", "new BrowserProvider"),
     (r"BigNumber\.from\((\d+)\)", r"\1n"),  # BigNumber.from(42) → 42n
-
     # Express v4 → v5
-    (r"""app\.(get|post|put|delete|all)\(\s*['"](\*)['"]\s*,""",
-     r"""app.\1("/{*splat}","""),
-
+    (r"""app\.(get|post|put|delete|all)\(\s*['"](\*)['"]\s*,""", r"""app.\1("/{*splat}","""),
     # jest → vitest (in test files only — applied globally but harmless in non-test)
     (r"\bjest\.fn\(\)", "vi.fn()"),
     (r"\bjest\.mock\(", "vi.mock("),
@@ -183,6 +185,7 @@ def apply_streaming_fixes(code: str) -> str:
 # STAGE 3: Deterministic Autofixers (Post-Generation)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def fix_enum_to_const(code: str) -> str:
     """Replace TypeScript enum with 'as const' objects.
 
@@ -193,6 +196,7 @@ def fix_enum_to_const(code: str) -> str:
     After:  const Status = { Active: "active", Inactive: "inactive" } as const;
             type Status = typeof Status[keyof typeof Status];
     """
+
     def replace_enum(match):
         name = match.group(1)
         body = match.group(2)
@@ -226,6 +230,7 @@ def fix_namespace_removal(code: str) -> str:
     Converts: namespace Foo { export interface Bar { ... } }
     To:       interface FooBar { ... }  (prefixed with namespace name)
     """
+
     # Simple case: just strip the namespace wrapper
     def replace_namespace(match):
         # name = match.group(1)
@@ -271,15 +276,11 @@ def fix_import_type(code: str) -> str:
             imports = [s.strip() for s in match.group(2).split(",")]
             # Check if ALL imports look like types (uppercase first letter, no value usage)
             all_types = all(
-                imp.split(" as ")[0].strip()[0:1].isupper()
-                for imp in imports if imp.strip()
+                imp.split(" as ")[0].strip()[0:1].isupper() for imp in imports if imp.strip()
             )
             # Don't convert if any import is clearly a value (function, class instance)
             value_indicators = ["create", "make", "get", "parse", "format", "new"]
-            has_value = any(
-                any(vi in imp.lower() for vi in value_indicators)
-                for imp in imports
-            )
+            has_value = any(any(vi in imp.lower() for vi in value_indicators) for imp in imports)
 
             if all_types and not has_value:
                 # Check if any of these names are used as values (not just types) in the code
@@ -306,6 +307,7 @@ def fix_import_type(code: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def fixup_typescript_output(
     code_files: dict[str, str],
@@ -348,6 +350,7 @@ def fixup_typescript_output(
 
     # Stage 3d: Run covenant enforcer
     from belief.validators.typescript_covenants import enforce_ts_covenants
+
     fixed, ts_result = enforce_ts_covenants(fixed, auto_fix=True)
     total_fixes += ts_result.fixes_applied
 

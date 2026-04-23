@@ -26,8 +26,12 @@ def queue_dirs(tmp_path: Path) -> GoalQueue:
 
 
 def _write_sidecar(
-    dir: Path, goal_id: str, *, priority: float | None = None,
-    build_time: int | None = None, difficulty: int | None = None,
+    dir: Path,
+    goal_id: str,
+    *,
+    priority: float | None = None,
+    build_time: int | None = None,
+    difficulty: int | None = None,
     mtime_offset: float = 0.0,
 ) -> None:
     dir.mkdir(parents=True, exist_ok=True)
@@ -124,7 +128,6 @@ def test_render_fallback_uses_known_templates() -> None:
     seen: set[str] = set()
     for i in range(30):
         t = render_fallback_goal(rng=random.Random(i))
-        base = t.split()[1] if len(t.split()) > 1 else t
         # Just confirm each rendered goal starts with "Build"
         assert t.startswith("Build"), t
         seen.add(t)

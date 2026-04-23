@@ -31,10 +31,10 @@ class GrinderStatus:
     current_goal_id: str = ""
     current_goal_text: str = ""
     queue_depth: int = 0
-    last_result: str = ""            # 'pass' | 'fail' | ''
+    last_result: str = ""  # 'pass' | 'fail' | ''
     last_cost_usd: float = 0.0
     last_duration_s: float = 0.0
-    started_at: float = 0.0          # unix seconds; 0 == never started
+    started_at: float = 0.0  # unix seconds; 0 == never started
     updated_at: float = field(default_factory=lambda: float(time.time()))
 
     @property

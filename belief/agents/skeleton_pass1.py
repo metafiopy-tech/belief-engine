@@ -49,9 +49,7 @@ def _promote_database_files_to_skeleton(skeleton: Any) -> None:
             entry.skeleton = True
             promoted += 1
     if promoted:
-        logger.info(
-            f"SkeletonPass1: promoted {promoted} database file(s) to skeleton=True"
-        )
+        logger.info(f"SkeletonPass1: promoted {promoted} database file(s) to skeleton=True")
 
 
 async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -71,12 +69,21 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
     all_filenames = list(code_files.keys())
     if file_manifest:
         if isinstance(file_manifest, dict):
-            all_filenames.extend(file_manifest.get("files", {}).keys() if isinstance(file_manifest.get("files"), dict) else [])
+            all_filenames.extend(
+                file_manifest.get("files", {}).keys()
+                if isinstance(file_manifest.get("files"), dict)
+                else []
+            )
         elif hasattr(file_manifest, "files"):
-            all_filenames.extend(f.filename if hasattr(f, "filename") else str(f) for f in (file_manifest.files or []))
+            all_filenames.extend(
+                f.filename if hasattr(f, "filename") else str(f)
+                for f in (file_manifest.files or [])
+            )
     has_typescript = any(f.endswith((".ts", ".tsx", ".jsx")) for f in all_filenames)
     if has_typescript:
-        logger.info("SkeletonPass1: TypeScript project detected — skipping Python skeleton generation")
+        logger.info(
+            "SkeletonPass1: TypeScript project detected — skipping Python skeleton generation"
+        )
         return result
 
     try:
@@ -104,6 +111,7 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
         build_plan_summary = ""
         try:
             from belief.models.dependency_dag import create_build_plan
+
             build_plan = create_build_plan(skeleton)
             build_plan_summary = (
                 f"{build_plan.total_skeleton_files} skeleton + "
@@ -131,9 +139,7 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
                 }
                 for e in skeleton.file_tree
             ],
-            "external_dependencies": sorted(
-                skeleton.external_dependencies or []
-            ),
+            "external_dependencies": sorted(skeleton.external_dependencies or []),
             "framework": getattr(skeleton, "framework", "") or "",
             "language": getattr(skeleton, "language", "python"),
         }
@@ -152,9 +158,7 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
                 "registry_file_count": len(local_registry.all_files()),
             }
 
-        cached_payload, cache_hit = get_or_generate_skeleton(
-            skeleton_spec, _generate
-        )
+        cached_payload, cache_hit = get_or_generate_skeleton(skeleton_spec, _generate)
         skeleton_files = dict(cached_payload.get("files", {}))
         registry_context = cached_payload.get("registry_context", "") or ""
         cached_file_count = int(cached_payload.get("registry_file_count", 0))
@@ -164,9 +168,7 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
                 f"({cached_file_count} registry entries)"
             )
         else:
-            logger.info(
-                f"SkeletonPass1: generated {len(skeleton_files)} skeleton files"
-            )
+            logger.info(f"SkeletonPass1: generated {len(skeleton_files)} skeleton files")
 
         # --- M3: Compression-summary logging ---
         # Compression itself happens inside the generator path now (the
@@ -177,10 +179,7 @@ async def skeleton_pass1_node(state: dict[str, Any]) -> dict[str, Any]:
             from belief.models.context_compression import estimate_tokens
 
             full_tokens = estimate_tokens(registry_context)
-            compression_summary = (
-                f"registry={full_tokens} tokens, "
-                f"{cached_file_count} files"
-            )
+            compression_summary = f"registry={full_tokens} tokens, {cached_file_count} files"
             logger.info(f"SkeletonPass1: context compression — {compression_summary}")
         except ImportError:
             logger.debug("SkeletonPass1: context_compression not available")

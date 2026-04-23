@@ -52,20 +52,23 @@ logger = logging.getLogger("belief.graph")
 
 # ── Routing functions ─────────────────────────────────────────────────────────
 
+
 def _normalize_error(error: str) -> str:
     """Normalize an error string for deduplication (strip line numbers, paths, timestamps)."""
     import re
+
     s = error.lower().strip()
-    s = re.sub(r'line \d+', 'line N', s)
-    s = re.sub(r'/tmp/belief_\w+/', '/tmp/', s)
-    s = re.sub(r'belief-\w{8}', 'belief-XXXX', s)
-    s = re.sub(r'\d{2}:\d{2}:\d{2}', 'HH:MM:SS', s)
+    s = re.sub(r"line \d+", "line N", s)
+    s = re.sub(r"/tmp/belief_\w+/", "/tmp/", s)
+    s = re.sub(r"belief-\w{8}", "belief-XXXX", s)
+    s = re.sub(r"\d{2}:\d{2}:\d{2}", "HH:MM:SS", s)
     return s
 
 
 def _error_hash(error: str) -> str:
     """Hash a normalized error for dedup tracking."""
     import hashlib
+
     return hashlib.md5(_normalize_error(error).encode()).hexdigest()[:12]
 
 
@@ -115,15 +118,14 @@ def _maybe_apply_confidence_probe(state: dict[str, Any]) -> Optional[str]:
         )
         return "synthesizer"
     # Mid-band with local mode: flag for escalation
-    if (
-        confidence < 0.8
-        and str(state.get("model_mode") or "").lower() == "local"
-    ):
+    if confidence < 0.8 and str(state.get("model_mode") or "").lower() == "local":
         state["escalate_to_cloud"] = True
     return None
 
 
-def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "builder", "synthesizer"]:
+def _route_after_gap(
+    state: dict[str, Any],
+) -> Literal["research", "debugger", "builder", "synthesizer"]:
     # Session 10: probe-driven circuit-break. No-op unless enabled + trained.
     probe_decision = _maybe_apply_confidence_probe(state)
     if probe_decision == "synthesizer":
@@ -138,7 +140,9 @@ def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "
     # transient classification (e.g. "429" in an import error string)
     # masks a non-transient failure.
     if iteration >= max_iter:
-        logger.warning(f"Hard iteration cap reached ({iteration}/{max_iter}) — circuit-breaking to synthesizer")
+        logger.warning(
+            f"Hard iteration cap reached ({iteration}/{max_iter}) — circuit-breaking to synthesizer"
+        )
         return "synthesizer"
 
     # ── OTP-style error classification ──────────────────────────────
@@ -150,14 +154,22 @@ def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "
     # If execution succeeded, the code WORKS — go to synthesizer
     exec_success = False
     if exec_r:
-        exec_success = exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
+        exec_success = (
+            exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
+        )
     if exec_success:
         return "synthesizer"
 
     # Classify the error
     if exec_r:
-        error = exec_r.get("error_summary", "") if isinstance(exec_r, dict) else getattr(exec_r, "error_summary", "")
-        stderr = exec_r.get("stderr", "") if isinstance(exec_r, dict) else getattr(exec_r, "stderr", "")
+        error = (
+            exec_r.get("error_summary", "")
+            if isinstance(exec_r, dict)
+            else getattr(exec_r, "error_summary", "")
+        )
+        stderr = (
+            exec_r.get("stderr", "") if isinstance(exec_r, dict) else getattr(exec_r, "stderr", "")
+        )
 
         if error or stderr:
             from belief.agents.error_classifier import classify_error, RecoveryStrategy
@@ -171,7 +183,9 @@ def _route_after_gap(state: dict[str, Any]) -> Literal["research", "debugger", "
                 previous_errors=previous_errors,
             )
 
-            logger.info(f"Error classified: {classified.category.value} → {classified.strategy.value} ({classified.reason})")
+            logger.info(
+                f"Error classified: {classified.category.value} → {classified.strategy.value} ({classified.reason})"
+            )
 
             if classified.strategy == RecoveryStrategy.FAIL_FAST:
                 return "synthesizer"
@@ -234,28 +248,36 @@ def _exec_error_is_refinable(exec_r: Any) -> bool:
     if not exec_r:
         return False
     summary = (
-        exec_r.get("error_summary") if isinstance(exec_r, dict)
+        exec_r.get("error_summary")
+        if isinstance(exec_r, dict)
         else getattr(exec_r, "error_summary", "")
     ) or ""
     stderr = (
-        exec_r.get("stderr") if isinstance(exec_r, dict)
-        else getattr(exec_r, "stderr", "")
+        exec_r.get("stderr") if isinstance(exec_r, dict) else getattr(exec_r, "stderr", "")
     ) or ""
     haystack = f"{summary}\n{stderr}"
     return any(marker in haystack for marker in _REFINEMENT_ELIGIBLE_ERROR_MARKERS)
 
 
-def _route_after_validation(state: dict[str, Any]) -> Literal["polarity_check", "builder", "research", "refinement"]:
+def _route_after_validation(
+    state: dict[str, Any],
+) -> Literal["polarity_check", "builder", "research", "refinement"]:
     exec_r = state.get("execution_result")
     exec_ok = False
     if exec_r:
-        exec_ok = exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
+        exec_ok = (
+            exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
+        )
 
     validation = state.get("validation_result")
     if validation is None:
         return "polarity_check"
 
-    verdict = validation.get("verdict") if isinstance(validation, dict) else getattr(validation, "verdict", "pass")
+    verdict = (
+        validation.get("verdict")
+        if isinstance(validation, dict)
+        else getattr(validation, "verdict", "pass")
+    )
     if isinstance(verdict, str):
         v = verdict
     else:
@@ -274,11 +296,7 @@ def _route_after_validation(state: dict[str, Any]) -> Literal["polarity_check", 
     # iteration budget — it can't loop back into the main pipeline.
     # Previously these bypassed refinement entirely and burned rebuild
     # iterations on the debugger's immutable-skeleton deadlock.
-    if (
-        v == "fail_fixable"
-        and not exec_ok
-        and _exec_error_is_refinable(exec_r)
-    ):
+    if v == "fail_fixable" and not exec_ok and _exec_error_is_refinable(exec_r):
         logger.info("Router: executor failed with refinable error — routing to refinement")
         return "refinement"
 
@@ -309,12 +327,18 @@ def _route_after_polarity(state: dict[str, Any]) -> Literal["planner", "__end__"
     # Rebuilding working code always produces worse results.
     exec_r = state.get("execution_result")
     if exec_r:
-        exec_ok = exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
+        exec_ok = (
+            exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
+        )
         if exec_ok:
             return END
 
     polarity = state.get("polarity", {})
-    remainder = polarity.get("current_remainder") if isinstance(polarity, dict) else getattr(polarity, "current_remainder", None)
+    remainder = (
+        polarity.get("current_remainder")
+        if isinstance(polarity, dict)
+        else getattr(polarity, "current_remainder", None)
+    )
     if remainder and "significant" in str(remainder).lower():
         return "planner"
 
@@ -323,14 +347,17 @@ def _route_after_polarity(state: dict[str, Any]) -> Literal["planner", "__end__"
 
 # ── Polarity check node ──────────────────────────────────────────────────────
 
+
 def _make_polarity_check_node(router: ModelRouter):
     """Factory: returns a _polarity_check_node that closes over the pipeline router.
 
     Using a closure keeps the router consistent with the rest of the pipeline so
     BELIEF_MODEL_MODE=local routes the Latios call to Ollama instead of cloud.
     """
+
     async def _polarity_check_node(state: dict[str, Any]) -> dict[str, Any]:
         return await _polarity_check_impl(state, router)
+
     return _polarity_check_node
 
 
@@ -353,11 +380,19 @@ async def _polarity_check_impl(state: dict[str, Any], router: ModelRouter) -> di
 
     exec_success = False
     if exec_result:
-        exec_success = exec_result.get("success") if isinstance(exec_result, dict) else getattr(exec_result, "success", False)
+        exec_success = (
+            exec_result.get("success")
+            if isinstance(exec_result, dict)
+            else getattr(exec_result, "success", False)
+        )
 
     verdict = "unknown"
     if validation:
-        verdict = validation.get("verdict") if isinstance(validation, dict) else getattr(validation, "verdict", "unknown")
+        verdict = (
+            validation.get("verdict")
+            if isinstance(validation, dict)
+            else getattr(validation, "verdict", "unknown")
+        )
         if hasattr(verdict, "value"):
             verdict = verdict.value
 
@@ -397,8 +432,11 @@ async def _polarity_check_impl(state: dict[str, Any], router: ModelRouter) -> di
             exec_success=exec_success,
         )
         raw = await llm.generate_text(
-            role="latios", system=LATIOS_SYSTEM, prompt=prompt,
-            temperature=0.2, max_tokens=800,
+            role="latios",
+            system=LATIOS_SYSTEM,
+            prompt=prompt,
+            temperature=0.2,
+            max_tokens=800,
         )
 
         # Parse JSON response
@@ -408,7 +446,9 @@ async def _polarity_check_impl(state: dict[str, Any], router: ModelRouter) -> di
             polarity = dict(result.get("polarity", {}))
             if data.get("significant_gap"):
                 polarity["current_remainder"] = f"significant: {data.get('gap_summary', '')}"
-                polarity["accumulated_remainders"] = polarity.get("accumulated_remainders", []) + [data.get("gap_summary", "")]
+                polarity["accumulated_remainders"] = polarity.get("accumulated_remainders", []) + [
+                    data.get("gap_summary", "")
+                ]
                 logger.info(f"Latios: SIGNIFICANT gap — {data.get('gap_summary', '')[:100]}")
                 # Increment iteration for the re-run
                 result["iteration"] = state.get("iteration", 0) + 1
@@ -430,6 +470,7 @@ async def _polarity_check_impl(state: dict[str, Any], router: ModelRouter) -> di
 
 # ── Increment iteration node ─────────────────────────────────────────────────
 
+
 def _increment_iteration(state: dict[str, Any]) -> dict[str, Any]:
     result = dict(state)
     result["iteration"] = state.get("iteration", 0) + 1
@@ -437,7 +478,11 @@ def _increment_iteration(state: dict[str, Any]) -> dict[str, Any]:
     # Track errors for the OTP-style classifier
     exec_r = state.get("execution_result")
     if exec_r:
-        error = exec_r.get("error_summary", "") if isinstance(exec_r, dict) else getattr(exec_r, "error_summary", "")
+        error = (
+            exec_r.get("error_summary", "")
+            if isinstance(exec_r, dict)
+            else getattr(exec_r, "error_summary", "")
+        )
         if error:
             # Hash tracking (legacy)
             hashes = list(state.get("_error_hashes", []))
@@ -453,6 +498,7 @@ def _increment_iteration(state: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── Covenant Enforcement node (Move 2) ───────────────────────────────────────
+
 
 async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
     """Structural enforcement of self-learned covenants.
@@ -485,10 +531,9 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
             # Group by rule for a compact log line — one per build,
             # not one per rewrite, so the logs stay readable.
             from collections import Counter
+
             rule_counts = Counter(a.rule for a in applied)
-            summary = ", ".join(
-                f"{rule}×{n}" for rule, n in rule_counts.most_common()
-            )
+            summary = ", ".join(f"{rule}×{n}" for rule, n in rule_counts.most_common())
             logger.info(
                 "Covenant pipeline (LibCST+ruff): %d rewrites across %d files — %s",
                 len(applied),
@@ -565,6 +610,7 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
 
 # ── Static Import Fix node (Covenant #3) ─────────────────────────────────────
 
+
 async def _import_fix_node(state: dict[str, Any]) -> dict[str, Any]:
     """Statically verify and auto-fix cross-module imports after building.
 
@@ -608,10 +654,13 @@ async def _import_fix_node(state: dict[str, Any]) -> dict[str, Any]:
 
 # ── Water Cycle refinement node ──────────────────────────────────────────────
 
+
 def _make_refinement_node(router: ModelRouter):
     """Factory: returns a _refinement_node that closes over the pipeline router."""
+
     async def _refinement_node(state: dict[str, Any]) -> dict[str, Any]:
         return await _refinement_impl(state, router)
+
     return _refinement_node
 
 
@@ -625,47 +674,63 @@ async def _refinement_impl(state: dict[str, Any], router: ModelRouter) -> dict[s
 
     try:
         from belief.refinement.runner import run_refinement_loop, store_refinement_lessons
-        
+
         code_files = state.get("code_files", {})
         test_files = state.get("test_files", {})
-        
+
         # Get test output — try multiple sources
         test_output = ""
-        
+
         # Source 1: ExecutionResult.pytest_result.raw_output (best source)
         exec_r = state.get("execution_result")
         if exec_r:
-            pytest_r = exec_r.get("pytest_result") if isinstance(exec_r, dict) else getattr(exec_r, "pytest_result", None)
+            pytest_r = (
+                exec_r.get("pytest_result")
+                if isinstance(exec_r, dict)
+                else getattr(exec_r, "pytest_result", None)
+            )
             if pytest_r:
-                test_output = pytest_r.get("raw_output", "") if isinstance(pytest_r, dict) else getattr(pytest_r, "raw_output", "")
+                test_output = (
+                    pytest_r.get("raw_output", "")
+                    if isinstance(pytest_r, dict)
+                    else getattr(pytest_r, "raw_output", "")
+                )
             if not test_output:
-                test_output = exec_r.get("stdout", "") if isinstance(exec_r, dict) else getattr(exec_r, "stdout", "")
-        
+                test_output = (
+                    exec_r.get("stdout", "")
+                    if isinstance(exec_r, dict)
+                    else getattr(exec_r, "stdout", "")
+                )
+
         # Source 2: validator test output
         if not test_output:
             validation = state.get("validation_result")
             if isinstance(validation, dict):
                 test_output = validation.get("test_output", "") or validation.get("summary", "")
             elif validation:
-                test_output = getattr(validation, "test_output", "") or getattr(validation, "summary", "")
-        
+                test_output = getattr(validation, "test_output", "") or getattr(
+                    validation, "summary", ""
+                )
+
         # Source 3: tester output
         if not test_output:
             test_output = state.get("test_output", "")
-        
+
         if not code_files:
             logger.warning("Refinement: no code files available")
             return result
-        
+
         # If we don't have test output, or it's unparseable, run tests ourselves
         if test_files:
             from belief.refinement.analyzer import parse_test_results as _parse
+
             _p, _t, _, _ = _parse(test_output) if test_output else (0, 0, [], [])
             if _t == 0:
                 from belief.refinement.runner import _run_tests
+
                 test_output, _, _, _ = _run_tests(code_files, test_files)
                 logger.info("Refinement: ran baseline tests to get initial output")
-        
+
         # Run the water cycle (pass router so refinement uses the same backend)
         refinement = await run_refinement_loop(
             code_files=code_files,
@@ -674,7 +739,7 @@ async def _refinement_impl(state: dict[str, Any], router: ModelRouter) -> dict[s
             max_cycles=3,
             router=router,
         )
-        
+
         # Update state with refined code
         result["code_files"] = refinement["code_files"]
 
@@ -711,27 +776,30 @@ async def _refinement_impl(state: dict[str, Any], router: ModelRouter) -> dict[s
                     "tests_passed": final_passed,
                     "tests_total": final_total,
                 }
-                logger.info(f"Refinement: verdict upgraded to PASS ({final_passed}/{final_total} = {actual_score:.0%})")
-        
+                logger.info(
+                    f"Refinement: verdict upgraded to PASS ({final_passed}/{final_total} = {actual_score:.0%})"
+                )
+
         # Store lessons in soil
         lessons = refinement.get("lessons", [])
         if lessons:
             deposited = await store_refinement_lessons(lessons)
             logger.info(f"Refinement: deposited {deposited} lessons into soil")
-        
+
         logger.info(
             f"Refinement: {refinement['exit_reason']} — "
             f"{refinement.get('cycles_used', 0)} cycles, "
             f"+{refinement.get('improvement', 0)} tests"
         )
-    
+
     except Exception as e:
         logger.warning(f"Refinement failed: {e}")
-    
+
     return result
 
 
 # ── Build the graph ───────────────────────────────────────────────────────────
+
 
 def _traced(node: Any, agent_name: str) -> Any:
     """Session 9: wrap a graph node with per-step trace recording.
@@ -761,11 +829,11 @@ def _traced(node: Any, agent_name: str) -> Any:
 
     call_target = node if callable(node) else getattr(node, "__call__", node)
     is_async = _asyncio.iscoroutinefunction(call_target) or (
-        hasattr(node, "__call__")
-        and _asyncio.iscoroutinefunction(node.__call__)
+        hasattr(node, "__call__") and _asyncio.iscoroutinefunction(node.__call__)
     )
 
     if is_async:
+
         @_functools.wraps(call_target)
         async def _async_wrapper(state: Any) -> Any:
             result = await node(state)
@@ -856,32 +924,54 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_edge("executor", "gap_analyst")
 
     # Gap routing
-    graph.add_conditional_edges("gap_analyst", _route_after_gap, {
-        "research": "increment_iteration",
-        "debugger": "increment_iteration",
-        "builder": "increment_iteration",
-        "synthesizer": "synthesizer",
-    })
+    graph.add_conditional_edges(
+        "gap_analyst",
+        _route_after_gap,
+        {
+            "research": "increment_iteration",
+            "debugger": "increment_iteration",
+            "builder": "increment_iteration",
+            "synthesizer": "synthesizer",
+        },
+    )
 
     # After increment, re-route to the right target
     def _re_route(state: dict[str, Any]) -> Literal["research", "debugger", "builder"]:
         gap = state.get("gap_report")
         if gap is None:
             return "builder"
-        requires_research = gap.get("requires_research") if isinstance(gap, dict) else getattr(gap, "requires_research", False)
+        requires_research = (
+            gap.get("requires_research")
+            if isinstance(gap, dict)
+            else getattr(gap, "requires_research", False)
+        )
         if requires_research:
             return "research"
-        blockers = gap.get("total_blockers", 0) if isinstance(gap, dict) else getattr(gap, "total_blockers", 0)
+        blockers = (
+            gap.get("total_blockers", 0)
+            if isinstance(gap, dict)
+            else getattr(gap, "total_blockers", 0)
+        )
         if blockers > 0:
             exec_r = state.get("execution_result")
-            if exec_r and (exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)):
+            if exec_r and (
+                exec_r.get("success")
+                if isinstance(exec_r, dict)
+                else getattr(exec_r, "success", False)
+            ):
                 return "builder"
             return "debugger"
         return "builder"
 
-    graph.add_conditional_edges("increment_iteration", _re_route, {
-        "research": "research", "debugger": "debugger", "builder": "builder",
-    })
+    graph.add_conditional_edges(
+        "increment_iteration",
+        _re_route,
+        {
+            "research": "research",
+            "debugger": "debugger",
+            "builder": "builder",
+        },
+    )
 
     # Debugger goes back to executor
     graph.add_edge("debugger", "executor")
@@ -890,12 +980,16 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_edge("synthesizer", "validator")
 
     # Validator routing — includes refinement path
-    graph.add_conditional_edges("validator", _route_after_validation, {
-        "polarity_check": "polarity_check",
-        "builder": "increment_iteration",
-        "research": "research",
-        "refinement": "refinement",
-    })
+    graph.add_conditional_edges(
+        "validator",
+        _route_after_validation,
+        {
+            "polarity_check": "polarity_check",
+            "builder": "increment_iteration",
+            "research": "research",
+            "refinement": "refinement",
+        },
+    )
 
     # Refinement (Water Cycle) → decomposer → END
     graph.add_edge("refinement", "decomposer")
@@ -903,10 +997,14 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     # Polarity check — outer loop
     # Terminal path: polarity_check → decomposer → END
     # Loop-back path: polarity_check → planner (decomposer skipped on intermediate iterations)
-    graph.add_conditional_edges("polarity_check", _route_after_polarity, {
-        "planner": "planner",
-        END: "decomposer",
-    })
+    graph.add_conditional_edges(
+        "polarity_check",
+        _route_after_polarity,
+        {
+            "planner": "planner",
+            END: "decomposer",
+        },
+    )
 
     # Decomposer always terminates the pipeline
     graph.add_edge("decomposer", END)

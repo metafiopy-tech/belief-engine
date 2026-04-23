@@ -31,44 +31,52 @@ class CommunicationType(str, Enum):
 
 class RouteSpec(BaseModel):
     """A single API route in a service."""
+
     path: str = Field(description="e.g., '/users/{id}'")
     method: str = Field(default="GET", description="HTTP method")
-    request_model: Optional[str] = Field(default=None, description="Pydantic model for request body")
+    request_model: Optional[str] = Field(
+        default=None, description="Pydantic model for request body"
+    )
     response_model: Optional[str] = Field(default=None, description="Pydantic model for response")
     description: str = ""
 
 
 class EventSpec(BaseModel):
     """An event published or subscribed to by a service."""
+
     event_name: str = Field(description="e.g., 'user.created'")
-    schema_model: Optional[str] = Field(default=None, description="Pydantic model for event payload")
+    schema_model: Optional[str] = Field(
+        default=None, description="Pydantic model for event payload"
+    )
     description: str = ""
 
 
 class ServiceDependency(BaseModel):
     """An inter-service dependency — service A calls service B."""
+
     target_service: str = Field(description="Name of the service being called")
     communication: CommunicationType = CommunicationType.HTTP
     calls: list[RouteSpec] = Field(
-        default_factory=list,
-        description="Specific routes this service calls on the target"
+        default_factory=list, description="Specific routes this service calls on the target"
     )
     purpose: str = ""
 
 
 class ServiceSpec(BaseModel):
     """Specification for a single service in a multi-service architecture."""
+
     name: str = Field(description="e.g., 'user-service'")
     package: str = Field(description="Package/directory name, e.g., 'user_service'")
     description: str = ""
     port: int = Field(default=8000, description="Port this service listens on")
     framework: str = Field(default="fastapi", description="Web framework")
-    language: str = Field(default="python", description="Programming language: python, typescript, go")
+    language: str = Field(
+        default="python", description="Programming language: python, typescript, go"
+    )
 
     # Files in this service
     files: list[str] = Field(
-        default_factory=list,
-        description="Relative file paths within the service package"
+        default_factory=list, description="Relative file paths within the service package"
     )
 
     # API contract
@@ -100,10 +108,11 @@ class ServiceSpec(BaseModel):
 
 class SharedModelSpec(BaseModel):
     """A model shared across services — the single source of truth."""
+
     name: str = Field(description="Class name, e.g., 'User'")
     fields: dict[str, str] = Field(
         default_factory=dict,
-        description="Field name → type annotation, e.g., {'id': 'uuid', 'email': 'str'}"
+        description="Field name → type annotation, e.g., {'id': 'uuid', 'email': 'str'}",
     )
     description: str = ""
 
@@ -118,6 +127,7 @@ class ServiceArchitecture(BaseModel):
     The descriptor generates Docker Compose, API contracts, and inter-service
     client code.
     """
+
     system_name: str = Field(description="e.g., 'task-management-platform'")
     description: str = ""
 
@@ -127,17 +137,13 @@ class ServiceArchitecture(BaseModel):
     # Shared across all services
     shared_models: list[SharedModelSpec] = Field(
         default_factory=list,
-        description="Models shared by multiple services (single source of truth)"
+        description="Models shared by multiple services (single source of truth)",
     )
-    shared_package: str = Field(
-        default="shared",
-        description="Package name for shared modules"
-    )
+    shared_package: str = Field(default="shared", description="Package name for shared modules")
 
     # Infrastructure
     gateway: Optional[ServiceSpec] = Field(
-        default=None,
-        description="API gateway service (routes requests to backend services)"
+        default=None, description="API gateway service (routes requests to backend services)"
     )
 
     @property
@@ -178,7 +184,9 @@ class ServiceArchitecture(BaseModel):
             tree[f"{self.shared_package}/models.py"] = "Shared data models"
             tree[f"{self.shared_package}/schemas.py"] = "Shared Pydantic schemas"
             tree[f"{self.shared_package}/config.py"] = "Shared configuration"
-            tree[f"{self.shared_package}/events.py"] = "Event schemas for inter-service communication"
+            tree[f"{self.shared_package}/events.py"] = (
+                "Event schemas for inter-service communication"
+            )
 
         # Per-service files
         for service in self.services:
@@ -316,17 +324,21 @@ def service_architecture_to_file_manifest(arch: ServiceArchitecture):
             elif filepath.endswith("/service.py"):
                 deps.extend([f"{pkg}/models.py"])
 
-        files.append(FileManifest(
-            filename=filepath,
-            purpose=description,
-            public_interface="",
-            depends_on=deps,
-            is_entry_point=is_entry,
-        ))
+        files.append(
+            FileManifest(
+                filename=filepath,
+                purpose=description,
+                public_interface="",
+                depends_on=deps,
+                is_entry_point=is_entry,
+            )
+        )
 
     # Add docker-compose as a pre-generated file
-    entry = "gateway/main.py" if arch.gateway else (
-        f"{arch.services[0].package}/server.py" if arch.services else "main.py"
+    entry = (
+        "gateway/main.py"
+        if arch.gateway
+        else (f"{arch.services[0].package}/server.py" if arch.services else "main.py")
     )
 
     return FileManifestPlan(

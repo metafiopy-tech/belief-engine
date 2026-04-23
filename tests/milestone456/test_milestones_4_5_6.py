@@ -50,6 +50,7 @@ from belief.evolution.self_improvement import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_api_manifest() -> ProjectManifest:
     return ProjectManifest(
         project_name="lead_gen_pipeline",
@@ -61,12 +62,24 @@ def _make_api_manifest() -> ProjectManifest:
         health_check=HealthCheck(path="/health"),
         pip_packages=["fastapi", "httpx", "pydantic", "pydantic-settings"],
         env_vars=[
-            EnvVar(name="PIPELINE_GOOGLE_API_KEY", description="Google API key",
-                   required=True, secret=True),
-            EnvVar(name="PIPELINE_MAX_CONCURRENCY", description="Max concurrency",
-                   required=False, default="5"),
-            EnvVar(name="PIPELINE_COST_BUDGET", description="Cost budget",
-                   required=False, default="2.0"),
+            EnvVar(
+                name="PIPELINE_GOOGLE_API_KEY",
+                description="Google API key",
+                required=True,
+                secret=True,
+            ),
+            EnvVar(
+                name="PIPELINE_MAX_CONCURRENCY",
+                description="Max concurrency",
+                required=False,
+                default="5",
+            ),
+            EnvVar(
+                name="PIPELINE_COST_BUDGET",
+                description="Cost budget",
+                required=False,
+                default="2.0",
+            ),
         ],
         docker_expose=[8000],
         depends_on=["postgres"],
@@ -77,6 +90,7 @@ def _make_api_manifest() -> ProjectManifest:
 # M4: Deployment Artifacts
 # ===========================================================================
 
+
 class TestProjectManifest:
     def test_basic_creation(self):
         m = _make_api_manifest()
@@ -85,6 +99,7 @@ class TestProjectManifest:
 
     def test_manifest_from_skeleton(self):
         from tests.milestone2.test_milestone2 import _make_12_file_skeleton
+
         skeleton = _make_12_file_skeleton()
         files = {"main.py": "from fastapi import FastAPI\napp = FastAPI()"}
         manifest = manifest_from_skeleton(skeleton, files)
@@ -209,6 +224,7 @@ class TestAllArtifacts:
 # M5: Composition Pattern
 # ===========================================================================
 
+
 class TestPackageEvaluation:
     def test_well_known_packages(self):
         pkg = evaluate_package("fastapi")
@@ -244,8 +260,11 @@ class TestComponentDecision:
 
     def test_low_quality_generate(self):
         weak = PackageCandidate(
-            name="bad-lib", downloads_monthly=10, stars=0,
-            source_rank=1, maintained=False,
+            name="bad-lib",
+            downloads_monthly=10,
+            stars=0,
+            source_rank=1,
+            maintained=False,
         )
         decision = decide_component_strategy("thing", "desc", [weak])
         assert decision.strategy == ComponentStrategy.GENERATE
@@ -264,7 +283,10 @@ class TestCompositionPlan:
 
         # httpx should be found for http client
         http_decision = next(d for d in plan.decisions if d.component_name == "http_client")
-        assert http_decision.strategy in (ComponentStrategy.USE_LIBRARY, ComponentStrategy.WRAP_LIBRARY)
+        assert http_decision.strategy in (
+            ComponentStrategy.USE_LIBRARY,
+            ComponentStrategy.WRAP_LIBRARY,
+        )
 
         # custom logic should be generated
         custom_decision = next(d for d in plan.decisions if d.component_name == "custom_logic")
@@ -287,6 +309,7 @@ class TestCompositionPlan:
 # ===========================================================================
 # M6: Self-Improvement Loop
 # ===========================================================================
+
 
 class TestSEED:
     def test_trigger_interval(self):
@@ -317,8 +340,9 @@ class TestSEED:
         seed = SEED(trigger_interval=3)
         for _ in range(3):
             seed.record_build({"correction_rounds": 0, "failures": []})
-        proposal = seed.propose()
-        # Might be None or propose token optimization — either is fine
+        # Return value intentionally unchecked: may be None OR a
+        # token-optimisation proposal — both acceptable.
+        seed.propose()
 
 
 class TestMentor:
@@ -444,9 +468,12 @@ class TestSelfPatch:
 
             patcher = SelfPatch(tmpdir)
             proposal = ImprovementProposal(
-                title="Rejected", description="",
+                title="Rejected",
+                description="",
                 improvement_type=ImprovementType.PARAMETER,
-                target_file="test_file.py", current_code="", proposed_code="x = 2\n",
+                target_file="test_file.py",
+                current_code="",
+                proposed_code="x = 2\n",
                 expected_benefit="",
             )
             verdict = MentorVerdict(approved=False, reasoning="nope")

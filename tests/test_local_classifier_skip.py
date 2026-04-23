@@ -17,12 +17,14 @@ from __future__ import annotations
 
 def test_fizzbuzz_is_single_service():
     from belief.tools.multi_service import _classify_by_keywords
+
     result = _classify_by_keywords("Build a Python FizzBuzz script")
     assert result.is_multi_service is False
 
 
 def test_cli_is_single_service():
     from belief.tools.multi_service import _classify_by_keywords
+
     result = _classify_by_keywords("build a click CLI that reverses a string")
     assert result.is_multi_service is False
 
@@ -31,18 +33,17 @@ def test_two_separate_services_flagged():
     """The keyword classifier uses structural patterns, not loose
     mentions.  'two separate services' is one of the strong patterns."""
     from belief.tools.multi_service import _classify_by_keywords
+
     result = _classify_by_keywords(
-        "build two separate services: an API on port 8000 and a worker "
-        "on port 8001"
+        "build two separate services: an API on port 8000 and a worker on port 8001"
     )
     assert result.is_multi_service is True
 
 
 def test_gateway_routes_to_pattern_flagged():
     from belief.tools.multi_service import _classify_by_keywords
-    result = _classify_by_keywords(
-        "build an API gateway that routes to three backend services"
-    )
+
+    result = _classify_by_keywords("build an API gateway that routes to three backend services")
     assert result.is_multi_service is True
 
 
@@ -51,9 +52,8 @@ def test_loose_microservice_mention_not_flagged():
     A single mention of 'microservice' without structural detail is
     a Tier-1 single-service build, not a multi-service orchestration."""
     from belief.tools.multi_service import _classify_by_keywords
-    result = _classify_by_keywords(
-        "build a microservice that computes primes up to N"
-    )
+
+    result = _classify_by_keywords("build a microservice that computes primes up to N")
     assert result.is_multi_service is False
 
 
@@ -62,6 +62,7 @@ def test_force_env_var_name_is_documented():
     — check it hasn't drifted.  Anyone hitting a classifier-bug
     will search for this exact name."""
     import pathlib
+
     cli_src = pathlib.Path(__file__).resolve().parents[1] / "belief" / "cli.py"
     src = cli_src.read_text()
     assert "BELIEF_FORCE_LLM_CLASSIFY" in src, (

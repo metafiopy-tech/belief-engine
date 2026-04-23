@@ -66,9 +66,7 @@ def select_affected_tests(
     return _static_import_select(codebase, changed_files)
 
 
-def _static_import_select(
-    codebase, changed_files: list[str]
-) -> list[str]:
+def _static_import_select(codebase, changed_files: list[str]) -> list[str]:
     """Select tests by analyzing import statements.
 
     A test is affected if it imports from any changed module.
@@ -135,10 +133,10 @@ def _extract_import_modules(code: str) -> set[str]:
                     modules.add(alias.name.split(".")[0])
     except SyntaxError:
         # Fallback to regex
-        for m in re.finditer(r'^\s*from\s+([\w.]+)\s+import', code, re.MULTILINE):
+        for m in re.finditer(r"^\s*from\s+([\w.]+)\s+import", code, re.MULTILINE):
             modules.add(m.group(1))
             modules.add(m.group(1).split(".")[0])
-        for m in re.finditer(r'^\s*import\s+([\w.]+)', code, re.MULTILINE):
+        for m in re.finditer(r"^\s*import\s+([\w.]+)", code, re.MULTILINE):
             modules.add(m.group(1))
             modules.add(m.group(1).split(".")[0])
 
@@ -149,14 +147,13 @@ def _has_testmon() -> bool:
     """Check if pytest-testmon is installed."""
     try:
         import testmon  # noqa: F401
+
         return True
     except ImportError:
         return False
 
 
-def _testmon_select(
-    codebase, changed_files: list[str]
-) -> list[str] | None:
+def _testmon_select(codebase, changed_files: list[str]) -> list[str] | None:
     """Use pytest-testmon for precise test selection.
 
     Requires a prior baseline run with --testmon to build the dependency database.
@@ -175,8 +172,10 @@ def _testmon_select(
         # Run pytest --testmon --collect-only to get affected tests
         proc = subprocess.run(
             [sys.executable, "-m", "pytest", "--testmon", "--collect-only", "-q"],
-            capture_output=True, text=True,
-            timeout=30, cwd=codebase.root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=codebase.root,
         )
 
         if proc.returncode != 0:

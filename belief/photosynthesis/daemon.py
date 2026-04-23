@@ -94,9 +94,7 @@ class PhotosynthesisDaemon:
         # Lazy: httpx client is inside each harvest dispatch
         from zoneinfo import ZoneInfo
 
-        jobstores = {
-            "default": apsc["SQLAlchemyJobStore"](url=f"sqlite:///{self.config.jobs_db}")
-        }
+        jobstores = {"default": apsc["SQLAlchemyJobStore"](url=f"sqlite:///{self.config.jobs_db}")}
         executors = {
             "default": apsc["ThreadPoolExecutor"](self.config.scheduler_max_workers),
         }
@@ -156,10 +154,26 @@ class PhotosynthesisDaemon:
             ("subnet_snapshot", self._subnet_snapshot, self.config.cadences.subnet_snapshot_s),
             ("swebench_refresh", self._swebench_refresh, self.config.cadences.swebench_refresh_s),
             ("budget_reconcile", self._budget_reconcile, self.config.cadences.budget_reconcile_s),
-            ("domain_profile_rebuild", self._domain_profile_rebuild, self.config.cadences.domain_profile_rebuild_s),
-            ("threshold_calibrate", self._threshold_calibrate, self.config.cadences.threshold_calibrate_s),
-            ("dead_letter_retry", self._dead_letter_retry, self.config.cadences.dead_letter_retry_s),
-            ("skill_library_compact", self._skill_library_compact, self.config.cadences.skill_library_compact_s),
+            (
+                "domain_profile_rebuild",
+                self._domain_profile_rebuild,
+                self.config.cadences.domain_profile_rebuild_s,
+            ),
+            (
+                "threshold_calibrate",
+                self._threshold_calibrate,
+                self.config.cadences.threshold_calibrate_s,
+            ),
+            (
+                "dead_letter_retry",
+                self._dead_letter_retry,
+                self.config.cadences.dead_letter_retry_s,
+            ),
+            (
+                "skill_library_compact",
+                self._skill_library_compact,
+                self.config.cadences.skill_library_compact_s,
+            ),
         )
         for job_id, callback, seconds in s5_jobs:
             self.scheduler.add_job(
@@ -248,8 +262,7 @@ class PhotosynthesisDaemon:
         )
 
         texts = [
-            {"signal_id": row["id"], "text": f"{row['title']} {row['summary']}"}
-            for row in rows
+            {"signal_id": row["id"], "text": f"{row['title']} {row['summary']}"} for row in rows
         ]
 
         results = filt.score(texts)
@@ -305,8 +318,11 @@ class PhotosynthesisDaemon:
             tracker = CostTracker()
             result = run_watchdog(tracker, get_default_state())
             if result.alerts:
-                logger.warning("anomaly_watchdog: %d alerts, paused=%s",
-                               len(result.alerts), result.flipped_to_paused)
+                logger.warning(
+                    "anomaly_watchdog: %d alerts, paused=%s",
+                    len(result.alerts),
+                    result.flipped_to_paused,
+                )
         except Exception:
             logger.exception("anomaly_watchdog failed")
 

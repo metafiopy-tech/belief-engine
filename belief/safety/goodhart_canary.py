@@ -42,10 +42,7 @@ CANARY_CHALLENGES = [
     },
     {
         "id": "canary-3",
-        "goal": (
-            "Build a Click CLI that reads a JSON file and outputs a "
-            "formatted markdown table"
-        ),
+        "goal": ("Build a Click CLI that reads a JSON file and outputs a formatted markdown table"),
         "tier": 2,
     },
 ]
@@ -71,6 +68,7 @@ async def run_canary(engine_graph=None) -> dict:
     if engine_graph is None:
         try:
             from belief.graph import build_pipeline
+
             graph = build_pipeline()
             engine_graph = graph.compile()
         except Exception as e:
@@ -79,18 +77,17 @@ async def run_canary(engine_graph=None) -> dict:
 
     for challenge in CANARY_CHALLENGES:
         try:
-            result = await engine_graph.ainvoke({
-                "user_goal": challenge["goal"],
-                "max_iterations": 2,
-                "max_cost_usd": 2.0,
-            })
+            result = await engine_graph.ainvoke(
+                {
+                    "user_goal": challenge["goal"],
+                    "max_iterations": 2,
+                    "max_cost_usd": 2.0,
+                }
+            )
 
-            passed = (
-                result.get("phase", "") == "complete"
-                or (
-                    isinstance(result.get("validation_result"), dict)
-                    and result["validation_result"].get("verdict") == "pass"
-                )
+            passed = result.get("phase", "") == "complete" or (
+                isinstance(result.get("validation_result"), dict)
+                and result["validation_result"].get("verdict") == "pass"
             )
             score = 0.0
             if isinstance(result.get("validation_result"), dict):
@@ -150,17 +147,13 @@ def check_goodhart_divergence(
     canary_trend = canary[-1] - canary[0]
 
     if proxy_trend > threshold and canary_trend < 0:
-        logger.warning(
-            f"Goodhart detected: proxy +{proxy_trend:.2f} but canary {canary_trend:.2f}"
-        )
+        logger.warning(f"Goodhart detected: proxy +{proxy_trend:.2f} but canary {canary_trend:.2f}")
         return True
 
     # Heuristic 2: Proxy-canary gap widening
     gaps = [p - c for p, c in zip(proxy, canary)]
     if len(gaps) >= 3 and gaps[-1] - gaps[0] > threshold:
-        logger.warning(
-            f"Goodhart detected: gap widening {gaps[0]:.2f} -> {gaps[-1]:.2f}"
-        )
+        logger.warning(f"Goodhart detected: gap widening {gaps[0]:.2f} -> {gaps[-1]:.2f}")
         return True
 
     return False

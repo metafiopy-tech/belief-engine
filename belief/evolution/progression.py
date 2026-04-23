@@ -33,19 +33,26 @@ logger = logging.getLogger("belief.evolution.progression")
 # "general". Deliberately simple — no LLM in the hot path (spec).
 DOMAINS: dict[str, list[str]] = {
     "fastapi": ["fastapi", "api", "rest", "crud", "endpoint", "route"],
-    "cli":     ["click", "cli", "command-line", "command line", "typer"],
-    "mcp":     ["mcp", "fastmcp", "tool-server", "tool server"],
-    "data":    ["csv", "pipeline", "etl", "data pipeline"],
-    "async":   ["asyncio", "websocket", "queue", "async "],
+    "cli": ["click", "cli", "command-line", "command line", "typer"],
+    "mcp": ["mcp", "fastmcp", "tool-server", "tool server"],
+    "data": ["csv", "pipeline", "etl", "data pipeline"],
+    "async": ["asyncio", "websocket", "queue", "async "],
     "library": ["sdk", "wrapper", "library", "package"],
-    "script":  ["script", "fizzbuzz", "fibonacci"],
+    "script": ["script", "fizzbuzz", "fibonacci"],
 }
 
 GENERAL_DOMAIN = "general"
 
 # Stable ordering for display (matches the spec's example).
 DOMAIN_DISPLAY_ORDER: tuple[str, ...] = (
-    "fastapi", "cli", "mcp", "data", "async", "library", "script", GENERAL_DOMAIN,
+    "fastapi",
+    "cli",
+    "mcp",
+    "data",
+    "async",
+    "library",
+    "script",
+    GENERAL_DOMAIN,
 )
 
 
@@ -73,15 +80,15 @@ def detect_domain(goal: str, tags: Optional[list[str]] = None) -> str:
 class ProgressionMetrics:
     """Current position in the generative chain."""
 
-    seed_tool_count: int = 0            # Stage 0: hand-authored tools
-    cluster_count: int = 0              # Stage 1: knowledge clusters
-    cluster_silhouette: float = 0.0     # Quality of clusters
-    coverage_fraction: float = 0.0      # Stage 2: benchmark space coverage
-    basis_rank_ratio: float = 0.0       # Stage 3: tool diversity
+    seed_tool_count: int = 0  # Stage 0: hand-authored tools
+    cluster_count: int = 0  # Stage 1: knowledge clusters
+    cluster_silhouette: float = 0.0  # Quality of clusters
+    coverage_fraction: float = 0.0  # Stage 2: benchmark space coverage
+    basis_rank_ratio: float = 0.0  # Stage 3: tool diversity
     connectivity_fraction: float = 0.0  # Stage 4: tool co-occurrence
-    archetype_count: int = 0            # Stage 5: recurring patterns
-    archetype_reuse: float = 0.0        # Stage 5: reuse on novel tasks
-    current_stage: int = 0              # 0-5
+    archetype_count: int = 0  # Stage 5: recurring patterns
+    archetype_reuse: float = 0.0  # Stage 5: reuse on novel tasks
+    current_stage: int = 0  # 0-5
     total_tool_count: int = 0
     # Session 7: which domain this snapshot represents. "general" means
     # the cross-domain view; otherwise one of DOMAINS.
@@ -217,9 +224,7 @@ def compute_all_domains(
     """
     out: dict[str, ProgressionMetrics] = {}
     for domain in DOMAINS:
-        out[domain] = compute_progression(
-            soil, tool_registry, build_traces, domain=domain
-        )
+        out[domain] = compute_progression(soil, tool_registry, build_traces, domain=domain)
     if include_general:
         out[GENERAL_DOMAIN] = compute_progression(
             soil, tool_registry, build_traces, domain=GENERAL_DOMAIN
@@ -259,9 +264,7 @@ def format_all_domains_report(
         filled = round(bar_width * max(0.0, min(1.0, fraction)))
         bar = "█" * filled + "░" * (bar_width - filled)
         note = _progress_note(m)
-        lines.append(
-            f"  {domain:<9} Stage {m.current_stage} ({stage_label:<12}) {bar} {note}"
-        )
+        lines.append(f"  {domain:<9} Stage {m.current_stage} ({stage_label:<12}) {bar} {note}")
     return "\n".join(lines)
 
 
@@ -407,6 +410,7 @@ def _compute_coverage(soil, tools: list) -> float:
 
     try:
         from belief.benchmark import CHALLENGES
+
         challenge_goals = [c.goal for c in CHALLENGES]
     except Exception:
         return 0.0
@@ -426,8 +430,9 @@ def _compute_coverage(soil, tools: list) -> float:
                 n_results=1,
                 include=["distances"],
             )
-            if (result["distances"] and result["distances"][0] and
-                    result["distances"][0][0] < 0.3):  # cosine distance < 0.3 means sim > 0.7
+            if (
+                result["distances"] and result["distances"][0] and result["distances"][0][0] < 0.3
+            ):  # cosine distance < 0.3 means sim > 0.7
                 covered += 1
         except Exception as e:
             logger.debug(f"Coverage query skipped: {e}")
@@ -445,6 +450,7 @@ def _compute_rank_ratio(embeddings: list[list[float]]) -> float:
 
     try:
         import numpy as np
+
         X = np.array(embeddings)
         _, s, _ = np.linalg.svd(X, full_matrices=False)
         # Rank ratio: number of significant singular values / total

@@ -82,7 +82,7 @@ async def async_estimate_difficulty(
     lies outside the POET minimal band — the ranker will still see the
     result and drop the seed from further pipeline consideration.
     """
-    text = f"{seed.get('title','')} {seed.get('summary','')}".strip()
+    text = f"{seed.get('title', '')} {seed.get('summary', '')}".strip()
 
     hits = skill_library_query(text) if text else []
     skills_found = [name for name, cos in hits if cos >= 0.6]
@@ -111,11 +111,7 @@ async def async_estimate_difficulty(
     zpd_fit = gauss * clamped
 
     accepted = MIN_COVERAGE <= skill_coverage <= MAX_COVERAGE
-    reason = (
-        "ok"
-        if accepted
-        else ("too_easy" if skill_coverage > MAX_COVERAGE else "too_hard")
-    )
+    reason = "ok" if accepted else ("too_easy" if skill_coverage > MAX_COVERAGE else "too_hard")
 
     return DifficultyResult(
         skill_coverage=skill_coverage,

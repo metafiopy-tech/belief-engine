@@ -16,7 +16,6 @@ minimal SkeletonArtifact and assert:
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 
@@ -25,6 +24,7 @@ import pytest
 def isolated_cache(tmp_path, monkeypatch):
     """Point the skeleton_cache module at a fresh temp dir for the test."""
     from belief.cache import skeleton_cache as sc
+
     sc.clear_caches()
     monkeypatch.setattr(sc, "DEFAULT_CACHE_DIR", tmp_path)
     yield tmp_path
@@ -39,8 +39,11 @@ def _minimal_skeleton():
     itself doesn't matter for this regression.
     """
     from belief.models.skeleton import (
-        FileRole, FileTreeEntry, SkeletonArtifact,
+        FileRole,
+        FileTreeEntry,
+        SkeletonArtifact,
     )
+
     return SkeletonArtifact(
         project_name="reg_test",
         description="regression fixture — no registry NameError",
@@ -61,6 +64,7 @@ def _minimal_skeleton():
 def _run_node(state):
     import asyncio
     from belief.agents.skeleton_pass1 import skeleton_pass1_node
+
     return asyncio.run(skeleton_pass1_node(state))
 
 
@@ -79,8 +83,7 @@ def test_skeleton_pass1_does_not_raise_registry_nameerror_on_miss(isolated_cache
     warnings = result.get("warnings", [])
     offenders = [w for w in warnings if "registry" in str(w).lower()]
     assert not offenders, (
-        f"skeleton_pass1 is leaking the registry NameError via warnings: "
-        f"{offenders}"
+        f"skeleton_pass1 is leaking the registry NameError via warnings: {offenders}"
     )
 
 
@@ -97,10 +100,7 @@ def test_skeleton_pass1_does_not_raise_on_cache_hit(isolated_cache):
     result = _run_node(state)  # hit (reads from cache)
     warnings = result.get("warnings", [])
     offenders = [w for w in warnings if "registry" in str(w).lower()]
-    assert not offenders, (
-        f"skeleton_pass1 cache-hit path is leaking the NameError: "
-        f"{offenders}"
-    )
+    assert not offenders, f"skeleton_pass1 cache-hit path is leaking the NameError: {offenders}"
 
 
 def test_skeleton_pass1_populates_registry_context(isolated_cache):
@@ -121,6 +121,7 @@ def test_skeleton_pass1_second_call_is_cache_hit(isolated_cache, caplog):
     """Second identical call logs 'cache HIT' — confirms the lru memo
     + on-disk cache are both wired up correctly."""
     import logging
+
     caplog.set_level(logging.INFO, logger="belief.agents.skeleton_pass1")
 
     state = {
@@ -132,7 +133,5 @@ def test_skeleton_pass1_second_call_is_cache_hit(isolated_cache, caplog):
     _run_node(state)
 
     log_lines = [rec.getMessage() for rec in caplog.records]
-    hit_lines = [l for l in log_lines if "cache HIT" in l]
-    assert hit_lines, (
-        f"second call did not report a cache hit. logs: {log_lines}"
-    )
+    hit_lines = [ln for ln in log_lines if "cache HIT" in ln]
+    assert hit_lines, f"second call did not report a cache hit. logs: {log_lines}"

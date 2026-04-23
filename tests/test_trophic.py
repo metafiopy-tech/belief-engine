@@ -77,8 +77,11 @@ class TestCompete:
 
     def test_custom_fragment_ids_propagate(self) -> None:
         rel = compete(
-            ADD_CORRECT, ADD_WRONG, BASIC_TESTS,
-            fragment_a_id="nutrient-42", fragment_b_id="nutrient-43",
+            ADD_CORRECT,
+            ADD_WRONG,
+            BASIC_TESTS,
+            fragment_a_id="nutrient-42",
+            fragment_b_id="nutrient-43",
             test_id="battery-1",
         )
         assert rel.predator_id == "nutrient-42"
@@ -130,8 +133,12 @@ class TestUpdateTrophicLevels:
         soil = _SoilStub()
         relations = [
             TrophicRelation(
-                predator_id="n-1", prey_id="n-2",
-                relation="predation", passes_a=3, passes_b=1, margin=0.67,
+                predator_id="n-1",
+                prey_id="n-2",
+                relation="predation",
+                passes_a=3,
+                passes_b=1,
+                margin=0.67,
             )
         ]
         summary = update_trophic_levels(soil, relations)
@@ -142,8 +149,12 @@ class TestUpdateTrophicLevels:
     def test_prey_flagged_only_after_repeated_losses(self) -> None:
         soil = _SoilStub()
         losing = TrophicRelation(
-            predator_id="n-p", prey_id="n-q",
-            relation="predation", passes_a=3, passes_b=0, margin=1.0,
+            predator_id="n-p",
+            prey_id="n-q",
+            relation="predation",
+            passes_a=3,
+            passes_b=0,
+            margin=1.0,
         )
         # One loss — below lapse threshold of 3 by default
         summary = update_trophic_levels(soil, [losing])
@@ -166,11 +177,12 @@ class TestRunTrophicPass:
             {"id": "n-new", "code": ADD_CORRECT},
         ]
         # 10 potential competitors
-        competitors = [
-            {"id": f"n-c{i}", "code": ADD_WRONG} for i in range(10)
-        ]
+        competitors = [{"id": f"n-c{i}", "code": ADD_WRONG} for i in range(10)]
         relations = run_trophic_pass(
-            new_fragments, competitors, BASIC_TESTS, max_competitions=3,
+            new_fragments,
+            competitors,
+            BASIC_TESTS,
+            max_competitions=3,
         )
         assert len(relations) == 3
         assert all(r.relation == "predation" for r in relations)
@@ -180,12 +192,16 @@ class TestRunTrophicPass:
 
     def test_zero_competitors_is_noop(self) -> None:
         relations = run_trophic_pass(
-            [{"id": "n-new", "code": ADD_CORRECT}], [], BASIC_TESTS,
+            [{"id": "n-new", "code": ADD_CORRECT}],
+            [],
+            BASIC_TESTS,
         )
         assert relations == []
 
     def test_zero_new_fragments_is_noop(self) -> None:
         relations = run_trophic_pass(
-            [], [{"id": "n-c", "code": ADD_WRONG}], BASIC_TESTS,
+            [],
+            [{"id": "n-c", "code": ADD_WRONG}],
+            BASIC_TESTS,
         )
         assert relations == []

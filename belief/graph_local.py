@@ -89,7 +89,6 @@ from belief.agents.synthesizer import SynthesizerAgent
 from belief.agents.validator import ValidatorAgent
 from belief.config.models import ModelRouter
 from belief.memory.recomposer import recomposer_node
-from belief.models.state import Phase
 
 # Reuse the deterministic, zero-LLM helper nodes from the cloud pipeline.
 # Importing here (rather than copy-pasting) means covenant / import-fix /
@@ -142,16 +141,17 @@ def _route_after_executor(
     exec_success = False
     if exec_r:
         exec_success = (
-            exec_r.get("success") if isinstance(exec_r, dict)
-            else getattr(exec_r, "success", False)
+            exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
         )
     if exec_success:
         # Session 4: short-circuit polish when there's nothing to polish.
         try:
             from belief.synthesizer_router import should_polish
+
             go_polish, reason = should_polish(state)
-            logger.info("synthesizer router: %s → %s",
-                        reason, "synthesizer" if go_polish else "validator")
+            logger.info(
+                "synthesizer router: %s → %s", reason, "synthesizer" if go_polish else "validator"
+            )
             return "synthesizer" if go_polish else "validator"
         except Exception as e:  # pragma: no cover
             logger.debug("synthesizer router errored (%s); defaulting to polish", e)
@@ -190,8 +190,7 @@ def _route_after_validator(
     exec_ok = False
     if exec_r:
         exec_ok = (
-            exec_r.get("success") if isinstance(exec_r, dict)
-            else getattr(exec_r, "success", False)
+            exec_r.get("success") if isinstance(exec_r, dict) else getattr(exec_r, "success", False)
         )
 
     validation = state.get("validation_result")
@@ -199,7 +198,8 @@ def _route_after_validator(
         return "__end__"
 
     verdict = (
-        validation.get("verdict") if isinstance(validation, dict)
+        validation.get("verdict")
+        if isinstance(validation, dict)
         else getattr(validation, "verdict", "pass")
     )
     if hasattr(verdict, "value"):
@@ -212,11 +212,7 @@ def _route_after_validator(
 
     # Fixable but didn't run: only refine when the error class is one
     # the water-cycle fixer actually handles (mirrors the cloud rule).
-    if (
-        verdict == "fail_fixable"
-        and not exec_ok
-        and _exec_error_is_refinable(exec_r)
-    ):
+    if verdict == "fail_fixable" and not exec_ok and _exec_error_is_refinable(exec_r):
         return "refinement"
 
     return "__end__"
@@ -262,9 +258,7 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
 
     # ── Stage 2: BUILD ──────────────────────────────────────────────
     graph.add_node("architect", _traced(architect, "architect"))
-    graph.add_node(
-        "skeleton_pass1", _traced(skeleton_pass1_node, "skeleton_pass1")
-    )
+    graph.add_node("skeleton_pass1", _traced(skeleton_pass1_node, "skeleton_pass1"))
     graph.add_node("builder", _traced(builder, "builder"))
     graph.add_node(
         "covenant_enforce",
@@ -286,9 +280,7 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
     # isn't gated on a 60s Sonnet-scale extraction job on Ollama.
     graph.add_node("synthesizer", _traced(synthesizer, "synthesizer"))
     graph.add_node("validator", _traced(validator, "validator"))
-    graph.add_node(
-        "refinement", _traced(_make_refinement_node(router), "refinement")
-    )
+    graph.add_node("refinement", _traced(_make_refinement_node(router), "refinement"))
 
     # ── Edges ──────────────────────────────────────────────────────
     graph.set_entry_point("recomposer")

@@ -122,12 +122,12 @@ def _extract_test_code(raw: str) -> str | None:
     import re
 
     # Try to extract from code block
-    match = re.search(r'```python\n(.*?)```', raw, re.DOTALL)
+    match = re.search(r"```python\n(.*?)```", raw, re.DOTALL)
     if match:
         return match.group(1).strip()
 
     # Try to extract from bare code
-    match = re.search(r'((?:import|from|def test_).*)', raw, re.DOTALL)
+    match = re.search(r"((?:import|from|def test_).*)", raw, re.DOTALL)
     if match:
         return match.group(1).strip()
 
@@ -145,8 +145,7 @@ def _validate_test(code: str) -> bool:
 
     # Must have at least one test function
     has_test = any(
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name.startswith("test_")
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
         for node in ast.walk(tree)
     )
 
@@ -191,10 +190,19 @@ async def verify_reproduction_test(
             # Run pytest
             try:
                 proc = subprocess.run(
-                    [sys.executable, "-m", "pytest", "test_reproduction.py",
-                     "-x", "--tb=short", "-q"],
-                    capture_output=True, text=True,
-                    timeout=30, cwd=str(tmp_path),
+                    [
+                        sys.executable,
+                        "-m",
+                        "pytest",
+                        "test_reproduction.py",
+                        "-x",
+                        "--tb=short",
+                        "-q",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(tmp_path),
                     env={**__import__("os").environ, "PYTHONPATH": str(tmp_path)},
                 )
 

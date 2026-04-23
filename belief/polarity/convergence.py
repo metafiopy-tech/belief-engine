@@ -48,7 +48,9 @@ class LoopBlocker:
         if self.consecutive_thinks >= self.THRESHOLD:
             self.consecutive_thinks = 0
             self.total_blocked += 1
-            logger.warning(f"LoopBlocker: broke think spiral in {agent_name} (total: {self.total_blocked})")
+            logger.warning(
+                f"LoopBlocker: broke think spiral in {agent_name} (total: {self.total_blocked})"
+            )
             return (
                 "\nYou've been thinking in circles. Stop analyzing. "
                 "Take ONE concrete action right now — write code, run a command, "

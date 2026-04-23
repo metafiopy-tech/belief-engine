@@ -13,7 +13,6 @@ Run with::
 
 from __future__ import annotations
 
-import os
 
 import pytest
 
@@ -178,18 +177,14 @@ class TestWallclockSuppressor:
         polish, _ = should_polish(_state(wallclock_s=30.0))
         assert polish is True
 
-    def test_over_budget_suppresses_polish(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_over_budget_suppresses_polish(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Over the wallclock budget, every other trigger is overridden —
         the build is already expensive, no point adding more cost."""
         import belief.synthesizer_router as sr
 
         monkeypatch.setattr(sr, "_count_ruff_errors", lambda _files: 100)
         monkeypatch.setattr(sr, "_max_cyclomatic_complexity", lambda _files: 50)
-        polish, reason = should_polish(
-            _state(tests_failed=5, wallclock_s=WALLCLOCK_BUDGET_S + 10)
-        )
+        polish, reason = should_polish(_state(tests_failed=5, wallclock_s=WALLCLOCK_BUDGET_S + 10))
         assert polish is False
         assert "budget" in reason
 
@@ -206,8 +201,7 @@ class TestIntegration:
         monkeypatch.setattr(sr, "_count_ruff_errors", lambda _files: 0)
         monkeypatch.setattr(sr, "_max_cyclomatic_complexity", lambda _files: 0)
         polish, reason = should_polish(
-            _state(tests_failed=0, wallclock_s=30.0,
-                   code_files={"main.py": "pass\n"})
+            _state(tests_failed=0, wallclock_s=30.0, code_files={"main.py": "pass\n"})
         )
         assert polish is False
         assert "skip-polish" in reason
@@ -232,6 +226,7 @@ class TestLiveProbe:
 
     def test_ruff_count_runs(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import shutil
+
         if shutil.which("ruff") is None:
             pytest.skip("ruff not on PATH")
         from belief.synthesizer_router import _count_ruff_errors
@@ -250,6 +245,7 @@ def f():
 
     def test_radon_cc_runs(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import shutil
+
         if shutil.which("radon") is None:
             pytest.skip("radon not on PATH")
         from belief.synthesizer_router import _max_cyclomatic_complexity
@@ -309,7 +305,8 @@ class TestRuffHardening:
         # the real module works because Python returns the cached
         # module from sys.modules on the inner import.
         monkeypatch.setattr(
-            shutil, "which",
+            shutil,
+            "which",
             lambda name: "/usr/bin/" + name if name == "ruff" else None,
         )
 
@@ -349,7 +346,8 @@ class TestRuffHardening:
         import belief.synthesizer_router as sr
 
         monkeypatch.setattr(
-            shutil, "which",
+            shutil,
+            "which",
             lambda name: "/usr/bin/" + name if name == "ruff" else None,
         )
 
@@ -383,7 +381,8 @@ class TestRuffHardening:
         import belief.synthesizer_router as sr
 
         monkeypatch.setattr(
-            shutil, "which",
+            shutil,
+            "which",
             lambda name: "/usr/bin/" + name if name == "ruff" else None,
         )
 
@@ -407,7 +406,8 @@ class TestRuffHardening:
         import belief.synthesizer_router as sr
 
         monkeypatch.setattr(
-            shutil, "which",
+            shutil,
+            "which",
             lambda name: "/usr/bin/" + name if name == "ruff" else None,
         )
 

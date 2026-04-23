@@ -18,17 +18,14 @@ Supports:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import shutil
 import subprocess
-import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("belief.deploy")
 
@@ -51,6 +48,7 @@ class DeployStatus(str, Enum):
 @dataclass
 class DeployResult:
     """Result of a deployment attempt."""
+
     status: DeployStatus
     url: str = ""
     deploy_id: str = ""
@@ -63,6 +61,7 @@ class DeployResult:
 @dataclass
 class DeployConfig:
     """Configuration for deployment."""
+
     target: DeployTarget = DeployTarget.RAILWAY
     project_name: str = ""
     railway_token: str = ""
@@ -72,6 +71,7 @@ class DeployConfig:
 
 
 # ── Railway deployment ───────────────────────────────────────────────────────
+
 
 async def deploy_to_railway(
     code_files: dict[str, str],
@@ -132,8 +132,10 @@ async def deploy_to_railway(
     try:
         proc = subprocess.run(
             ["railway", "up", "--detach"],
-            capture_output=True, text=True,
-            timeout=300, cwd=str(deploy_dir),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(deploy_dir),
             env=env,
         )
         result.logs = proc.stdout + "\n" + proc.stderr
@@ -161,6 +163,7 @@ async def deploy_to_railway(
 
 
 # ── Docker local deployment ──────────────────────────────────────────────────
+
 
 async def deploy_local_docker(
     code_files: dict[str, str],
@@ -213,15 +216,19 @@ async def deploy_local_docker(
         # Stop any existing container with same project name
         subprocess.run(
             ["docker", "compose", "-p", config.project_name, "down", "--remove-orphans"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             cwd=str(deploy_dir),
         )
 
         # Build and start
         proc = subprocess.run(
             ["docker", "compose", "-p", config.project_name, "up", "-d", "--build"],
-            capture_output=True, text=True,
-            timeout=180, cwd=str(deploy_dir),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            cwd=str(deploy_dir),
         )
         result.logs = proc.stdout + "\n" + proc.stderr
 
@@ -243,6 +250,7 @@ async def deploy_local_docker(
 
 # ── Unified deploy interface ─────────────────────────────────────────────────
 
+
 async def deploy(
     code_files: dict[str, str],
     config: DeployConfig | None = None,
@@ -257,6 +265,7 @@ async def deploy(
         for fname in code_files:
             if fname == "pyproject.toml":
                 import re
+
                 match = re.search(r'name\s*=\s*"([^"]+)"', code_files[fname])
                 if match:
                     config.project_name = match.group(1)
@@ -276,6 +285,7 @@ async def deploy(
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _generate_dockerfile(code_files: dict[str, str]) -> str:
     """Generate a Dockerfile for the project."""
@@ -335,10 +345,11 @@ services:
 def _extract_railway_url(output: str) -> str:
     """Extract the deployment URL from Railway CLI output."""
     import re
+
     # Railway outputs URLs like: https://xxx.up.railway.app
-    match = re.search(r'https://[\w.-]+\.railway\.app', output)
+    match = re.search(r"https://[\w.-]+\.railway\.app", output)
     if match:
         return match.group(0)
     # Also try: https://xxx.railway.app
-    match = re.search(r'https://[\w.-]+\.railway\.\w+', output)
+    match = re.search(r"https://[\w.-]+\.railway\.\w+", output)
     return match.group(0) if match else ""

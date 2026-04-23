@@ -29,6 +29,7 @@ logger = logging.getLogger("belief.tools.multi_service")
 @dataclass
 class GoalClassification:
     """Result of classifying a goal as single or multi-service."""
+
     is_multi_service: bool = False
     service_count: int = 1
     services: list[dict[str, str]] = field(default_factory=list)
@@ -40,6 +41,7 @@ class GoalClassification:
 @dataclass
 class ServiceVerification:
     """Result of verifying multi-service build output."""
+
     health_endpoints_present: bool = True
     all_services_have_routes: bool = True
     cross_service_imports_valid: bool = True
@@ -145,10 +147,18 @@ def _classify_by_keywords(goal: str) -> GoalClassification:
 
     # Weak indicators that need additional context
     if not result.is_multi_service:
-        weak_count = sum(1 for kw in [
-            "microservice", "docker-compose", "api gateway",
-            "event-driven", "message queue", "separate backend",
-        ] if kw in goal_lower)
+        weak_count = sum(
+            1
+            for kw in [
+                "microservice",
+                "docker-compose",
+                "api gateway",
+                "event-driven",
+                "message queue",
+                "separate backend",
+            ]
+            if kw in goal_lower
+        )
 
         # Disqualifiers — these suggest single-service or explanation
         disqualifiers = ["explain", "tutorial", "what is", "how does", "compare"]
@@ -189,7 +199,8 @@ def verify_services(
 
         # Find files belonging to this service
         svc_files = {
-            fname: content for fname, content in code_files.items()
+            fname: content
+            for fname, content in code_files.items()
             if svc_package in fname or svc_name in fname
         }
 
@@ -201,8 +212,10 @@ def verify_services(
 
         # Tier 1: Health endpoint check
         has_health = (
-            '"/health"' in all_code or "'/health'" in all_code
-            or '@app.get("/health")' in all_code or "@app.route('/health')" in all_code
+            '"/health"' in all_code
+            or "'/health'" in all_code
+            or '@app.get("/health")' in all_code
+            or "@app.route('/health')" in all_code
         )
         if not has_health:
             result.issues.append(f"{svc_name}: missing /health endpoint")
@@ -214,7 +227,9 @@ def verify_services(
             for route in routes:
                 path = route.get("path", "")
                 if path and path not in all_code and f'"{path}"' not in all_code:
-                    result.issues.append(f"{svc_name}: route {path} declared in architecture but not in code")
+                    result.issues.append(
+                        f"{svc_name}: route {path} declared in architecture but not in code"
+                    )
 
         # Tier 3: Cross-service reference check
         for other_svc in services:
@@ -282,8 +297,8 @@ def inject_health_endpoints(
             # Inject before the last line (usually uvicorn.run or if __name__)
             health_code = '\n\n@app.get("/health")\ndef health():\n    return {"status": "UP"}\n'
             # Insert before if __name__ block or at end
-            if 'if __name__' in content:
-                content = content.replace('if __name__', health_code + '\nif __name__')
+            if "if __name__" in content:
+                content = content.replace("if __name__", health_code + "\nif __name__")
             else:
                 content += health_code
             fixed[app_file] = content
@@ -291,8 +306,8 @@ def inject_health_endpoints(
 
         elif "Flask" in content or "flask" in content:
             health_code = '\n\n@app.route("/health")\ndef health():\n    return {"status": "UP"}\n'
-            if 'if __name__' in content:
-                content = content.replace('if __name__', health_code + '\nif __name__')
+            if "if __name__" in content:
+                content = content.replace("if __name__", health_code + "\nif __name__")
             else:
                 content += health_code
             fixed[app_file] = content

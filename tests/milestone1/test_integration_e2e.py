@@ -36,11 +36,11 @@ from belief.models.skeleton import (  # noqa: E402
     ConfigSchema,
     ExceptionSpec,
 )
-from belief.models.symbol_registry import SymbolRegistry
-from belief.agents.skeleton_builder import generate_all_skeletons
-from belief.agents.builder_skeleton import build_all_implementations
-from belief.agents.architect_skeleton import validate_skeleton
-from belief.agents.graph_integration import (
+from belief.models.symbol_registry import SymbolRegistry  # noqa: E402
+from belief.agents.skeleton_builder import generate_all_skeletons  # noqa: E402
+from belief.agents.builder_skeleton import build_all_implementations  # noqa: E402
+from belief.agents.architect_skeleton import validate_skeleton  # noqa: E402
+from belief.agents.graph_integration import (  # noqa: E402
     skeleton_pass1_node,
     skeleton_builder_node,
     run_full_skeleton_build,
@@ -50,6 +50,7 @@ from belief.agents.graph_integration import (
 # ---------------------------------------------------------------------------
 # Test fixture: 4-stage data pipeline skeleton
 # ---------------------------------------------------------------------------
+
 
 def _make_data_pipeline_skeleton() -> SkeletonArtifact:
     """
@@ -61,96 +62,216 @@ def _make_data_pipeline_skeleton() -> SkeletonArtifact:
         description="4-stage data pipeline with progressive Pydantic models",
         file_tree=[
             # Skeleton files (Pass 1)
-            FileTreeEntry(path="models/data.py", role=FileRole.MODEL,
-                          description="Progressive data models", skeleton=True),
-            FileTreeEntry(path="models/config.py", role=FileRole.CONFIG,
-                          description="Pipeline settings", skeleton=True),
-            FileTreeEntry(path="pipeline/base.py", role=FileRole.ABC,
-                          description="Base stage ABC", skeleton=True),
-            FileTreeEntry(path="pipeline/exceptions.py", role=FileRole.EXCEPTION,
-                          description="Pipeline exceptions", skeleton=True),
+            FileTreeEntry(
+                path="models/data.py",
+                role=FileRole.MODEL,
+                description="Progressive data models",
+                skeleton=True,
+            ),
+            FileTreeEntry(
+                path="models/config.py",
+                role=FileRole.CONFIG,
+                description="Pipeline settings",
+                skeleton=True,
+            ),
+            FileTreeEntry(
+                path="pipeline/base.py",
+                role=FileRole.ABC,
+                description="Base stage ABC",
+                skeleton=True,
+            ),
+            FileTreeEntry(
+                path="pipeline/exceptions.py",
+                role=FileRole.EXCEPTION,
+                description="Pipeline exceptions",
+                skeleton=True,
+            ),
             # Implementation files (Pass 2)
-            FileTreeEntry(path="pipeline/stage_ingest.py", role=FileRole.IMPLEMENTATION,
-                          description="Stage 1: Data ingestion", skeleton=False),
-            FileTreeEntry(path="pipeline/stage_transform.py", role=FileRole.IMPLEMENTATION,
-                          description="Stage 2: Data transformation", skeleton=False),
-            FileTreeEntry(path="pipeline/stage_validate.py", role=FileRole.IMPLEMENTATION,
-                          description="Stage 3: Data validation", skeleton=False),
-            FileTreeEntry(path="pipeline/stage_output.py", role=FileRole.IMPLEMENTATION,
-                          description="Stage 4: Output writing", skeleton=False),
-            FileTreeEntry(path="pipeline/runner.py", role=FileRole.IMPLEMENTATION,
-                          description="Pipeline runner/orchestrator", skeleton=False),
-            FileTreeEntry(path="main.py", role=FileRole.ENTRY_POINT,
-                          description="CLI entry point", skeleton=False),
+            FileTreeEntry(
+                path="pipeline/stage_ingest.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Stage 1: Data ingestion",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="pipeline/stage_transform.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Stage 2: Data transformation",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="pipeline/stage_validate.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Stage 3: Data validation",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="pipeline/stage_output.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Stage 4: Output writing",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="pipeline/runner.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Pipeline runner/orchestrator",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="main.py",
+                role=FileRole.ENTRY_POINT,
+                description="CLI entry point",
+                skeleton=False,
+            ),
         ],
         dependency_edges=[
             # ABC depends on models
-            DependencyEdge(source="pipeline/base.py", target="models/data.py",
-                           kind=DependencyKind.IMPORTS, symbols=["RawRecord"]),
+            DependencyEdge(
+                source="pipeline/base.py",
+                target="models/data.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["RawRecord"],
+            ),
             # All stages depend on ABC and models
-            DependencyEdge(source="pipeline/stage_ingest.py", target="pipeline/base.py",
-                           kind=DependencyKind.INHERITS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/stage_ingest.py", target="models/data.py",
-                           kind=DependencyKind.IMPORTS, symbols=["RawRecord"]),
-            DependencyEdge(source="pipeline/stage_transform.py", target="pipeline/base.py",
-                           kind=DependencyKind.INHERITS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/stage_transform.py", target="models/data.py",
-                           kind=DependencyKind.IMPORTS, symbols=["RawRecord", "TransformedRecord"]),
-            DependencyEdge(source="pipeline/stage_validate.py", target="pipeline/base.py",
-                           kind=DependencyKind.INHERITS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/stage_validate.py", target="models/data.py",
-                           kind=DependencyKind.IMPORTS, symbols=["TransformedRecord", "ValidatedRecord"]),
-            DependencyEdge(source="pipeline/stage_output.py", target="pipeline/base.py",
-                           kind=DependencyKind.INHERITS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/stage_output.py", target="models/data.py",
-                           kind=DependencyKind.IMPORTS, symbols=["ValidatedRecord", "OutputRecord"]),
+            DependencyEdge(
+                source="pipeline/stage_ingest.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.INHERITS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/stage_ingest.py",
+                target="models/data.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["RawRecord"],
+            ),
+            DependencyEdge(
+                source="pipeline/stage_transform.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.INHERITS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/stage_transform.py",
+                target="models/data.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["RawRecord", "TransformedRecord"],
+            ),
+            DependencyEdge(
+                source="pipeline/stage_validate.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.INHERITS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/stage_validate.py",
+                target="models/data.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["TransformedRecord", "ValidatedRecord"],
+            ),
+            DependencyEdge(
+                source="pipeline/stage_output.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.INHERITS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/stage_output.py",
+                target="models/data.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["ValidatedRecord", "OutputRecord"],
+            ),
             # Runner depends on stages and config
-            DependencyEdge(source="pipeline/runner.py", target="models/config.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineConfig"]),
-            DependencyEdge(source="pipeline/runner.py", target="pipeline/base.py",
-                           kind=DependencyKind.IMPORTS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/runner.py", target="pipeline/exceptions.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineError"]),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="models/config.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineConfig"],
+            ),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="pipeline/exceptions.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineError"],
+            ),
             # Main depends on runner and config
-            DependencyEdge(source="main.py", target="pipeline/runner.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineRunner"]),
-            DependencyEdge(source="main.py", target="models/config.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineConfig"]),
+            DependencyEdge(
+                source="main.py",
+                target="pipeline/runner.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineRunner"],
+            ),
+            DependencyEdge(
+                source="main.py",
+                target="models/config.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineConfig"],
+            ),
         ],
         model_chains=[
             ModelChain(
                 name="DataProgression",
                 models=[
-                    ModelSpec(name="RawRecord", file_path="models/data.py",
-                             base_class="BaseModel",
-                             fields=[
-                                 ModelFieldSpec(name="id", type_annotation="str"),
-                                 ModelFieldSpec(name="source", type_annotation="str"),
-                                 ModelFieldSpec(name="raw_data", type_annotation="dict[str, Any]"),
-                                 ModelFieldSpec(name="ingested_at", type_annotation="Optional[str]", default="None"),
-                             ],
-                             docstring="Raw data record from ingestion"),
-                    ModelSpec(name="TransformedRecord", file_path="models/data.py",
-                             base_class="RawRecord",
-                             fields=[
-                                 ModelFieldSpec(name="transformed_data", type_annotation="dict[str, Any]"),
-                                 ModelFieldSpec(name="transform_log", type_annotation="list[str]", default="[]"),
-                             ],
-                             docstring="Record after transformation stage"),
-                    ModelSpec(name="ValidatedRecord", file_path="models/data.py",
-                             base_class="TransformedRecord",
-                             fields=[
-                                 ModelFieldSpec(name="is_valid", type_annotation="bool", default="True"),
-                                 ModelFieldSpec(name="validation_errors", type_annotation="list[str]", default="[]"),
-                             ],
-                             docstring="Record after validation stage"),
-                    ModelSpec(name="OutputRecord", file_path="models/data.py",
-                             base_class="ValidatedRecord",
-                             fields=[
-                                 ModelFieldSpec(name="output_path", type_annotation="Optional[str]", default="None"),
-                                 ModelFieldSpec(name="written_at", type_annotation="Optional[str]", default="None"),
-                             ],
-                             docstring="Final output record"),
+                    ModelSpec(
+                        name="RawRecord",
+                        file_path="models/data.py",
+                        base_class="BaseModel",
+                        fields=[
+                            ModelFieldSpec(name="id", type_annotation="str"),
+                            ModelFieldSpec(name="source", type_annotation="str"),
+                            ModelFieldSpec(name="raw_data", type_annotation="dict[str, Any]"),
+                            ModelFieldSpec(
+                                name="ingested_at", type_annotation="Optional[str]", default="None"
+                            ),
+                        ],
+                        docstring="Raw data record from ingestion",
+                    ),
+                    ModelSpec(
+                        name="TransformedRecord",
+                        file_path="models/data.py",
+                        base_class="RawRecord",
+                        fields=[
+                            ModelFieldSpec(
+                                name="transformed_data", type_annotation="dict[str, Any]"
+                            ),
+                            ModelFieldSpec(
+                                name="transform_log", type_annotation="list[str]", default="[]"
+                            ),
+                        ],
+                        docstring="Record after transformation stage",
+                    ),
+                    ModelSpec(
+                        name="ValidatedRecord",
+                        file_path="models/data.py",
+                        base_class="TransformedRecord",
+                        fields=[
+                            ModelFieldSpec(name="is_valid", type_annotation="bool", default="True"),
+                            ModelFieldSpec(
+                                name="validation_errors", type_annotation="list[str]", default="[]"
+                            ),
+                        ],
+                        docstring="Record after validation stage",
+                    ),
+                    ModelSpec(
+                        name="OutputRecord",
+                        file_path="models/data.py",
+                        base_class="ValidatedRecord",
+                        fields=[
+                            ModelFieldSpec(
+                                name="output_path", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="written_at", type_annotation="Optional[str]", default="None"
+                            ),
+                        ],
+                        docstring="Final output record",
+                    ),
                 ],
             ),
         ],
@@ -160,12 +281,21 @@ def _make_data_pipeline_skeleton() -> SkeletonArtifact:
                 file_path="pipeline/base.py",
                 base_classes=["ABC"],
                 methods=[
-                    MethodSignature(name="process", params="self, record: RawRecord",
-                                    return_type="RawRecord", is_async=True, is_abstract=True,
-                                    docstring="Process a single record"),
-                    MethodSignature(name="validate_input", params="self, record: RawRecord",
-                                    return_type="bool", is_abstract=True,
-                                    docstring="Validate input before processing"),
+                    MethodSignature(
+                        name="process",
+                        params="self, record: RawRecord",
+                        return_type="RawRecord",
+                        is_async=True,
+                        is_abstract=True,
+                        docstring="Process a single record",
+                    ),
+                    MethodSignature(
+                        name="validate_input",
+                        params="self, record: RawRecord",
+                        return_type="bool",
+                        is_abstract=True,
+                        docstring="Validate input before processing",
+                    ),
                 ],
                 class_attributes=[
                     ModelFieldSpec(name="stage_name", type_annotation="str"),
@@ -178,8 +308,12 @@ def _make_data_pipeline_skeleton() -> SkeletonArtifact:
                 name="PipelineConfig",
                 file_path="models/config.py",
                 fields=[
-                    ModelFieldSpec(name="input_path", type_annotation="str", default='"./data/input"'),
-                    ModelFieldSpec(name="output_path", type_annotation="str", default='"./data/output"'),
+                    ModelFieldSpec(
+                        name="input_path", type_annotation="str", default='"./data/input"'
+                    ),
+                    ModelFieldSpec(
+                        name="output_path", type_annotation="str", default='"./data/output"'
+                    ),
                     ModelFieldSpec(name="batch_size", type_annotation="int", default="100"),
                     ModelFieldSpec(name="max_retries", type_annotation="int", default="3"),
                 ],
@@ -188,12 +322,24 @@ def _make_data_pipeline_skeleton() -> SkeletonArtifact:
             ),
         ],
         exception_specs=[
-            ExceptionSpec(name="PipelineError", file_path="pipeline/exceptions.py",
-                          base_class="Exception", docstring="Base pipeline error"),
-            ExceptionSpec(name="StageError", file_path="pipeline/exceptions.py",
-                          base_class="PipelineError", docstring="Stage processing error"),
-            ExceptionSpec(name="ValidationError", file_path="pipeline/exceptions.py",
-                          base_class="PipelineError", docstring="Record validation error"),
+            ExceptionSpec(
+                name="PipelineError",
+                file_path="pipeline/exceptions.py",
+                base_class="Exception",
+                docstring="Base pipeline error",
+            ),
+            ExceptionSpec(
+                name="StageError",
+                file_path="pipeline/exceptions.py",
+                base_class="PipelineError",
+                docstring="Stage processing error",
+            ),
+            ExceptionSpec(
+                name="ValidationError",
+                file_path="pipeline/exceptions.py",
+                base_class="PipelineError",
+                docstring="Record validation error",
+            ),
         ],
         external_dependencies=["pydantic", "pydantic-settings"],
         entry_point="main.py",
@@ -203,6 +349,7 @@ def _make_data_pipeline_skeleton() -> SkeletonArtifact:
 # ---------------------------------------------------------------------------
 # Mock LLM for Pass 2
 # ---------------------------------------------------------------------------
+
 
 def _mock_llm_fn(system: str, user: str, model: str) -> str:
     """
@@ -356,6 +503,7 @@ if __name__ == "__main__":
 # Tests
 # ===========================================================================
 
+
 class TestArchitectValidation:
     def test_valid_skeleton_passes(self):
         skeleton = _make_data_pipeline_skeleton()
@@ -366,8 +514,12 @@ class TestArchitectValidation:
         skeleton = _make_data_pipeline_skeleton()
         # Add a cycle: models/data.py → pipeline/base.py (already has reverse)
         skeleton.dependency_edges.append(
-            DependencyEdge(source="models/data.py", target="pipeline/base.py",
-                           kind=DependencyKind.IMPORTS, symbols=["BaseStage"])
+            DependencyEdge(
+                source="models/data.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["BaseStage"],
+            )
         )
         issues = validate_skeleton(skeleton)
         assert any("cycle" in i.lower() for i in issues)
@@ -375,8 +527,12 @@ class TestArchitectValidation:
     def test_missing_file_reference(self):
         skeleton = _make_data_pipeline_skeleton()
         skeleton.dependency_edges.append(
-            DependencyEdge(source="nonexistent.py", target="models/data.py",
-                           kind=DependencyKind.IMPORTS, symbols=[])
+            DependencyEdge(
+                source="nonexistent.py",
+                target="models/data.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=[],
+            )
         )
         issues = validate_skeleton(skeleton)
         assert any("nonexistent.py" in i for i in issues)
@@ -385,8 +541,10 @@ class TestArchitectValidation:
         skeleton = _make_data_pipeline_skeleton()
         # Mark an impl file as skeleton — should flag
         skeleton.file_tree[4] = FileTreeEntry(
-            path="pipeline/stage_ingest.py", role=FileRole.IMPLEMENTATION,
-            description="Stage 1", skeleton=True  # Wrong!
+            path="pipeline/stage_ingest.py",
+            role=FileRole.IMPLEMENTATION,
+            description="Stage 1",
+            skeleton=True,  # Wrong!
         )
         issues = validate_skeleton(skeleton)
         assert any("skeleton=true" in i.lower() for i in issues)
@@ -572,9 +730,7 @@ class TestImportResolution:
                                     f"(available: {module_exports[module]})"
                                 )
 
-        assert not unresolved, (
-            "Unresolved imports:\n" + "\n".join(unresolved)
-        )
+        assert not unresolved, "Unresolved imports:\n" + "\n".join(unresolved)
 
 
 class TestGraphNodes:

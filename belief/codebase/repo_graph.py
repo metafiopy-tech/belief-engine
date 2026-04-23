@@ -26,6 +26,7 @@ logger = logging.getLogger("belief.codebase.repo_graph")
 
 try:
     import networkx as nx
+
     HAS_NETWORKX = True
 except ImportError:
     HAS_NETWORKX = False
@@ -35,6 +36,7 @@ except ImportError:
 @dataclass
 class RankedFile:
     """A file with its relevance score and ranking components."""
+
     path: str
     combined_score: float
     bm25_score: float = 0.0
@@ -70,12 +72,15 @@ class RepoGraph:
         for fpath, info in codebase.files.items():
             if info.is_test:
                 rg._test_files.add(fpath)
-            rg.graph.add_node(fpath, **{
-                "language": info.language.value,
-                "lines": info.line_count,
-                "is_test": info.is_test,
-                "exports": [e.name for e in info.exports],
-            })
+            rg.graph.add_node(
+                fpath,
+                **{
+                    "language": info.language.value,
+                    "lines": info.line_count,
+                    "is_test": info.is_test,
+                    "exports": [e.name for e in info.exports],
+                },
+            )
             rg._file_exports[fpath] = [e.name for e in info.exports]
 
         # Add edges (imports)
@@ -88,8 +93,7 @@ class RepoGraph:
             rg._file_contents[fpath] = codebase.get_file_content(fpath)
 
         logger.info(
-            f"RepoGraph: {rg.graph.number_of_nodes()} nodes, "
-            f"{rg.graph.number_of_edges()} edges"
+            f"RepoGraph: {rg.graph.number_of_nodes()} nodes, {rg.graph.number_of_edges()} edges"
         )
         return rg
 
@@ -112,10 +116,7 @@ class RepoGraph:
         bm25_scores = self._bm25_score(query)
 
         # Filter out test files
-        source_scores = {
-            f: s for f, s in bm25_scores.items()
-            if f not in self._test_files
-        }
+        source_scores = {f: s for f, s in bm25_scores.items() if f not in self._test_files}
 
         if not source_scores:
             return []
@@ -142,13 +143,15 @@ class RepoGraph:
         results = []
         for fpath in ranked[:max_files]:
             dependents = len(list(self.graph.predecessors(fpath))) if self.graph else 0
-            results.append(RankedFile(
-                path=fpath,
-                combined_score=combined[fpath],
-                bm25_score=source_scores.get(fpath, 0.0),
-                pagerank_score=ppr_scores.get(fpath, 0.0),
-                dependents_count=dependents,
-            ))
+            results.append(
+                RankedFile(
+                    path=fpath,
+                    combined_score=combined[fpath],
+                    bm25_score=source_scores.get(fpath, 0.0),
+                    pagerank_score=ppr_scores.get(fpath, 0.0),
+                    dependents_count=dependents,
+                )
+            )
 
         return results
 
@@ -169,7 +172,9 @@ class RepoGraph:
             next_frontier = set()
             for node in frontier:
                 # Both predecessors (files importing this) and successors (files this imports)
-                for neighbor in list(self.graph.predecessors(node)) + list(self.graph.successors(node)):
+                for neighbor in list(self.graph.predecessors(node)) + list(
+                    self.graph.successors(node)
+                ):
                     if neighbor not in visited:
                         visited.add(neighbor)
                         next_frontier.add(neighbor)
@@ -186,7 +191,7 @@ class RepoGraph:
         - Export name overlap (3× weight)
         - File content term frequency (1× weight, with IDF)
         """
-        query_terms = set(re.findall(r'\w+', query.lower()))
+        query_terms = set(re.findall(r"\w+", query.lower()))
         if not query_terms:
             return {}
 
@@ -195,7 +200,7 @@ class RepoGraph:
         doc_count = len(self._file_contents) or 1
         term_doc_freq = {}
         for content in self._file_contents.values():
-            content_terms = set(re.findall(r'\w+', content.lower()))
+            content_terms = set(re.findall(r"\w+", content.lower()))
             for term in query_terms:
                 if term in content_terms:
                     term_doc_freq[term] = term_doc_freq.get(term, 0) + 1
@@ -204,12 +209,12 @@ class RepoGraph:
             score = 0.0
 
             # Filename match
-            fname_terms = set(re.findall(r'\w+', fpath.lower()))
+            fname_terms = set(re.findall(r"\w+", fpath.lower()))
             score += len(query_terms & fname_terms) * 5.0
 
             # Export name match
             for export_name in self._file_exports.get(fpath, []):
-                export_terms = set(re.findall(r'\w+', export_name.lower()))
+                export_terms = set(re.findall(r"\w+", export_name.lower()))
                 score += len(query_terms & export_terms) * 3.0
 
             # Content TF-IDF

@@ -118,7 +118,7 @@ async def test_github_search_parses_items_and_advances_watermark(
     client = FakeClient()
     # One response per LANGUAGES entry (python + typescript). Return the
     # same body for both; dedup should prevent double-insertion.
-    client.enqueue(FakeResponse(status_code=200, _json=body, headers={"etag": "W/\"abc\""}))
+    client.enqueue(FakeResponse(status_code=200, _json=body, headers={"etag": 'W/"abc"'}))
     client.enqueue(FakeResponse(status_code=200, _json=body))
 
     seeds = await github_search.harvest(client, photo_state, photo_config)  # type: ignore[arg-type]

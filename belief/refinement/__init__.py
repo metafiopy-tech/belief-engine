@@ -12,12 +12,12 @@ The water never leaves the system. Code is polished, not rebuilt.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
 class CycleRecord:
     """Record of one refinement cycle."""
+
     cycle: int
     passed_count: int
     total_count: int
@@ -32,6 +32,7 @@ class CycleRecord:
 @dataclass
 class RefinementState:
     """State for the refinement subgraph."""
+
     code_files: dict[str, str]
     test_files: dict[str, str]
     test_output: str = ""

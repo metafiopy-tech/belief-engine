@@ -30,7 +30,7 @@ Notes:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -44,33 +44,35 @@ import httpx
 #: Domains that belief-engine is expected to contact in production.
 #: Passed to BreakerAsyncClient(allowed_domains=...) to reject unexpected
 #: outbound HTTP before the request is even sent.
-DEFAULT_ALLOWED_DOMAINS: frozenset[str] = frozenset({
-    # Anthropic
-    "api.anthropic.com",
-    # Ollama (local)
-    "localhost",
-    "127.0.0.1",
-    # GitHub
-    "api.github.com",
-    "github.com",
-    "raw.githubusercontent.com",
-    # HackerNews (Algolia search)
-    "hn.algolia.com",
-    # ArXiv
-    "arxiv.org",
-    "export.arxiv.org",
-    # PyPI
-    "pypi.org",
-    "files.pythonhosted.org",
-    # Top-PyPI-packages corpus (hugovk, Apache 2.0 — weekly snapshot)
-    "hugovk.github.io",
-    # Stack Exchange / Overflow
-    "api.stackexchange.com",
-    # Telegram (optional notifications)
-    "api.telegram.org",
-    # Railway (deployment health checks)
-    "railway.app",
-})
+DEFAULT_ALLOWED_DOMAINS: frozenset[str] = frozenset(
+    {
+        # Anthropic
+        "api.anthropic.com",
+        # Ollama (local)
+        "localhost",
+        "127.0.0.1",
+        # GitHub
+        "api.github.com",
+        "github.com",
+        "raw.githubusercontent.com",
+        # HackerNews (Algolia search)
+        "hn.algolia.com",
+        # ArXiv
+        "arxiv.org",
+        "export.arxiv.org",
+        # PyPI
+        "pypi.org",
+        "files.pythonhosted.org",
+        # Top-PyPI-packages corpus (hugovk, Apache 2.0 — weekly snapshot)
+        "hugovk.github.io",
+        # Stack Exchange / Overflow
+        "api.stackexchange.com",
+        # Telegram (optional notifications)
+        "api.telegram.org",
+        # Railway (deployment health checks)
+        "railway.app",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -178,9 +180,7 @@ class BreakerAsyncClient:
                 max=self._retry_cfg.wait_max,
                 jitter=1.0,
             ),
-            retry=tenacity.retry_if_exception_type(
-                (httpx.TransportError, httpx.TimeoutException)
-            ),
+            retry=tenacity.retry_if_exception_type((httpx.TransportError, httpx.TimeoutException)),
             reraise=True,
         )
 
@@ -211,9 +211,7 @@ class BreakerAsyncClient:
                 f"Add it to DEFAULT_ALLOWED_DOMAINS or pass allowed_domains= to override."
             )
 
-    async def request(
-        self, method: str, url: str, **kwargs: Any
-    ) -> httpx.Response:
+    async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """Send one request through retry + breaker."""
         self._check_domain(url)
         self._ensure_policies()
@@ -355,9 +353,7 @@ def get_bytes_sync(
     if allowed_domains is not None:
         host = (urlparse(url).hostname or "").lower().split(":")[0]
         if host not in allowed_domains:
-            raise ValueError(
-                f"Outbound HTTP blocked: '{host}' is not in the allowed domain list."
-            )
+            raise ValueError(f"Outbound HTTP blocked: '{host}' is not in the allowed domain list.")
     try:
         with httpx.Client(timeout=timeout) as client:
             resp = client.get(url, headers=headers or {}, follow_redirects=True)

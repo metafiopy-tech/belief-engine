@@ -115,7 +115,10 @@ class RecombinationEngine:
         nutrient_id = self._soil.deposit(nutrient)
         logger.info(
             "recombine: stored nutrient %s (gen %d) from %s x %s",
-            nutrient_id, new_gen, a.nutrient_id, b.nutrient_id,
+            nutrient_id,
+            new_gen,
+            a.nutrient_id,
+            b.nutrient_id,
         )
         return nutrient
 

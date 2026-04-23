@@ -20,6 +20,7 @@ logger = logging.getLogger("belief.polarity.belief")
 
 class Covenant(BaseModel):
     """A single belief observation — what's worth protecting."""
+
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     action: str = ""
     result_summary: str = ""
@@ -42,8 +43,12 @@ class BeliefLoop:
         self.max_covenants = max_covenants
 
     async def extract_covenant(
-        self, action: str, result: str, goal: str,
-        llm=None, role: str = "latios",
+        self,
+        action: str,
+        result: str,
+        goal: str,
+        llm=None,
+        role: str = "latios",
     ) -> str:
         """Extract what this action revealed as worth protecting."""
         if llm:
@@ -77,7 +82,7 @@ class BeliefLoop:
         self.covenants.append(covenant)
 
         if len(self.covenants) > self.max_covenants:
-            self.covenants = self.covenants[-self.max_covenants:]
+            self.covenants = self.covenants[-self.max_covenants :]
 
         logger.debug(f"Covenant: {covenant_text[:80]}")
         return covenant_text
@@ -98,8 +103,27 @@ class BeliefLoop:
 
         recent = [c.covenant for c in self.covenants[-10:]]
         words = []
-        stop_words = {"the", "a", "an", "is", "in", "it", "to", "of", "and", "or",
-                      "for", "with", "on", "at", "by", "this", "that", "from", "was"}
+        stop_words = {
+            "the",
+            "a",
+            "an",
+            "is",
+            "in",
+            "it",
+            "to",
+            "of",
+            "and",
+            "or",
+            "for",
+            "with",
+            "on",
+            "at",
+            "by",
+            "this",
+            "that",
+            "from",
+            "was",
+        }
         for text in recent:
             for word in text.lower().split():
                 cleaned = "".join(c for c in word if c.isalpha())

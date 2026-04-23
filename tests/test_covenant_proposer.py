@@ -9,12 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
-from belief.covenants.policy import DEFAULT_POLICY, GatePolicy
 from belief.covenants.precision_gate import (
     ArchivedBuild,
-    default_regex_applier,
     evaluate_gate,
     measure_precision,
 )
@@ -71,11 +68,10 @@ class TestClustering:
 
 class TestProposerPipeline:
     def test_skips_small_clusters(self) -> None:
-        failures = [
-            FailureTrace(f"r{i}", "g", "AttributeError: fizz") for i in range(3)
-        ]
+        failures = [FailureTrace(f"r{i}", "g", "AttributeError: fizz") for i in range(3)]
         proposed = propose_covenants_from_failures(
-            failures, min_cluster_size=5,
+            failures,
+            min_cluster_size=5,
             proposer=lambda sig, cluster: {"pattern": sig, "replacement": "", "rationale": ""},
         )
         assert proposed == []
@@ -86,7 +82,8 @@ class TestProposerPipeline:
             for i in range(6)
         ]
         proposed = propose_covenants_from_failures(
-            failures, min_cluster_size=5,
+            failures,
+            min_cluster_size=5,
             proposer=lambda sig, cluster: {
                 "pattern": r"\.split\(",
                 "replacement": "",
@@ -115,24 +112,37 @@ def _proposal(pattern: str = r"from pydantic\.v1", replacement: str = "") -> Cov
     )
 
 
-def _archive(n_fail_fixable_with_match: int, n_pass_with_match: int,
-             n_pass_clean: int) -> list[ArchivedBuild]:
+def _archive(
+    n_fail_fixable_with_match: int, n_pass_with_match: int, n_pass_clean: int
+) -> list[ArchivedBuild]:
     out: list[ArchivedBuild] = []
     for i in range(n_fail_fixable_with_match):
-        out.append(ArchivedBuild(
-            run_id=f"ff-{i}", goal="g", verdict="fail_fixable",
-            code_files={"a.py": "from pydantic.v1 import BaseModel\n"},
-        ))
+        out.append(
+            ArchivedBuild(
+                run_id=f"ff-{i}",
+                goal="g",
+                verdict="fail_fixable",
+                code_files={"a.py": "from pydantic.v1 import BaseModel\n"},
+            )
+        )
     for i in range(n_pass_with_match):
-        out.append(ArchivedBuild(
-            run_id=f"pw-{i}", goal="g", verdict="pass",
-            code_files={"a.py": "from pydantic.v1 import BaseModel\n"},
-        ))
+        out.append(
+            ArchivedBuild(
+                run_id=f"pw-{i}",
+                goal="g",
+                verdict="pass",
+                code_files={"a.py": "from pydantic.v1 import BaseModel\n"},
+            )
+        )
     for i in range(n_pass_clean):
-        out.append(ArchivedBuild(
-            run_id=f"pc-{i}", goal="g", verdict="pass",
-            code_files={"a.py": "from pydantic import BaseModel\n"},
-        ))
+        out.append(
+            ArchivedBuild(
+                run_id=f"pc-{i}",
+                goal="g",
+                verdict="pass",
+                code_files={"a.py": "from pydantic import BaseModel\n"},
+            )
+        )
     return out
 
 

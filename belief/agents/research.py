@@ -45,26 +45,37 @@ class ResearchAgent(BaseAgent):
                     f"Use these as reference for architecture decisions."
                 )
 
-            prompt = RESEARCH_PROMPT.format(
-                goal=spec.goal,
-                goal_refined=spec.goal_refined or spec.goal,
-                target_type=spec.target_type,
-                complexity=spec.complexity_score,
-                acceptance_criteria="\n".join(f"  - {c}" for c in spec.acceptance_criteria),
-                tools=", ".join(spec.tools_needed) if spec.tools_needed else "none",
-            ) + memory_context + composition_context
+            prompt = (
+                RESEARCH_PROMPT.format(
+                    goal=spec.goal,
+                    goal_refined=spec.goal_refined or spec.goal,
+                    target_type=spec.target_type,
+                    complexity=spec.complexity_score,
+                    acceptance_criteria="\n".join(f"  - {c}" for c in spec.acceptance_criteria),
+                    tools=", ".join(spec.tools_needed) if spec.tools_needed else "none",
+                )
+                + memory_context
+                + composition_context
+            )
 
             report = await llm.generate_structured(
-                role=self.role, system=RESEARCH_SYSTEM, prompt=prompt,
-                response_schema=ResearchReport, temperature=0.3,
+                role=self.role,
+                system=RESEARCH_SYSTEM,
+                prompt=prompt,
+                response_schema=ResearchReport,
+                temperature=0.3,
                 complexity=state.complexity_score,
             )
             state.research_report = report
-            logger.info(f"Research: {len(report.repo_candidates)} repos, approach={report.recommended_approach[:60]}")
+            logger.info(
+                f"Research: {len(report.repo_candidates)} repos, approach={report.recommended_approach[:60]}"
+            )
 
         except (ConnectionError, ValueError) as e:
             logger.warning(f"Research fallback: {e}")
-            state.research_report = ResearchReport(recommended_approach="Build from scratch — research unavailable")
+            state.research_report = ResearchReport(
+                recommended_approach="Build from scratch — research unavailable"
+            )
             state.warnings.append(f"Research used fallback: {e}")
         finally:
             await llm.close()
@@ -102,7 +113,7 @@ def _run_composition_planner(spec) -> str:
             if "test" in lower:
                 requirements.append(("testing", "testing framework"))
 
-        for tool in (spec.tools_needed or []):
+        for tool in spec.tools_needed or []:
             requirements.append((tool.lower().replace(" ", "_"), tool))
 
         if not requirements:

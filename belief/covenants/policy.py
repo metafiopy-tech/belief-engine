@@ -17,10 +17,10 @@ class GatePolicy:
     measured metrics so a human can review why.
     """
 
-    min_would_have_prevented: int = 5   # past failures the rule would have caught
-    max_would_have_broken: int = 0      # past passing builds the rule would break
-    min_precision: float = 1.0          # prevented / (prevented + broken)
-    min_cluster_size: int = 5           # clusterer's minimum samples
+    min_would_have_prevented: int = 5  # past failures the rule would have caught
+    max_would_have_broken: int = 0  # past passing builds the rule would break
+    min_precision: float = 1.0  # prevented / (prevented + broken)
+    min_cluster_size: int = 5  # clusterer's minimum samples
 
 
 DEFAULT_POLICY = GatePolicy()

@@ -33,6 +33,7 @@ logger = logging.getLogger("belief.agents.brownfield")
 @dataclass
 class BrownfieldResult:
     """Result of a brownfield modification attempt."""
+
     success: bool = False
     patch_file: str = ""
     patch_old: str = ""
@@ -107,7 +108,9 @@ async def fix_issue(
 
         for iteration in range(max_agentless_iterations):
             result.iterations = iteration + 1
-            logger.info(f"Brownfield: Agentless iteration {iteration + 1}/{max_agentless_iterations}")
+            logger.info(
+                f"Brownfield: Agentless iteration {iteration + 1}/{max_agentless_iterations}"
+            )
 
             # Step 2: Localize
             locations = await localizer.localize(codebase, issue, max_locations=3, llm=llm)
@@ -119,11 +122,17 @@ async def fix_issue(
             best_result = None
             for loc in locations:
                 sample_result = await sampler.sample_and_rank(
-                    codebase, loc, issue, llm,
-                    n_patches=n_patches, n_tests=n_tests,
+                    codebase,
+                    loc,
+                    issue,
+                    llm,
+                    n_patches=n_patches,
+                    n_tests=n_tests,
                 )
                 if sample_result.best_patch and sample_result.best_patch.syntax_valid:
-                    if not best_result or len(sample_result.best_patch.tests_passed) > len(best_result.best_patch.tests_passed):
+                    if not best_result or len(sample_result.best_patch.tests_passed) > len(
+                        best_result.best_patch.tests_passed
+                    ):
                         best_result = sample_result
 
             if not best_result or not best_result.best_patch:
@@ -133,9 +142,7 @@ async def fix_issue(
             patch = best_result.best_patch
 
             # Step 4: Validate — apply patch and run affected tests
-            validation = await _validate_patch(
-                codebase, patch, issue
-            )
+            validation = await _validate_patch(codebase, patch, issue)
 
             result.patch_file = patch.file_path
             result.patch_old = patch.old_code
@@ -193,7 +200,13 @@ async def _validate_patch(
 
     current_code = codebase.get_file_content(patch.file_path)
     if not current_code or patch.old_code not in current_code:
-        return {"success": False, "error": "Patch old_code not found in file", "passed": 0, "total": 0, "regressions": 0}
+        return {
+            "success": False,
+            "error": "Patch old_code not found in file",
+            "passed": 0,
+            "total": 0,
+            "regressions": 0,
+        }
 
     patched_code = current_code.replace(patch.old_code, patch.new_code, 1)
 
@@ -226,12 +239,15 @@ async def _validate_patch(
         try:
             proc = subprocess.run(
                 [sys.executable, "-m", "pytest", "-v", "--tb=short", "-q"] + test_args,
-                capture_output=True, text=True,
-                timeout=60, cwd=str(tmp_path),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(tmp_path),
                 env={**__import__("os").environ, "PYTHONPATH": str(tmp_path)},
             )
 
             import re
+
             passed = 0
             failed = 0
             match = re.search(r"(\d+) passed", proc.stdout)

@@ -38,8 +38,8 @@ _PROMPTS_DIR = Path(__file__).resolve().parent
 _PYDANTIC_TRIGGER_IMPORTS: tuple[str, ...] = (
     "pydantic",
     "pydantic_settings",
-    "langchain",          # matches langchain, langchain_core, langchain_community, …
-    "fastapi",            # pydantic is a transitive dep; LLMs routinely emit v1 code here
+    "langchain",  # matches langchain, langchain_core, langchain_community, …
+    "fastapi",  # pydantic is a transitive dep; LLMs routinely emit v1 code here
 )
 
 # Filename hints that strongly suggest pydantic usage even if we don't

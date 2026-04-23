@@ -52,9 +52,7 @@ async def test_empty_archive_accepts_with_max_novelty() -> None:
 
 @pytest.mark.asyncio
 async def test_hard_duplicate_band_rejects_without_judge_call() -> None:
-    arch = FakeArchive(
-        [Neighbor(goal_id="g1", title="similar", cosine=0.95)]
-    )
+    arch = FakeArchive([Neighbor(goal_id="g1", title="similar", cosine=0.95)])
     called = []
 
     async def judge(prompt: str) -> str:
@@ -62,9 +60,7 @@ async def test_hard_duplicate_band_rejects_without_judge_call() -> None:
         return '{"interesting": true, "category": "a"}'
 
     seed = {"title": "near-duplicate", "summary": "x"}
-    r = await async_score_novelty(
-        seed, archive=arch, embedder=_embedder, llm_judge=judge
-    )
+    r = await async_score_novelty(seed, archive=arch, embedder=_embedder, llm_judge=judge)
     assert r.accepted is False
     assert r.reason == "hard_duplicate"
     assert r.novelty == 0.0
@@ -73,9 +69,7 @@ async def test_hard_duplicate_band_rejects_without_judge_call() -> None:
 
 @pytest.mark.asyncio
 async def test_distinct_band_accepts_without_judge_call() -> None:
-    arch = FakeArchive(
-        [Neighbor(goal_id="g1", title="unrelated", cosine=0.40)]
-    )
+    arch = FakeArchive([Neighbor(goal_id="g1", title="unrelated", cosine=0.40)])
     called = []
 
     async def judge(prompt: str) -> str:
@@ -83,9 +77,7 @@ async def test_distinct_band_accepts_without_judge_call() -> None:
         return ""
 
     seed = {"title": "clearly novel", "summary": "x"}
-    r = await async_score_novelty(
-        seed, archive=arch, embedder=_embedder, llm_judge=judge
-    )
+    r = await async_score_novelty(seed, archive=arch, embedder=_embedder, llm_judge=judge)
     assert r.accepted is True
     assert r.reason == "distinct"
     assert r.novelty > 0.5
@@ -94,9 +86,7 @@ async def test_distinct_band_accepts_without_judge_call() -> None:
 
 @pytest.mark.asyncio
 async def test_mid_band_without_judge_rejects() -> None:
-    arch = FakeArchive(
-        [Neighbor(goal_id="g1", title="related", cosine=0.85)]
-    )
+    arch = FakeArchive([Neighbor(goal_id="g1", title="related", cosine=0.85)])
     seed = {"title": "kinda similar", "summary": "x"}
     r = await async_score_novelty(seed, archive=arch, embedder=_embedder)
     assert r.accepted is False
@@ -105,9 +95,7 @@ async def test_mid_band_without_judge_rejects() -> None:
 
 @pytest.mark.asyncio
 async def test_mid_band_with_interesting_judge_accepts() -> None:
-    arch = FakeArchive(
-        [Neighbor(goal_id="g1", title="related", cosine=0.82)]
-    )
+    arch = FakeArchive([Neighbor(goal_id="g1", title="related", cosine=0.82)])
 
     async def judge(_prompt: str) -> str:
         return json.dumps(
@@ -120,9 +108,7 @@ async def test_mid_band_with_interesting_judge_accepts() -> None:
         )
 
     seed = {"title": "combo", "summary": "x"}
-    r = await async_score_novelty(
-        seed, archive=arch, embedder=_embedder, llm_judge=judge
-    )
+    r = await async_score_novelty(seed, archive=arch, embedder=_embedder, llm_judge=judge)
     assert r.accepted is True
     assert r.reason == "judge_b"
     assert r.judge_verdict is not None
@@ -131,9 +117,7 @@ async def test_mid_band_with_interesting_judge_accepts() -> None:
 
 @pytest.mark.asyncio
 async def test_mid_band_with_judge_saying_not_interesting_rejects() -> None:
-    arch = FakeArchive(
-        [Neighbor(goal_id="g1", title="related", cosine=0.82)]
-    )
+    arch = FakeArchive([Neighbor(goal_id="g1", title="related", cosine=0.82)])
 
     async def judge(_prompt: str) -> str:
         return '{"interesting": false, "category": "x"}'

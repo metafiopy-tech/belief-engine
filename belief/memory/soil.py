@@ -115,6 +115,7 @@ class _HashEmbeddingFunction(EmbeddingFunction[Documents]):
 
         return vec
 
+
 class VoyageEmbeddingFunction(EmbeddingFunction[Documents]):
     """ChromaDB EmbeddingFunction wrapping Voyage AI's embedding API.
 
@@ -153,6 +154,7 @@ class VoyageEmbeddingFunction(EmbeddingFunction[Documents]):
             return
         try:
             import voyageai  # type: ignore
+
             self._client = voyageai.Client(api_key=self._api_key)
         except Exception as exc:  # ImportError or client construction error
             logger.warning(
@@ -230,10 +232,10 @@ _LINEAGE_THRESHOLD = 0.85
 
 # Default retrieval counts per nutrient type for profile assembly
 _PROFILE_LIMITS = {
-    NutrientType.COVENANT: 50,     # All covenants (effectively unlimited)
-    NutrientType.ANTIPATTERN: 3,   # Top 3 most relevant
-    NutrientType.PATTERN: 5,       # Top 5 most relevant
-    NutrientType.SKELETON: 1,      # Closest match only
+    NutrientType.COVENANT: 50,  # All covenants (effectively unlimited)
+    NutrientType.ANTIPATTERN: 3,  # Top 3 most relevant
+    NutrientType.PATTERN: 5,  # Top 5 most relevant
+    NutrientType.SKELETON: 1,  # Closest match only
 }
 
 # Nutrient type -> collection name routing
@@ -268,9 +270,7 @@ class Soil:
         self._persist_dir = Path(persist_dir).expanduser()
         self._persist_dir.mkdir(parents=True, exist_ok=True)
 
-        self._client = chromadb.PersistentClient(
-            path=str(self._persist_dir)
-        )
+        self._client = chromadb.PersistentClient(path=str(self._persist_dir))
 
         # Session 13: per-collection embedding routing.  When the caller
         # passes an explicit ``embedding_fn`` we honour it (one EF for
@@ -302,9 +302,7 @@ class Soil:
             self._collections = collections
         else:
             # Create the 5 new collections with per-collection EFs
-            self._collections = get_or_create_collections(
-                self._client, per_collection_ef
-            )
+            self._collections = get_or_create_collections(self._client, per_collection_ef)
 
         # Archive collection -- decayed nutrients preserved for diagnostics
         # (review correction #4: archive, never delete)
@@ -331,17 +329,13 @@ class Soil:
         legacy_count = self._collection.count()
 
         if new_total == 0 and legacy_count > 0:
-            logger.info(
-                f"Auto-migrating {legacy_count} nutrients from legacy collection"
-            )
+            logger.info(f"Auto-migrating {legacy_count} nutrients from legacy collection")
             migrate_from_legacy(self._client, "nutrients", self._ef)
             # Re-fetch collections to pick up migrated data.  Pass the
             # per-collection EF map so routing (voyage-code-3 for code
             # collections, voyage-3-large for text) is preserved after
             # migration (Session 13).
-            self._collections = get_or_create_collections(
-                self._client, self._per_collection_ef
-            )
+            self._collections = get_or_create_collections(self._client, self._per_collection_ef)
 
     def _route_collection(self, nutrient_type: NutrientType) -> chromadb.Collection:
         """Return the correct collection for a given nutrient type."""
@@ -667,7 +661,8 @@ class Soil:
             lapses=meta.get("fsrs_lapses", meta.get("lapse_count", 0)),
             last_review=(
                 datetime.fromtimestamp(last_review_ts, tz=timezone.utc)
-                if last_review_ts > 0 else None
+                if last_review_ts > 0
+                else None
             ),
             decay_state=meta.get("fsrs_decay_state", "new"),
         )
@@ -747,15 +742,17 @@ class Soil:
         due: list[dict] = []
         for i, doc_id in enumerate(results["ids"]):
             meta = results["metadatas"][i]
-            due.append({
-                "id": doc_id,
-                "nutrient_type": meta.get("nutrient_type", ""),
-                "content": meta.get("content", ""),
-                "fsrs_stability": meta.get("fsrs_stability", 1.0),
-                "fsrs_difficulty": meta.get("fsrs_difficulty", 5.0),
-                "fsrs_decay_state": meta.get("fsrs_decay_state", "new"),
-                "fsrs_next_review": meta.get("fsrs_next_review", 0.0),
-            })
+            due.append(
+                {
+                    "id": doc_id,
+                    "nutrient_type": meta.get("nutrient_type", ""),
+                    "content": meta.get("content", ""),
+                    "fsrs_stability": meta.get("fsrs_stability", 1.0),
+                    "fsrs_difficulty": meta.get("fsrs_difficulty", 5.0),
+                    "fsrs_decay_state": meta.get("fsrs_decay_state", "new"),
+                    "fsrs_next_review": meta.get("fsrs_next_review", 0.0),
+                }
+            )
 
         return due
 
@@ -1063,9 +1060,7 @@ class Soil:
         ts = now if now is not None else _now_ts()
         nutrient, col = self._find_nutrient(nutrient_id)
         if nutrient is None or col is None:
-            logger.warning(
-                f"Soil: invalidate_nutrient -- {nutrient_id} not found"
-            )
+            logger.warning(f"Soil: invalidate_nutrient -- {nutrient_id} not found")
             return False
         if nutrient.valid_until > 0 and ts >= nutrient.valid_until:
             # Already invalidated — leave original reason / timestamp alone.
@@ -1085,21 +1080,20 @@ class Soil:
         try:
             self._collection.update(ids=[nutrient_id], metadatas=[metadata])
         except Exception as e:
-            logger.debug(
-                f"Legacy collection invalidate mirror skipped for "
-                f"{nutrient_id}: {e}"
-            )
-        logger.info(
-            f"Soil: invalidated {nutrient_id} at {ts:.0f} ({reason!r})"
-        )
+            logger.debug(f"Legacy collection invalidate mirror skipped for {nutrient_id}: {e}")
+        logger.info(f"Soil: invalidated {nutrient_id} at {ts:.0f} ({reason!r})")
         return True
 
     def count_active(self, as_of: Optional[float] = None) -> int:
         """Number of nutrients still in the active set at *as_of* (now)."""
         ts = as_of if as_of is not None else _now_ts()
-        return sum(1 for n in self.iter_all_nutrients(
-            include_invalidated=False, as_of=ts,
-        ))
+        return sum(
+            1
+            for n in self.iter_all_nutrients(
+                include_invalidated=False,
+                as_of=ts,
+            )
+        )
 
     def count_invalidated(self) -> int:
         """Number of nutrients with a non-zero ``valid_until`` in the past."""

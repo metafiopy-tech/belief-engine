@@ -26,26 +26,43 @@ from pathlib import Path
 logger = logging.getLogger("belief.evolution.tool_validator")
 
 # Standard library module names (Python 3.10+)
-_STDLIB_MODULES: frozenset[str] = frozenset(
-    getattr(sys, "stdlib_module_names", frozenset())
-)
+_STDLIB_MODULES: frozenset[str] = frozenset(getattr(sys, "stdlib_module_names", frozenset()))
 
 # Dangerous calls — bare names and dotted names
-_DANGEROUS_BARE: frozenset[str] = frozenset({
-    "exec", "eval", "__import__", "compile", "execfile",
-})
+_DANGEROUS_BARE: frozenset[str] = frozenset(
+    {
+        "exec",
+        "eval",
+        "__import__",
+        "compile",
+        "execfile",
+    }
+)
 
-_DANGEROUS_DOTTED: frozenset[str] = frozenset({
-    # Filesystem mutation
-    "os.remove", "os.unlink", "os.rmdir", "os.makedirs",
-    "shutil.rmtree", "shutil.move", "shutil.copy",
-    # Process spawning (shell=False variants checked separately)
-    "subprocess.call", "subprocess.Popen", "subprocess.run",
-    "os.system", "os.popen",
-    # Network
-    "urllib.request.urlopen", "requests.get", "requests.post",
-    "socket.socket", "http.client.HTTPConnection",
-})
+_DANGEROUS_DOTTED: frozenset[str] = frozenset(
+    {
+        # Filesystem mutation
+        "os.remove",
+        "os.unlink",
+        "os.rmdir",
+        "os.makedirs",
+        "shutil.rmtree",
+        "shutil.move",
+        "shutil.copy",
+        # Process spawning (shell=False variants checked separately)
+        "subprocess.call",
+        "subprocess.Popen",
+        "subprocess.run",
+        "os.system",
+        "os.popen",
+        # Network
+        "urllib.request.urlopen",
+        "requests.get",
+        "requests.post",
+        "socket.socket",
+        "http.client.HTTPConnection",
+    }
+)
 
 
 @dataclass
@@ -94,7 +111,8 @@ def _subprocess_parse_check(code: str, timeout: int = 10) -> tuple[bool, str]:
         escaped = str(tool_path).replace("'", "\\'")
         result = subprocess.run(
             [
-                sys.executable, "-c",
+                sys.executable,
+                "-c",
                 f"import ast; ast.parse(open('{escaped}').read()); print('OK')",
             ],
             capture_output=True,

@@ -67,9 +67,7 @@ Non-goals for Session 2
 from __future__ import annotations
 
 import logging
-import re
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 import libcst as cst
 from libcst import matchers as m
@@ -112,7 +110,7 @@ CONFIG_FIELD_RENAMES: dict[str, str] = {
 # Config attributes with no v2 equivalent — we emit a clear comment so a
 # human (or the debugger on its retry) can address them.
 CONFIG_FIELD_NO_V2_EQUIVALENT: set[str] = {
-    "fields",          # v2 uses model_fields + Field(..., title=..., description=...)
+    "fields",  # v2 uses model_fields + Field(..., title=..., description=...)
     "error_msg_templates",
     "keep_untouched",
 }
@@ -131,6 +129,7 @@ class CovenantApplied:
     fire most often.  Keep the ``rule`` strings stable — they're the
     HDBSCAN feature dimension.
     """
+
     rule: str
     detail: str = ""
     line: int | None = None
@@ -310,9 +309,11 @@ class PydanticV2Covenant(cst.CSTTransformer):
         self.applied.append(
             CovenantApplied(
                 rule="pydantic_v2.import.basesettings_to_pydantic_settings",
-                detail="BaseSettings → pydantic_settings" + (
+                detail="BaseSettings → pydantic_settings"
+                + (
                     f" (+{len(other_aliases)} other names stay on pydantic)"
-                    if other_aliases else ""
+                    if other_aliases
+                    else ""
                 ),
                 file=self.filename,
             )
@@ -340,9 +341,7 @@ class PydanticV2Covenant(cst.CSTTransformer):
         )
         # Rebuild the original statement keeping any other leaves on the same line
         # (e.g., a semicolon-chained statement — rare in real code).
-        other_leaves = [
-            leaf for leaf in stmt.body if leaf is not importfrom
-        ]
+        other_leaves = [leaf for leaf in stmt.body if leaf is not importfrom]
         remaining_stmt = cst.SimpleStatementLine(
             body=[remaining_importfrom] + other_leaves,
         )
@@ -379,24 +378,30 @@ class PydanticV2Covenant(cst.CSTTransformer):
                     self._needs_field_validator = True
                     needs_classmethod = True
                     changed = True
-                    self.applied.append(CovenantApplied(
-                        rule="pydantic_v2.decorator.validator_to_field_validator",
-                        detail="@validator → @field_validator",
-                        file=self.filename,
-                    ))
+                    self.applied.append(
+                        CovenantApplied(
+                            rule="pydantic_v2.decorator.validator_to_field_validator",
+                            detail="@validator → @field_validator",
+                            file=self.filename,
+                        )
+                    )
                     continue
                 if name_node == "root_validator":
-                    new_decorators.append(_make_call_decorator(
-                        "model_validator", [_make_kwarg("mode", cst.SimpleString('"after"'))]
-                    ))
+                    new_decorators.append(
+                        _make_call_decorator(
+                            "model_validator", [_make_kwarg("mode", cst.SimpleString('"after"'))]
+                        )
+                    )
                     self._needs_model_validator = True
                     needs_classmethod = True
                     changed = True
-                    self.applied.append(CovenantApplied(
-                        rule="pydantic_v2.decorator.root_validator_to_model_validator",
-                        detail="@root_validator → @model_validator(mode='after')",
-                        file=self.filename,
-                    ))
+                    self.applied.append(
+                        CovenantApplied(
+                            rule="pydantic_v2.decorator.root_validator_to_model_validator",
+                            detail="@root_validator → @model_validator(mode='after')",
+                            file=self.filename,
+                        )
+                    )
                     continue
                 new_decorators.append(dec)
                 continue
@@ -408,21 +413,25 @@ class PydanticV2Covenant(cst.CSTTransformer):
                 self._needs_field_validator = True
                 needs_classmethod = True
                 changed = True
-                self.applied.append(CovenantApplied(
-                    rule="pydantic_v2.decorator.validator_to_field_validator",
-                    detail="@validator(...) → @field_validator(...)",
-                    file=self.filename,
-                ))
+                self.applied.append(
+                    CovenantApplied(
+                        rule="pydantic_v2.decorator.validator_to_field_validator",
+                        detail="@validator(...) → @field_validator(...)",
+                        file=self.filename,
+                    )
+                )
             elif m.matches(func, _ROOT_VALIDATOR_NAME_MATCHER):
                 new_decorators.append(_rewrite_root_validator_call(call))
                 self._needs_model_validator = True
                 needs_classmethod = True
                 changed = True
-                self.applied.append(CovenantApplied(
-                    rule="pydantic_v2.decorator.root_validator_to_model_validator",
-                    detail="@root_validator(...) → @model_validator(...)",
-                    file=self.filename,
-                ))
+                self.applied.append(
+                    CovenantApplied(
+                        rule="pydantic_v2.decorator.root_validator_to_model_validator",
+                        detail="@root_validator(...) → @model_validator(...)",
+                        file=self.filename,
+                    )
+                )
             else:
                 new_decorators.append(dec)
 
@@ -461,11 +470,13 @@ class PydanticV2Covenant(cst.CSTTransformer):
                     new_body_items.append(converted)
                     self._needs_configdict = True
                     config_converted = True
-                    self.applied.append(CovenantApplied(
-                        rule="pydantic_v2.class.config_to_configdict",
-                        detail="class Config → model_config = ConfigDict(...)",
-                        file=self.filename,
-                    ))
+                    self.applied.append(
+                        CovenantApplied(
+                            rule="pydantic_v2.class.config_to_configdict",
+                            detail="class Config → model_config = ConfigDict(...)",
+                            file=self.filename,
+                        )
+                    )
                     continue
             # 2. __root__ fields → leave in place + TODO comment
             root_field = _as_root_field(item)
@@ -477,25 +488,27 @@ class PydanticV2Covenant(cst.CSTTransformer):
                         "require subclassing pydantic.RootModel instead of BaseModel",
                     )
                 )
-                self.applied.append(CovenantApplied(
-                    rule="pydantic_v2.class.root_todo",
-                    detail="__root__ field annotated with migration TODO",
-                    file=self.filename,
-                ))
+                self.applied.append(
+                    CovenantApplied(
+                        rule="pydantic_v2.class.root_todo",
+                        detail="__root__ field annotated with migration TODO",
+                        file=self.filename,
+                    )
+                )
                 continue
             new_body_items.append(item)
 
         if not config_converted and all(n is item for n, item in zip(new_body_items, body)):
             return updated_node
 
-        new_indented = updated_node.body.with_changes(body=new_body_items) if hasattr(
-            updated_node.body, "with_changes"
-        ) else updated_node.body
+        new_indented = (
+            updated_node.body.with_changes(body=new_body_items)
+            if hasattr(updated_node.body, "with_changes")
+            else updated_node.body
+        )
         return updated_node.with_changes(body=new_indented)
 
-    def _convert_config_to_configdict(
-        self, config_class: cst.ClassDef
-    ) -> cst.BaseStatement | None:
+    def _convert_config_to_configdict(self, config_class: cst.ClassDef) -> cst.BaseStatement | None:
         """Take a ``class Config:`` block and emit
         ``model_config = ConfigDict(k1=v1, k2=v2, ...)``.
 
@@ -520,14 +533,16 @@ class PydanticV2Covenant(cst.CSTTransformer):
                             )
                             continue
                         v2_key = CONFIG_FIELD_RENAMES.get(key, key)
-                        kwargs.append(cst.Arg(
-                            keyword=cst.Name(v2_key),
-                            value=leaf.value,
-                            equal=cst.AssignEqual(
-                                whitespace_before=cst.SimpleWhitespace(""),
-                                whitespace_after=cst.SimpleWhitespace(""),
-                            ),
-                        ))
+                        kwargs.append(
+                            cst.Arg(
+                                keyword=cst.Name(v2_key),
+                                value=leaf.value,
+                                equal=cst.AssignEqual(
+                                    whitespace_before=cst.SimpleWhitespace(""),
+                                    whitespace_after=cst.SimpleWhitespace(""),
+                                ),
+                            )
+                        )
         if not kwargs:
             return None
 
@@ -535,9 +550,9 @@ class PydanticV2Covenant(cst.CSTTransformer):
         last = kwargs[-1]
         kwargs[-1] = last.with_changes(comma=cst.MaybeSentinel.DEFAULT)
         for i in range(len(kwargs) - 1):
-            kwargs[i] = kwargs[i].with_changes(comma=cst.Comma(
-                whitespace_after=cst.SimpleWhitespace(" ")
-            ))
+            kwargs[i] = kwargs[i].with_changes(
+                comma=cst.Comma(whitespace_after=cst.SimpleWhitespace(" "))
+            )
 
         assign = cst.Assign(
             targets=[cst.AssignTarget(target=cst.Name("model_config"))],
@@ -552,9 +567,7 @@ class PydanticV2Covenant(cst.CSTTransformer):
     # Constrained types: conint/constr → Annotated[int, Field(...)]
     # ------------------------------------------------------------------
 
-    def leave_Call(
-        self, original_node: cst.Call, updated_node: cst.Call
-    ) -> cst.BaseExpression:
+    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.BaseExpression:
         """Rewrite conint/constr factory calls to Annotated equivalents.
 
         These show up mostly in field annotations::
@@ -584,11 +597,13 @@ class PydanticV2Covenant(cst.CSTTransformer):
         )
         self._needs_annotated = True
         self._needs_field = True
-        self.applied.append(CovenantApplied(
-            rule=f"pydantic_v2.type.{factory_name}_to_annotated",
-            detail=f"{factory_name}(...) → Annotated[{base.value}, Field(...)]",
-            file=self.filename,
-        ))
+        self.applied.append(
+            CovenantApplied(
+                rule=f"pydantic_v2.type.{factory_name}_to_annotated",
+                detail=f"{factory_name}(...) → Annotated[{base.value}, Field(...)]",
+                file=self.filename,
+            )
+        )
         return cst.Subscript(
             value=cst.Name("Annotated"),
             slice=[
@@ -601,9 +616,7 @@ class PydanticV2Covenant(cst.CSTTransformer):
     # Final pass: inject any needed imports at the top of the module.
     # ------------------------------------------------------------------
 
-    def leave_Module(
-        self, original_node: cst.Module, updated_node: cst.Module
-    ) -> cst.Module:
+    def leave_Module(self, original_node: cst.Module, updated_node: cst.Module) -> cst.Module:
         """Add imports we now need (Annotated, Field, ConfigDict, etc.)."""
 
         pydantic_adds: set[str] = set()
@@ -785,9 +798,7 @@ def _normalise_args(args: list[cst.Arg]) -> list[cst.Arg]:
         if i == len(args) - 1:
             out.append(a.with_changes(comma=cst.MaybeSentinel.DEFAULT))
         else:
-            out.append(a.with_changes(comma=cst.Comma(
-                whitespace_after=cst.SimpleWhitespace(" ")
-            )))
+            out.append(a.with_changes(comma=cst.Comma(whitespace_after=cst.SimpleWhitespace(" "))))
     return out
 
 
@@ -799,7 +810,11 @@ def _as_config_inner_class(stmt: cst.BaseStatement) -> cst.ClassDef | None:
     """Return the ClassDef if ``stmt`` is a ``class Config:`` declaration,
     else None.
     """
-    if isinstance(stmt, cst.ClassDef) and isinstance(stmt.name, cst.Name) and stmt.name.value == "Config":
+    if (
+        isinstance(stmt, cst.ClassDef)
+        and isinstance(stmt.name, cst.Name)
+        and stmt.name.value == "Config"
+    ):
         return stmt
     return None
 
@@ -808,7 +823,11 @@ def _as_root_field(stmt: cst.BaseStatement) -> cst.AnnAssign | None:
     """Return the AnnAssign if ``stmt`` declares a ``__root__: T`` field."""
     if isinstance(stmt, cst.SimpleStatementLine):
         for leaf in stmt.body:
-            if isinstance(leaf, cst.AnnAssign) and isinstance(leaf.target, cst.Name) and leaf.target.value == "__root__":
+            if (
+                isinstance(leaf, cst.AnnAssign)
+                and isinstance(leaf.target, cst.Name)
+                and leaf.target.value == "__root__"
+            ):
                 return leaf
     return None
 
@@ -844,15 +863,15 @@ def _splice_import(
                     missing = [n for n in names if n not in existing_names]
                     if not missing:
                         return body  # Nothing to do.
-                    merged_aliases = list(leaf.names) if isinstance(leaf.names, (tuple, list)) else []
-                    merged_aliases.extend(
-                        cst.ImportAlias(name=cst.Name(n)) for n in missing
+                    merged_aliases = (
+                        list(leaf.names) if isinstance(leaf.names, (tuple, list)) else []
                     )
+                    merged_aliases.extend(cst.ImportAlias(name=cst.Name(n)) for n in missing)
                     merged_aliases = _normalise_import_aliases(merged_aliases)
                     new_importfrom = leaf.with_changes(names=merged_aliases)
-                    new_stmt = stmt.with_changes(body=[
-                        new_importfrom if l is leaf else l for l in stmt.body
-                    ])
+                    new_stmt = stmt.with_changes(
+                        body=[new_importfrom if child is leaf else child for child in stmt.body]
+                    )
                     return [s if s is not stmt else new_stmt for s in body]
 
     # 2. No existing import — insert after last top-level import.
@@ -882,9 +901,7 @@ def _normalise_import_aliases(aliases: list[cst.ImportAlias]) -> list[cst.Import
         if i == len(aliases) - 1:
             out.append(a.with_changes(comma=cst.MaybeSentinel.DEFAULT))
         else:
-            out.append(a.with_changes(comma=cst.Comma(
-                whitespace_after=cst.SimpleWhitespace(" ")
-            )))
+            out.append(a.with_changes(comma=cst.Comma(whitespace_after=cst.SimpleWhitespace(" "))))
     return out
 
 

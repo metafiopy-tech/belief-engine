@@ -103,10 +103,7 @@ class LocalCostTracker:
     def summary(self) -> str:
         calls = self.total_calls()
         toks = self.total_tokens()
-        return (
-            f"local: {calls} calls, {toks} tokens, "
-            f"{self.fallback_count} fallbacks, $0.00"
-        )
+        return f"local: {calls} calls, {toks} tokens, {self.fallback_count} fallbacks, $0.00"
 
 
 __all__ = ["LocalCallRecord", "LocalCostTracker"]

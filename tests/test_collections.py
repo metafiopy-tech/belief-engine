@@ -9,7 +9,6 @@ Covers:
   - Migration from legacy collection works
 """
 
-
 import chromadb
 import pytest
 
@@ -66,9 +65,7 @@ class TestCollectionCreation:
         collections = get_or_create_collections(ephemeral_client, ef)
         for name, col in collections.items():
             meta = col.metadata
-            assert meta.get("hnsw:space") == "cosine", (
-                f"{name} should use cosine space"
-            )
+            assert meta.get("hnsw:space") == "cosine", f"{name} should use cosine space"
 
     def test_idempotent(self, ephemeral_client, ef):
         """Calling get_or_create_collections twice should be safe."""
@@ -146,53 +143,67 @@ class TestDepositRouting:
 class TestCrossCollectionRetrieval:
     def test_retrieve_across_collections(self, soil):
         """retrieve() without a type filter should search all collections."""
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.PATTERN,
-            content="Use async/await for I/O-bound operations",
-            embedding_text="async await pattern for io bound code",
-        ))
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.COVENANT,
-            content="Always validate user input at API boundary",
-            embedding_text="input validation at api boundary rule",
-        ))
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.PATTERN,
+                content="Use async/await for I/O-bound operations",
+                embedding_text="async await pattern for io bound code",
+            )
+        )
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.COVENANT,
+                content="Always validate user input at API boundary",
+                embedding_text="input validation at api boundary rule",
+            )
+        )
 
         results = soil.retrieve("api code patterns", n=10)
         assert len(results) == 2
 
     def test_retrieve_with_type_filter(self, soil):
         """retrieve() with a type should only search that collection."""
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.PATTERN,
-            content="Use pydantic models for validation",
-            embedding_text="pydantic model validation pattern",
-        ))
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.ANTIPATTERN,
-            content="Don't use dict for API responses",
-            embedding_text="dict instead of pydantic for api response antipattern",
-        ))
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.PATTERN,
+                content="Use pydantic models for validation",
+                embedding_text="pydantic model validation pattern",
+            )
+        )
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.ANTIPATTERN,
+                content="Don't use dict for API responses",
+                embedding_text="dict instead of pydantic for api response antipattern",
+            )
+        )
 
         patterns = soil.retrieve("validation", nutrient_type=NutrientType.PATTERN)
         assert all(n.nutrient_type == NutrientType.PATTERN for n in patterns)
 
     def test_retrieve_profile_populates_all_categories(self, soil):
         """retrieve_profile should populate covenants, antipatterns, patterns, skeletons."""
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.PATTERN,
-            content="REST API with proper status codes",
-            embedding_text="rest api status code pattern",
-        ))
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.ANTIPATTERN,
-            content="Returning 200 for errors",
-            embedding_text="returning 200 for error responses antipattern",
-        ))
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.COVENANT,
-            content="Always return proper HTTP status codes",
-            embedding_text="http status code covenant rule",
-        ))
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.PATTERN,
+                content="REST API with proper status codes",
+                embedding_text="rest api status code pattern",
+            )
+        )
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.ANTIPATTERN,
+                content="Returning 200 for errors",
+                embedding_text="returning 200 for error responses antipattern",
+            )
+        )
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.COVENANT,
+                content="Always return proper HTTP status codes",
+                embedding_text="http status code covenant rule",
+            )
+        )
 
         profile = soil.retrieve_profile("build a REST API")
         assert len(profile.patterns) >= 1
@@ -274,6 +285,7 @@ class TestReviewNutrient:
 
         # Default fsrs_next_review is 0.0 which is <= any current time
         from datetime import datetime, timezone
+
         due = soil.get_due_reviews("belief_principles", now=datetime.now(timezone.utc))
         assert any(d["id"] == nid for d in due)
 
@@ -292,22 +304,26 @@ class TestSoilHealth:
 
     def test_soil_health_with_data(self, soil):
         """Health metrics should compute with deposited data."""
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.PATTERN,
-            content="Pattern A for health check",
-            embedding_text="health check pattern a",
-        ))
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.ANTIPATTERN,
-            content="Antipattern B for health check",
-            embedding_text="health check antipattern b",
-        ))
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.PATTERN,
+                content="Pattern A for health check",
+                embedding_text="health check pattern a",
+            )
+        )
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.ANTIPATTERN,
+                content="Antipattern B for health check",
+                embedding_text="health check antipattern b",
+            )
+        )
 
         health = soil.get_soil_health()
         assert health["total_count"]["belief_principles"] == 1
         assert health["total_count"]["belief_failures"] == 1
         assert health["duplicate_rate"] == 0.0  # Different content
-        assert health["staleness"] == 0.0       # Just created
+        assert health["staleness"] == 0.0  # Just created
 
     def test_soil_health_counts_all_collections(self, soil):
         """total_count should have entries for all 5 collections."""
@@ -338,9 +354,24 @@ class TestMigration:
                 "always validate input covenant",
             ],
             metadatas=[
-                {"nutrient_type": "pattern", "content": "DI pattern", "stability": 5.0, "difficulty": 3.0},
-                {"nutrient_type": "antipattern", "content": "Bare except", "stability": 2.0, "difficulty": 7.0},
-                {"nutrient_type": "covenant", "content": "Validate input", "stability": 10.0, "difficulty": 4.0},
+                {
+                    "nutrient_type": "pattern",
+                    "content": "DI pattern",
+                    "stability": 5.0,
+                    "difficulty": 3.0,
+                },
+                {
+                    "nutrient_type": "antipattern",
+                    "content": "Bare except",
+                    "stability": 2.0,
+                    "difficulty": 7.0,
+                },
+                {
+                    "nutrient_type": "covenant",
+                    "content": "Validate input",
+                    "stability": 10.0,
+                    "difficulty": 4.0,
+                },
             ],
         )
 
@@ -350,8 +381,8 @@ class TestMigration:
         counts = migrate_from_legacy(ephemeral_client, "nutrients", ef)
 
         assert counts["belief_principles"] == 1  # pattern
-        assert counts["belief_failures"] == 1    # antipattern
-        assert counts["belief_covenants"] == 1   # covenant
+        assert counts["belief_failures"] == 1  # antipattern
+        assert counts["belief_covenants"] == 1  # covenant
 
         # Verify records exist in new collections
         collections = get_or_create_collections(ephemeral_client, ef)
@@ -381,9 +412,7 @@ class TestMigration:
         migrate_from_legacy(ephemeral_client, "nutrients", ef)
 
         # Legacy should still exist with original data
-        legacy_after = ephemeral_client.get_collection(
-            name="nutrients", embedding_function=ef
-        )
+        legacy_after = ephemeral_client.get_collection(name="nutrients", embedding_function=ef)
         assert legacy_after.count() == 1
 
     def test_migrate_empty_legacy(self, ephemeral_client, ef):
@@ -408,16 +437,20 @@ class TestMigration:
 class TestBackwardCompat:
     def test_soil_count_sums_all_collections(self, soil):
         """soil.count() should return total across all collections."""
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.PATTERN,
-            content="P1",
-            embedding_text="pattern one",
-        ))
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.COVENANT,
-            content="C1",
-            embedding_text="covenant one",
-        ))
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.PATTERN,
+                content="P1",
+                embedding_text="pattern one",
+            )
+        )
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.COVENANT,
+                content="C1",
+                embedding_text="covenant one",
+            )
+        )
         assert soil.count() == 2
 
     def test_soil_get_finds_across_collections(self, soil):

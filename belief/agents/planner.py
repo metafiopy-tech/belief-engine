@@ -11,6 +11,7 @@ from belief.prompts import PLANNER_SYSTEM, PLANNER_PROMPT
 
 logger = logging.getLogger("belief.agents.planner")
 
+
 class PlannerAgent(BaseAgent):
     role = ModelRole.PLANNER
     name = "Planner"
@@ -32,33 +33,48 @@ class PlannerAgent(BaseAgent):
         system_prompt = PLANNER_SYSTEM
         try:
             from belief.archive.priors import format_priors_block
+
             priors_block = format_priors_block(spec.goal, k=3)
             if priors_block:
                 system_prompt = f"{PLANNER_SYSTEM}{priors_block}"
-                logger.info("Planner: injected %d prior(s) from agent archive",
-                            priors_block.count("### Prior "))
+                logger.info(
+                    "Planner: injected %d prior(s) from agent archive",
+                    priors_block.count("### Prior "),
+                )
         except Exception as e:  # pragma: no cover
             logger.debug("Planner prior injection skipped: %s", e)
 
         llm = LLMClient(self.router)
         try:
             prompt = PLANNER_PROMPT.format(
-                goal=spec.goal, goal_refined=spec.goal_refined or spec.goal,
+                goal=spec.goal,
+                goal_refined=spec.goal_refined or spec.goal,
                 target_type=spec.target_type,
                 acceptance_criteria="\n".join(f"  - {c}" for c in spec.acceptance_criteria),
                 constraints=", ".join(spec.constraints) if spec.constraints else "none",
-                credentials=", ".join(c.env_var for c in spec.credentials) if spec.credentials else "none",
+                credentials=", ".join(c.env_var for c in spec.credentials)
+                if spec.credentials
+                else "none",
                 tools=", ".join(spec.tools_needed) if spec.tools_needed else "none",
-                recommended_approach=research.recommended_approach if research else "Build from scratch",
+                recommended_approach=research.recommended_approach
+                if research
+                else "Build from scratch",
                 clone_target=research.clone_target if research else "none",
-                patterns=", ".join(research.patterns_found[:5]) if research and research.patterns_found else "none",
+                patterns=", ".join(research.patterns_found[:5])
+                if research and research.patterns_found
+                else "none",
                 repo_candidates="\n".join(
-                    f"  - {r.name} ({r.stars}★): {r.description}" for r in (research.repo_candidates[:5] if research else [])
-                ) or "  none found",
+                    f"  - {r.name} ({r.stars}★): {r.description}"
+                    for r in (research.repo_candidates[:5] if research else [])
+                )
+                or "  none found",
             )
             plan = await llm.generate_structured(
-                role=self.role, system=system_prompt, prompt=prompt,
-                response_schema=ImplementationPlan, temperature=0.3,
+                role=self.role,
+                system=system_prompt,
+                prompt=prompt,
+                response_schema=ImplementationPlan,
+                temperature=0.3,
                 complexity=state.complexity_score,
             )
             if not plan.steps:
@@ -81,13 +97,24 @@ class PlannerAgent(BaseAgent):
         state.phase = Phase.ARCHITECTING
         return state
 
+
 def _fallback() -> ImplementationPlan:
     return ImplementationPlan(
         strategy="generate_fresh",
         steps=[
             PlanStep(order=1, description="Generate automation code", agent_responsible="builder"),
-            PlanStep(order=2, description="Execute and test", agent_responsible="executor", dependencies=[1]),
-            PlanStep(order=3, description="Finalize and document", agent_responsible="synthesizer", dependencies=[1, 2]),
+            PlanStep(
+                order=2,
+                description="Execute and test",
+                agent_responsible="executor",
+                dependencies=[1],
+            ),
+            PlanStep(
+                order=3,
+                description="Finalize and document",
+                agent_responsible="synthesizer",
+                dependencies=[1, 2],
+            ),
         ],
         estimated_iterations=2,
         risk_factors=["Planning done without LLM — plan is generic"],
@@ -122,14 +149,22 @@ def _validate_plan(plan: ImplementationPlan, spec) -> ImplementationPlan:
         issues.append(f"Duplicate step orders: {orders}")
 
     # Check 3: Known strategy
-    valid_strategies = {"generate_fresh", "clone_and_modify", "compose_from_packages", "extend_codebase"}
+    valid_strategies = {
+        "generate_fresh",
+        "clone_and_modify",
+        "compose_from_packages",
+        "extend_codebase",
+    }
     if plan.strategy not in valid_strategies:
         # Not fatal — just log
         logger.debug(f"Planner: unknown strategy '{plan.strategy}', continuing")
 
     # Check 4: At least one implementation step
     has_impl = any(
-        any(kw in s.description.lower() for kw in ("build", "generat", "implement", "creat", "writ", "code"))
+        any(
+            kw in s.description.lower()
+            for kw in ("build", "generat", "implement", "creat", "writ", "code")
+        )
         for s in plan.steps
     )
     if not has_impl:

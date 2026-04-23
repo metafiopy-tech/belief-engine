@@ -139,9 +139,7 @@ class Usage:
             input_tokens=int(g(usage, "input_tokens", 0) or 0),
             output_tokens=int(g(usage, "output_tokens", 0) or 0),
             cache_read_input_tokens=int(g(usage, "cache_read_input_tokens", 0) or 0),
-            cache_creation_input_tokens=int(
-                g(usage, "cache_creation_input_tokens", 0) or 0
-            ),
+            cache_creation_input_tokens=int(g(usage, "cache_creation_input_tokens", 0) or 0),
         )
 
 
@@ -319,9 +317,7 @@ class CostTracker:
     def total(self, tag: Optional[str] = None) -> float:
         with self.conn() as c:
             if tag is None:
-                row = c.execute(
-                    "SELECT COALESCE(SUM(cost), 0.0) AS s FROM calls;"
-                ).fetchone()
+                row = c.execute("SELECT COALESCE(SUM(cost), 0.0) AS s FROM calls;").fetchone()
             else:
                 row = c.execute(
                     "SELECT COALESCE(SUM(cost), 0.0) AS s FROM calls WHERE tag = ?;",

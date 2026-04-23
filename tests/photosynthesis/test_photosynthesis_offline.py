@@ -40,9 +40,7 @@ from belief.photosynthesis.filter.cascade import (
 @pytest.fixture()
 def keywords_file(tmp_path: Path) -> Path:
     p = tmp_path / "keywords.yaml"
-    p.write_text(
-        "keywords:\n  - fastapi\n  - langgraph\n  - mcp\n  - pydantic\n"
-    )
+    p.write_text("keywords:\n  - fastapi\n  - langgraph\n  - mcp\n  - pydantic\n")
     return p
 
 
@@ -63,9 +61,7 @@ class TestOfflineEnvVar:
     flips the whole guard off."""
 
     @pytest.mark.parametrize("val", ["1", "true", "TRUE", "yes", "on", "On"])
-    def test_truthy_values_enable_offline(
-        self, monkeypatch: pytest.MonkeyPatch, val: str
-    ) -> None:
+    def test_truthy_values_enable_offline(self, monkeypatch: pytest.MonkeyPatch, val: str) -> None:
         monkeypatch.setenv("BELIEF_OFFLINE", val)
         assert _offline_mode() is True
 
@@ -111,9 +107,7 @@ class TestCheapStagesOffline:
         assert not res.kept
         assert "no keyword" in res.reason
 
-    def test_stage2_high_confidence_bypass_runs_offline(
-        self, keywords_file: Path
-    ) -> None:
+    def test_stage2_high_confidence_bypass_runs_offline(self, keywords_file: Path) -> None:
         """Requires sklearn — without it, stage 2 is inert (tfidf
         returns -1) and every keyword survivor falls through to
         stage 3, where offline mode correctly raises."""
@@ -129,8 +123,8 @@ class TestCheapStagesOffline:
                 "fastapi websocket tutorial",
                 "pydantic v2 settings migration",
             ],
-            stage2_coarse=0.0,   # let everything pass the low bar
-            stage2_high=0.0,     # force stage-2 high-confidence bypass
+            stage2_coarse=0.0,  # let everything pass the low bar
+            stage2_high=0.0,  # force stage-2 high-confidence bypass
         )
         [res] = f.score(["fastapi background jobs"])
         assert res.kept is True
@@ -168,6 +162,7 @@ class TestStage3OfflineRaise:
 
     def test_ensure_embed_model_raises(self, keywords_file: Path) -> None:
         import numpy as _np  # noqa: F401 — presence check; ok to import
+
         f = CascadingRelevanceFilter(
             keywords_path=keywords_file,
             centroids=_np.array([[1.0, 0.0]]),
@@ -180,9 +175,7 @@ class TestStage3OfflineRaise:
         assert "BELIEF_OFFLINE" in msg
         assert "offline" in msg.lower()
 
-    def test_score_raises_when_stage3_is_reached(
-        self, keywords_file: Path
-    ) -> None:
+    def test_score_raises_when_stage3_is_reached(self, keywords_file: Path) -> None:
         """Full-flow assertion: if a signal survives to stage 3 and we
         are offline, .score() raises OfflineModeError rather than
         quietly dropping to -1 (the pre-Session-0 behaviour)."""
@@ -229,6 +222,5 @@ class TestNoNetworkUnderOffline:
             f.score(["fastapi plugin for background jobs"])
 
         assert "sentence_transformers" not in sys.modules, (
-            "sentence_transformers was imported under BELIEF_OFFLINE=1 — "
-            "the guard fired too late."
+            "sentence_transformers was imported under BELIEF_OFFLINE=1 — the guard fired too late."
         )

@@ -118,9 +118,7 @@ class KillSwitchState:
 
     def current_status(self) -> ControlStatus:
         with self._conn() as c:
-            row = c.execute(
-                "SELECT status FROM control WHERE id = 1;"
-            ).fetchone()
+            row = c.execute("SELECT status FROM control WHERE id = 1;").fetchone()
             if row is None:
                 return ControlStatus.RUNNING
             try:
@@ -132,8 +130,7 @@ class KillSwitchState:
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE;")
             c.execute(
-                "UPDATE control SET status = ?, reason = ?, updated_at = ? "
-                "WHERE id = 1;",
+                "UPDATE control SET status = ?, reason = ?, updated_at = ? WHERE id = 1;",
                 (status.value, reason, int(time.time())),
             )
             c.execute("COMMIT;")
@@ -168,22 +165,16 @@ class KillSwitchState:
     def check(self, tag: str) -> None:
         """Raise SystemExit on KILL file; KillSwitchTripped on pause/drain."""
         if self.kill_file.exists():
-            raise SystemExit(
-                f"kill file present at {self.kill_file}; aborting {tag}"
-            )
+            raise SystemExit(f"kill file present at {self.kill_file}; aborting {tag}")
 
         if self._paused_in_memory:
-            raise KillSwitchTripped(
-                f"paused by SIGUSR1; tag={tag} blocked"
-            )
+            raise KillSwitchTripped(f"paused by SIGUSR1; tag={tag} blocked")
 
         status = self.current_status()
         if status is ControlStatus.RUNNING:
             return
         if status is ControlStatus.PAUSED:
-            raise KillSwitchTripped(
-                f"control table paused; tag={tag} blocked"
-            )
+            raise KillSwitchTripped(f"control table paused; tag={tag} blocked")
         # DRAINING — finalize / log allowed, everything else blocked
         if tag not in DRAINING_ALLOWED_TAGS:
             raise KillSwitchTripped(

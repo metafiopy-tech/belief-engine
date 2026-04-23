@@ -100,14 +100,11 @@ class AuditLog:
         payload_json = canonical_json(event)
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE;")
-            last = c.execute(
-                "SELECT hash FROM events ORDER BY seq DESC LIMIT 1;"
-            ).fetchone()
+            last = c.execute("SELECT hash FROM events ORDER BY seq DESC LIMIT 1;").fetchone()
             prev = last["hash"] if last is not None else GENESIS_PREV_HASH
             new_hash = compute_hash(payload_json, prev)
             c.execute(
-                "INSERT INTO events(ts, payload, prev_hash, hash) "
-                "VALUES(?, ?, ?, ?);",
+                "INSERT INTO events(ts, payload, prev_hash, hash) VALUES(?, ?, ?, ?);",
                 (int(time.time()), payload_json, prev, new_hash),
             )
             c.execute("COMMIT;")
@@ -116,9 +113,7 @@ class AuditLog:
     # --------------------------------------------------------------- head
     def head_hash(self) -> str:
         with self._conn() as c:
-            row = c.execute(
-                "SELECT hash FROM events ORDER BY seq DESC LIMIT 1;"
-            ).fetchone()
+            row = c.execute("SELECT hash FROM events ORDER BY seq DESC LIMIT 1;").fetchone()
             return row["hash"] if row else GENESIS_PREV_HASH
 
     def count(self) -> int:
@@ -137,9 +132,7 @@ class AuditLog:
         """
         prev = GENESIS_PREV_HASH
         with self._conn() as c:
-            cur = c.execute(
-                "SELECT seq, payload, prev_hash, hash FROM events ORDER BY seq ASC;"
-            )
+            cur = c.execute("SELECT seq, payload, prev_hash, hash FROM events ORDER BY seq ASC;")
             for row in cur:
                 seq = int(row["seq"])
                 payload_json = row["payload"]
@@ -153,9 +146,7 @@ class AuditLog:
                     )
                 recomputed = compute_hash(payload_json, stored_prev)
                 if recomputed != row["hash"]:
-                    return VerifyResult(
-                        ok=False, break_seq=seq, reason="hash mismatch"
-                    )
+                    return VerifyResult(ok=False, break_seq=seq, reason="hash mismatch")
                 prev = row["hash"]
         return VerifyResult(ok=True, break_seq=None, reason="ok")
 

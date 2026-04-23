@@ -19,15 +19,17 @@ from pydantic import BaseModel, Field
 
 class ServiceType(str, Enum):
     """Type of service the project runs."""
-    API = "api"              # FastAPI, Flask, etc.
-    CLI = "cli"              # Command-line tool
-    WORKER = "worker"        # Background worker/consumer
-    CRON = "cron"            # Scheduled task
-    STATIC = "static"        # Static site/files
+
+    API = "api"  # FastAPI, Flask, etc.
+    CLI = "cli"  # Command-line tool
+    WORKER = "worker"  # Background worker/consumer
+    CRON = "cron"  # Scheduled task
+    STATIC = "static"  # Static site/files
 
 
 class EnvVar(BaseModel):
     """An environment variable the project needs."""
+
     name: str
     description: str = ""
     required: bool = True
@@ -44,6 +46,7 @@ class EnvVar(BaseModel):
 
 class ServicePort(BaseModel):
     """A port the service exposes."""
+
     container_port: int = 8000
     host_port: int = 8000
     protocol: str = "tcp"
@@ -51,6 +54,7 @@ class ServicePort(BaseModel):
 
 class HealthCheck(BaseModel):
     """Health check configuration."""
+
     path: str = "/health"
     interval_seconds: int = 30
     timeout_seconds: int = 5
@@ -64,6 +68,7 @@ class ProjectManifest(BaseModel):
     This is the single source of truth that all deployment
     artifact generators read from.
     """
+
     # Identity
     project_name: str
     description: str = ""
@@ -71,10 +76,7 @@ class ProjectManifest(BaseModel):
 
     # Service
     service_type: ServiceType = ServiceType.API
-    entry_command: str = Field(
-        default="python -m main",
-        description="Command to start the service"
-    )
+    entry_command: str = Field(default="python -m main", description="Command to start the service")
     entry_file: str = "main.py"
 
     # Network
@@ -117,13 +119,21 @@ def manifest_from_skeleton(
     # Detect service type from code patterns
     all_code = "\n".join(generated_files.values())
     service_type = ServiceType.CLI
-    entry_command = f"python -m {skeleton.entry_point.replace('.py', '').replace('/', '.')}" if skeleton.entry_point else "python -m main"
+    entry_command = (
+        f"python -m {skeleton.entry_point.replace('.py', '').replace('/', '.')}"
+        if skeleton.entry_point
+        else "python -m main"
+    )
 
     if "fastapi" in all_code.lower() or "FastAPI" in all_code:
         service_type = ServiceType.API
         # Find uvicorn pattern or default
         if "uvicorn" in all_code:
-            app_module = skeleton.entry_point.replace(".py", "").replace("/", ".") if skeleton.entry_point else "main"
+            app_module = (
+                skeleton.entry_point.replace(".py", "").replace("/", ".")
+                if skeleton.entry_point
+                else "main"
+            )
             entry_command = f"uvicorn {app_module}:app --host 0.0.0.0 --port 8000"
         else:
             entry_command = f"python {skeleton.entry_point or 'main.py'}"
@@ -138,13 +148,20 @@ def manifest_from_skeleton(
         prefix = config.env_prefix or ""
         for f in config.fields:
             env_name = f"{prefix}{f.name}".upper()
-            env_vars.append(EnvVar(
-                name=env_name,
-                description=f.description or f"Config: {f.name}",
-                required=f.default is None,
-                default=f.default.strip('"').strip("'") if f.default and f.default not in ("None", "[]", "{}") else None,
-                secret="key" in f.name.lower() or "secret" in f.name.lower() or "token" in f.name.lower() or "password" in f.name.lower(),
-            ))
+            env_vars.append(
+                EnvVar(
+                    name=env_name,
+                    description=f.description or f"Config: {f.name}",
+                    required=f.default is None,
+                    default=f.default.strip('"').strip("'")
+                    if f.default and f.default not in ("None", "[]", "{}")
+                    else None,
+                    secret="key" in f.name.lower()
+                    or "secret" in f.name.lower()
+                    or "token" in f.name.lower()
+                    or "password" in f.name.lower(),
+                )
+            )
 
     # Ports
     ports = []

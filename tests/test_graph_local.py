@@ -8,13 +8,10 @@ user's Mac during the full build verification.
 
 from __future__ import annotations
 
-import os
-
-import pytest
-
 
 def _router(mode: str):
     from belief.config.models import ModelRouter, RouteMode
+
     r = ModelRouter()
     r.set_mode(RouteMode(mode))
     return r
@@ -23,6 +20,7 @@ def _router(mode: str):
 def test_local_pipeline_compiles():
     """Smoke: build_local_pipeline returns a compiled StateGraph."""
     from belief.graph_local import build_local_pipeline
+
     pipeline = build_local_pipeline(_router("local"))
     assert pipeline is not None
     # Compiled graphs expose a .nodes mapping
@@ -33,6 +31,7 @@ def test_local_pipeline_has_collapsed_node_set():
     """The collapsed pipeline keeps the 4 logical stages and drops the
     agents we deliberately cut (research, tester, gap_analyst, polarity)."""
     from belief.graph_local import build_local_pipeline
+
     pipeline = build_local_pipeline(_router("local"))
     nodes = {n for n in pipeline.nodes.keys() if not n.startswith("__")}
 
@@ -63,9 +62,7 @@ def test_local_pipeline_has_collapsed_node_set():
     }
 
     assert expected_present <= nodes, f"missing: {expected_present - nodes}"
-    assert not (expected_absent & nodes), (
-        f"forbidden nodes leaked: {expected_absent & nodes}"
-    )
+    assert not (expected_absent & nodes), f"forbidden nodes leaked: {expected_absent & nodes}"
 
 
 def test_cloud_pipeline_unaffected():
@@ -128,6 +125,7 @@ def test_route_after_executor_respects_local_budget():
         LOCAL_MAX_DEBUG_ITERATIONS,
         _route_after_executor,
     )
+
     # Use assertion-relative value so the test doesn't drift if the cap
     # is later bumped.
     at_cap = {

@@ -43,15 +43,15 @@ from belief.models.skeleton import (  # noqa: E402
     ConfigSchema,
     ExceptionSpec,
 )
-from belief.models.symbol_registry import SymbolRegistry
-from belief.models.dependency_dag import (
+from belief.models.symbol_registry import SymbolRegistry  # noqa: E402
+from belief.models.dependency_dag import (  # noqa: E402
     topological_sort,
     create_build_plan,
     critical_path,
     DependencyCycleError,
 )
-from belief.agents.skeleton_builder import generate_all_skeletons
-from belief.agents.pyright_checker import (
+from belief.agents.skeleton_builder import generate_all_skeletons  # noqa: E402
+from belief.agents.pyright_checker import (  # noqa: E402
     PyrightError,
     PyrightResult,
     _parse_pyright_output,
@@ -59,7 +59,7 @@ from belief.agents.pyright_checker import (
     format_errors_for_llm,
     write_project_for_pyright,
 )
-from belief.agents.parallel_builder import (
+from belief.agents.parallel_builder import (  # noqa: E402
     build_level,
     run_parallel_build,
     _clean_code,
@@ -69,6 +69,7 @@ from belief.agents.parallel_builder import (
 # ---------------------------------------------------------------------------
 # 12-file lead gen pipeline skeleton
 # ---------------------------------------------------------------------------
+
 
 def _make_12_file_skeleton() -> SkeletonArtifact:
     """
@@ -80,118 +81,274 @@ def _make_12_file_skeleton() -> SkeletonArtifact:
         description="4-stage lead generation pipeline with API server",
         file_tree=[
             # Level 0: no dependencies (skeleton)
-            FileTreeEntry(path="models/lead.py", role=FileRole.MODEL,
-                          description="Progressive lead models", skeleton=True),
-            FileTreeEntry(path="models/config.py", role=FileRole.CONFIG,
-                          description="Pipeline settings", skeleton=True),
-            FileTreeEntry(path="pipeline/exceptions.py", role=FileRole.EXCEPTION,
-                          description="Pipeline exceptions", skeleton=True),
+            FileTreeEntry(
+                path="models/lead.py",
+                role=FileRole.MODEL,
+                description="Progressive lead models",
+                skeleton=True,
+            ),
+            FileTreeEntry(
+                path="models/config.py",
+                role=FileRole.CONFIG,
+                description="Pipeline settings",
+                skeleton=True,
+            ),
+            FileTreeEntry(
+                path="pipeline/exceptions.py",
+                role=FileRole.EXCEPTION,
+                description="Pipeline exceptions",
+                skeleton=True,
+            ),
             # Level 1: depends on models (skeleton)
-            FileTreeEntry(path="pipeline/base.py", role=FileRole.ABC,
-                          description="Base stage ABC", skeleton=True),
+            FileTreeEntry(
+                path="pipeline/base.py",
+                role=FileRole.ABC,
+                description="Base stage ABC",
+                skeleton=True,
+            ),
             # Level 2: depends on base + models (implementation)
-            FileTreeEntry(path="pipeline/discovery.py", role=FileRole.IMPLEMENTATION,
-                          description="Stage 1: Google Places discovery", skeleton=False),
-            FileTreeEntry(path="pipeline/enrichment.py", role=FileRole.IMPLEMENTATION,
-                          description="Stage 2: Waterfall enrichment", skeleton=False),
-            FileTreeEntry(path="pipeline/scoring.py", role=FileRole.IMPLEMENTATION,
-                          description="Stage 3: ICP scoring", skeleton=False),
-            FileTreeEntry(path="pipeline/outreach.py", role=FileRole.IMPLEMENTATION,
-                          description="Stage 4: Outreach generation", skeleton=False),
+            FileTreeEntry(
+                path="pipeline/discovery.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Stage 1: Google Places discovery",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="pipeline/enrichment.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Stage 2: Waterfall enrichment",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="pipeline/scoring.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Stage 3: ICP scoring",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="pipeline/outreach.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Stage 4: Outreach generation",
+                skeleton=False,
+            ),
             # Level 3: depends on stages + config (implementation)
-            FileTreeEntry(path="pipeline/runner.py", role=FileRole.IMPLEMENTATION,
-                          description="Pipeline runner/orchestrator", skeleton=False),
-            FileTreeEntry(path="utils/cost_tracker.py", role=FileRole.IMPLEMENTATION,
-                          description="LLM cost tracking", skeleton=False),
+            FileTreeEntry(
+                path="pipeline/runner.py",
+                role=FileRole.IMPLEMENTATION,
+                description="Pipeline runner/orchestrator",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="utils/cost_tracker.py",
+                role=FileRole.IMPLEMENTATION,
+                description="LLM cost tracking",
+                skeleton=False,
+            ),
             # Level 4: depends on runner + config (implementation)
-            FileTreeEntry(path="api/server.py", role=FileRole.IMPLEMENTATION,
-                          description="FastAPI server", skeleton=False),
-            FileTreeEntry(path="main.py", role=FileRole.ENTRY_POINT,
-                          description="CLI entry point", skeleton=False),
+            FileTreeEntry(
+                path="api/server.py",
+                role=FileRole.IMPLEMENTATION,
+                description="FastAPI server",
+                skeleton=False,
+            ),
+            FileTreeEntry(
+                path="main.py",
+                role=FileRole.ENTRY_POINT,
+                description="CLI entry point",
+                skeleton=False,
+            ),
         ],
         dependency_edges=[
             # base depends on models
-            DependencyEdge(source="pipeline/base.py", target="models/lead.py",
-                           kind=DependencyKind.IMPORTS, symbols=["RawLead"]),
+            DependencyEdge(
+                source="pipeline/base.py",
+                target="models/lead.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["RawLead"],
+            ),
             # All stages depend on base + models
-            DependencyEdge(source="pipeline/discovery.py", target="pipeline/base.py",
-                           kind=DependencyKind.INHERITS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/discovery.py", target="models/lead.py",
-                           kind=DependencyKind.IMPORTS, symbols=["RawLead"]),
-            DependencyEdge(source="pipeline/enrichment.py", target="pipeline/base.py",
-                           kind=DependencyKind.INHERITS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/enrichment.py", target="models/lead.py",
-                           kind=DependencyKind.IMPORTS, symbols=["RawLead", "EnrichedLead"]),
-            DependencyEdge(source="pipeline/scoring.py", target="pipeline/base.py",
-                           kind=DependencyKind.INHERITS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/scoring.py", target="models/lead.py",
-                           kind=DependencyKind.IMPORTS, symbols=["EnrichedLead", "ScoredLead"]),
-            DependencyEdge(source="pipeline/outreach.py", target="pipeline/base.py",
-                           kind=DependencyKind.INHERITS, symbols=["BaseStage"]),
-            DependencyEdge(source="pipeline/outreach.py", target="models/lead.py",
-                           kind=DependencyKind.IMPORTS, symbols=["ScoredLead", "OutreachLead"]),
+            DependencyEdge(
+                source="pipeline/discovery.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.INHERITS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/discovery.py",
+                target="models/lead.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["RawLead"],
+            ),
+            DependencyEdge(
+                source="pipeline/enrichment.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.INHERITS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/enrichment.py",
+                target="models/lead.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["RawLead", "EnrichedLead"],
+            ),
+            DependencyEdge(
+                source="pipeline/scoring.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.INHERITS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/scoring.py",
+                target="models/lead.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["EnrichedLead", "ScoredLead"],
+            ),
+            DependencyEdge(
+                source="pipeline/outreach.py",
+                target="pipeline/base.py",
+                kind=DependencyKind.INHERITS,
+                symbols=["BaseStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/outreach.py",
+                target="models/lead.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["ScoredLead", "OutreachLead"],
+            ),
             # Runner depends on stages + config + exceptions
-            DependencyEdge(source="pipeline/runner.py", target="pipeline/discovery.py",
-                           kind=DependencyKind.IMPORTS, symbols=["DiscoveryStage"]),
-            DependencyEdge(source="pipeline/runner.py", target="pipeline/enrichment.py",
-                           kind=DependencyKind.IMPORTS, symbols=["EnrichmentStage"]),
-            DependencyEdge(source="pipeline/runner.py", target="pipeline/scoring.py",
-                           kind=DependencyKind.IMPORTS, symbols=["ScoringStage"]),
-            DependencyEdge(source="pipeline/runner.py", target="pipeline/outreach.py",
-                           kind=DependencyKind.IMPORTS, symbols=["OutreachStage"]),
-            DependencyEdge(source="pipeline/runner.py", target="models/config.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineSettings"]),
-            DependencyEdge(source="pipeline/runner.py", target="pipeline/exceptions.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineError"]),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="pipeline/discovery.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["DiscoveryStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="pipeline/enrichment.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["EnrichmentStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="pipeline/scoring.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["ScoringStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="pipeline/outreach.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["OutreachStage"],
+            ),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="models/config.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineSettings"],
+            ),
+            DependencyEdge(
+                source="pipeline/runner.py",
+                target="pipeline/exceptions.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineError"],
+            ),
             # Cost tracker depends on config
-            DependencyEdge(source="utils/cost_tracker.py", target="models/config.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineSettings"]),
+            DependencyEdge(
+                source="utils/cost_tracker.py",
+                target="models/config.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineSettings"],
+            ),
             # API depends on runner + config
-            DependencyEdge(source="api/server.py", target="pipeline/runner.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineRunner"]),
-            DependencyEdge(source="api/server.py", target="models/config.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineSettings"]),
+            DependencyEdge(
+                source="api/server.py",
+                target="pipeline/runner.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineRunner"],
+            ),
+            DependencyEdge(
+                source="api/server.py",
+                target="models/config.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineSettings"],
+            ),
             # Main depends on runner + config
-            DependencyEdge(source="main.py", target="pipeline/runner.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineRunner"]),
-            DependencyEdge(source="main.py", target="models/config.py",
-                           kind=DependencyKind.IMPORTS, symbols=["PipelineSettings"]),
+            DependencyEdge(
+                source="main.py",
+                target="pipeline/runner.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineRunner"],
+            ),
+            DependencyEdge(
+                source="main.py",
+                target="models/config.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["PipelineSettings"],
+            ),
         ],
         model_chains=[
             ModelChain(
                 name="LeadProgression",
                 models=[
-                    ModelSpec(name="RawLead", file_path="models/lead.py",
-                             base_class="BaseModel",
-                             fields=[
-                                 ModelFieldSpec(name="name", type_annotation="str"),
-                                 ModelFieldSpec(name="place_id", type_annotation="str"),
-                                 ModelFieldSpec(name="address", type_annotation="Optional[str]", default="None"),
-                                 ModelFieldSpec(name="phone", type_annotation="Optional[str]", default="None"),
-                             ],
-                             docstring="Raw lead from Google Places"),
-                    ModelSpec(name="EnrichedLead", file_path="models/lead.py",
-                             base_class="RawLead",
-                             fields=[
-                                 ModelFieldSpec(name="website", type_annotation="Optional[str]", default="None"),
-                                 ModelFieldSpec(name="email", type_annotation="Optional[str]", default="None"),
-                                 ModelFieldSpec(name="tech_stack", type_annotation="list[str]", default="[]"),
-                             ],
-                             docstring="Lead with enrichment data"),
-                    ModelSpec(name="ScoredLead", file_path="models/lead.py",
-                             base_class="EnrichedLead",
-                             fields=[
-                                 ModelFieldSpec(name="score", type_annotation="float", default="0.0"),
-                                 ModelFieldSpec(name="reasons", type_annotation="list[str]", default="[]"),
-                             ],
-                             docstring="Lead with ICP scoring"),
-                    ModelSpec(name="OutreachLead", file_path="models/lead.py",
-                             base_class="ScoredLead",
-                             fields=[
-                                 ModelFieldSpec(name="subject_line", type_annotation="Optional[str]", default="None"),
-                                 ModelFieldSpec(name="email_body", type_annotation="Optional[str]", default="None"),
-                             ],
-                             docstring="Lead with outreach content"),
+                    ModelSpec(
+                        name="RawLead",
+                        file_path="models/lead.py",
+                        base_class="BaseModel",
+                        fields=[
+                            ModelFieldSpec(name="name", type_annotation="str"),
+                            ModelFieldSpec(name="place_id", type_annotation="str"),
+                            ModelFieldSpec(
+                                name="address", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="phone", type_annotation="Optional[str]", default="None"
+                            ),
+                        ],
+                        docstring="Raw lead from Google Places",
+                    ),
+                    ModelSpec(
+                        name="EnrichedLead",
+                        file_path="models/lead.py",
+                        base_class="RawLead",
+                        fields=[
+                            ModelFieldSpec(
+                                name="website", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="email", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="tech_stack", type_annotation="list[str]", default="[]"
+                            ),
+                        ],
+                        docstring="Lead with enrichment data",
+                    ),
+                    ModelSpec(
+                        name="ScoredLead",
+                        file_path="models/lead.py",
+                        base_class="EnrichedLead",
+                        fields=[
+                            ModelFieldSpec(name="score", type_annotation="float", default="0.0"),
+                            ModelFieldSpec(
+                                name="reasons", type_annotation="list[str]", default="[]"
+                            ),
+                        ],
+                        docstring="Lead with ICP scoring",
+                    ),
+                    ModelSpec(
+                        name="OutreachLead",
+                        file_path="models/lead.py",
+                        base_class="ScoredLead",
+                        fields=[
+                            ModelFieldSpec(
+                                name="subject_line", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="email_body", type_annotation="Optional[str]", default="None"
+                            ),
+                        ],
+                        docstring="Lead with outreach content",
+                    ),
                 ],
             ),
         ],
@@ -201,13 +358,22 @@ def _make_12_file_skeleton() -> SkeletonArtifact:
                 file_path="pipeline/base.py",
                 base_classes=["ABC"],
                 methods=[
-                    MethodSignature(name="process", params="self, lead: RawLead",
-                                    return_type="RawLead", is_async=True, is_abstract=True,
-                                    docstring="Process a single lead"),
-                    MethodSignature(name="batch_process",
-                                    params="self, leads: list[RawLead], *, concurrency: int = 5",
-                                    return_type="list[RawLead]", is_async=True, is_abstract=True,
-                                    docstring="Process leads with concurrency"),
+                    MethodSignature(
+                        name="process",
+                        params="self, lead: RawLead",
+                        return_type="RawLead",
+                        is_async=True,
+                        is_abstract=True,
+                        docstring="Process a single lead",
+                    ),
+                    MethodSignature(
+                        name="batch_process",
+                        params="self, leads: list[RawLead], *, concurrency: int = 5",
+                        return_type="list[RawLead]",
+                        is_async=True,
+                        is_abstract=True,
+                        docstring="Process leads with concurrency",
+                    ),
                 ],
                 class_attributes=[
                     ModelFieldSpec(name="stage_name", type_annotation="str"),
@@ -229,10 +395,18 @@ def _make_12_file_skeleton() -> SkeletonArtifact:
             ),
         ],
         exception_specs=[
-            ExceptionSpec(name="PipelineError", file_path="pipeline/exceptions.py",
-                          base_class="Exception", docstring="Base pipeline error"),
-            ExceptionSpec(name="StageError", file_path="pipeline/exceptions.py",
-                          base_class="PipelineError", docstring="Stage error"),
+            ExceptionSpec(
+                name="PipelineError",
+                file_path="pipeline/exceptions.py",
+                base_class="Exception",
+                docstring="Base pipeline error",
+            ),
+            ExceptionSpec(
+                name="StageError",
+                file_path="pipeline/exceptions.py",
+                base_class="PipelineError",
+                docstring="Stage error",
+            ),
         ],
         external_dependencies=["pydantic", "pydantic-settings", "httpx", "fastapi"],
         entry_point="main.py",
@@ -242,6 +416,7 @@ def _make_12_file_skeleton() -> SkeletonArtifact:
 # ---------------------------------------------------------------------------
 # Mock LLM for 12-file project
 # ---------------------------------------------------------------------------
+
 
 def _mock_llm_12(system: str, user: str, model: str) -> str:
     """Mock LLM that generates valid implementations for the 12-file project."""
@@ -347,6 +522,7 @@ if __name__ == "__main__":
 # Test Topological Sort
 # ===========================================================================
 
+
 class TestTopologicalSort:
     def test_basic_sort(self):
         skeleton = _make_12_file_skeleton()
@@ -399,8 +575,12 @@ class TestTopologicalSort:
         skeleton = _make_12_file_skeleton()
         # Create a cycle
         skeleton.dependency_edges.append(
-            DependencyEdge(source="models/lead.py", target="main.py",
-                           kind=DependencyKind.IMPORTS, symbols=["main"])
+            DependencyEdge(
+                source="models/lead.py",
+                target="main.py",
+                kind=DependencyKind.IMPORTS,
+                symbols=["main"],
+            )
         )
         with pytest.raises(DependencyCycleError):
             topological_sort(skeleton)
@@ -423,19 +603,10 @@ class TestBuildPlan:
         """All skeleton levels should precede implementation levels in topological order."""
         skeleton = _make_12_file_skeleton()
         plan = create_build_plan(skeleton)
-        result = plan.topo_result
-
-        skeleton_paths = {f.path for f in skeleton.file_tree if f.skeleton}
-        impl_paths = {f.path for f in skeleton.file_tree if not f.skeleton}
-
-        max_skeleton_level = max(
-            result.node_levels[p] for p in skeleton_paths
-            if p in result.node_levels
-        )
-        min_impl_level = min(
-            result.node_levels[p] for p in impl_paths
-            if p in result.node_levels
-        )
+        # (Legacy diagnostic accumulators for max_skeleton_level /
+        # min_impl_level and `result = plan.topo_result` were removed
+        # here — they weren't referenced.  The assertion below reads
+        # plan.skeleton_order / plan.impl_order directly.)
 
         # This is valid: skeletons can be at same level as some impls
         # What matters is that within the build plan, skeletons are generated first
@@ -455,40 +626,53 @@ class TestBuildPlan:
 # Test Pyright Integration
 # ===========================================================================
 
+
 class TestPyrightParsing:
     def test_parse_clean_output(self):
-        raw = json.dumps({
-            "version": "1.1",
-            "summary": {"errorCount": 0, "warningCount": 0, "informationCount": 0},
-            "generalDiagnostics": [],
-        })
+        raw = json.dumps(
+            {
+                "version": "1.1",
+                "summary": {"errorCount": 0, "warningCount": 0, "informationCount": 0},
+                "generalDiagnostics": [],
+            }
+        )
         from pathlib import Path
+
         result = _parse_pyright_output(raw, Path("/tmp/project"))
         assert result.success
         assert result.error_count == 0
 
     def test_parse_errors(self):
-        raw = json.dumps({
-            "version": "1.1",
-            "summary": {"errorCount": 2, "warningCount": 0, "informationCount": 0},
-            "generalDiagnostics": [
-                {
-                    "file": "/tmp/project/pipeline/discovery.py",
-                    "severity": "error",
-                    "message": "Import \"pipeline.base\" could not be resolved",
-                    "rule": "reportMissingImports",
-                    "range": {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 30}},
-                },
-                {
-                    "file": "/tmp/project/pipeline/discovery.py",
-                    "severity": "error",
-                    "message": "Type \"int\" is not assignable to type \"str\"",
-                    "rule": "reportAssignmentType",
-                    "range": {"start": {"line": 10, "character": 4}, "end": {"line": 10, "character": 15}},
-                },
-            ],
-        })
+        raw = json.dumps(
+            {
+                "version": "1.1",
+                "summary": {"errorCount": 2, "warningCount": 0, "informationCount": 0},
+                "generalDiagnostics": [
+                    {
+                        "file": "/tmp/project/pipeline/discovery.py",
+                        "severity": "error",
+                        "message": 'Import "pipeline.base" could not be resolved',
+                        "rule": "reportMissingImports",
+                        "range": {
+                            "start": {"line": 1, "character": 0},
+                            "end": {"line": 1, "character": 30},
+                        },
+                    },
+                    {
+                        "file": "/tmp/project/pipeline/discovery.py",
+                        "severity": "error",
+                        "message": 'Type "int" is not assignable to type "str"',
+                        "rule": "reportAssignmentType",
+                        "range": {
+                            "start": {"line": 10, "character": 4},
+                            "end": {"line": 10, "character": 15},
+                        },
+                    },
+                ],
+            }
+        )
         from pathlib import Path
+
         result = _parse_pyright_output(raw, Path("/tmp/project"))
         assert not result.success
         assert result.error_count == 2
@@ -496,20 +680,27 @@ class TestPyrightParsing:
         assert len(result.type_errors) == 1
 
     def test_group_errors_by_file(self):
-        result = PyrightResult(errors=[
-            PyrightError(file="a.py", line=1, column=0, message="err1", severity="error"),
-            PyrightError(file="a.py", line=5, column=0, message="err2", severity="error"),
-            PyrightError(file="b.py", line=1, column=0, message="err3", severity="error"),
-        ])
+        result = PyrightResult(
+            errors=[
+                PyrightError(file="a.py", line=1, column=0, message="err1", severity="error"),
+                PyrightError(file="a.py", line=5, column=0, message="err2", severity="error"),
+                PyrightError(file="b.py", line=1, column=0, message="err3", severity="error"),
+            ]
+        )
         grouped = group_errors_by_file(result)
         assert len(grouped["a.py"]) == 2
         assert len(grouped["b.py"]) == 1
 
     def test_format_errors_for_llm(self):
         errors = [
-            PyrightError(file="test.py", line=3, column=0,
-                         message="Import 'foo' not found", severity="error",
-                         rule="reportMissingImports"),
+            PyrightError(
+                file="test.py",
+                line=3,
+                column=0,
+                message="Import 'foo' not found",
+                severity="error",
+                rule="reportMissingImports",
+            ),
         ]
         source = "import foo\n\nfoo.bar()\n"
         formatted = format_errors_for_llm(errors, source)
@@ -519,6 +710,7 @@ class TestPyrightParsing:
     def test_write_project_creates_inits(self):
         """write_project_for_pyright should create __init__.py files."""
         import tempfile
+
         files = {
             "models/lead.py": "class Lead: pass",
             "pipeline/base.py": "class Base: pass",
@@ -534,6 +726,7 @@ class TestPyrightParsing:
 # Test Parallel Builder
 # ===========================================================================
 
+
 class TestParallelBuilder:
     def test_clean_code(self):
         assert _clean_code("```python\nx = 1\n```") == "x = 1"
@@ -548,18 +741,22 @@ class TestParallelBuilder:
 
         # Build level 2 — the 4 stage files
         stage_entries = [
-            f for f in skeleton.file_tree
-            if f.path.startswith("pipeline/") and f.role == FileRole.IMPLEMENTATION
+            f
+            for f in skeleton.file_tree
+            if f.path.startswith("pipeline/")
+            and f.role == FileRole.IMPLEMENTATION
             and f.path != "pipeline/runner.py"
         ]
 
-        result = asyncio.run(build_level(
-            level_entries=stage_entries,
-            skeleton=skeleton,
-            registry=registry,
-            skeleton_files=skeleton_files,
-            llm_fn=_mock_llm_12,
-        ))
+        result = asyncio.run(
+            build_level(
+                level_entries=stage_entries,
+                skeleton=skeleton,
+                registry=registry,
+                skeleton_files=skeleton_files,
+                llm_fn=_mock_llm_12,
+            )
+        )
 
         assert len(result) == 4
         assert all(v is not None for v in result.values())
@@ -571,11 +768,13 @@ class TestParallelBuilder:
         """Full parallel build of 12-file project."""
         skeleton = _make_12_file_skeleton()
 
-        result = asyncio.run(run_parallel_build(
-            skeleton=skeleton,
-            llm_fn=_mock_llm_12,
-            run_type_check=False,  # Skip pyright in test
-        ))
+        result = asyncio.run(
+            run_parallel_build(
+                skeleton=skeleton,
+                llm_fn=_mock_llm_12,
+                run_type_check=False,  # Skip pyright in test
+            )
+        )
 
         assert len(result["skeleton_files"]) == 4
         assert len(result["implementation_files"]) == 8
@@ -585,7 +784,7 @@ class TestParallelBuilder:
     def test_parallel_build_maintains_order(self):
         """Files are generated in dependency order even with parallelism."""
         skeleton = _make_12_file_skeleton()
-        registry = SymbolRegistry()
+        # (registry / result were assigned but unused — removed.)
 
         # Track generation order
         generation_order = []
@@ -597,17 +796,23 @@ class TestParallelBuilder:
                 generation_order.append(path_match.group(1))
             return original_mock(system, user, model)
 
-        result = asyncio.run(run_parallel_build(
-            skeleton=skeleton,
-            llm_fn=tracking_mock,
-            run_type_check=False,
-        ))
+        asyncio.run(
+            run_parallel_build(
+                skeleton=skeleton,
+                llm_fn=tracking_mock,
+                run_type_check=False,
+            )
+        )
 
         # runner.py should come after all stage files
         if "pipeline/runner.py" in generation_order:
             runner_idx = generation_order.index("pipeline/runner.py")
-            for stage in ["pipeline/discovery.py", "pipeline/enrichment.py",
-                          "pipeline/scoring.py", "pipeline/outreach.py"]:
+            for stage in [
+                "pipeline/discovery.py",
+                "pipeline/enrichment.py",
+                "pipeline/scoring.py",
+                "pipeline/outreach.py",
+            ]:
                 if stage in generation_order:
                     stage_idx = generation_order.index(stage)
                     assert stage_idx < runner_idx, (
@@ -619,6 +824,7 @@ class TestParallelBuilder:
 # Test 12-File Import Resolution (done-when criterion)
 # ===========================================================================
 
+
 class TestImportResolution12Files:
     """
     The critical test: every import in the 12-file project resolves
@@ -628,11 +834,13 @@ class TestImportResolution12Files:
     def test_all_imports_resolve(self):
         skeleton = _make_12_file_skeleton()
 
-        result = asyncio.run(run_parallel_build(
-            skeleton=skeleton,
-            llm_fn=_mock_llm_12,
-            run_type_check=False,
-        ))
+        result = asyncio.run(
+            run_parallel_build(
+                skeleton=skeleton,
+                llm_fn=_mock_llm_12,
+                run_type_check=False,
+            )
+        )
 
         all_files = result["all_files"]
         assert len(all_files) == 12
@@ -672,17 +880,17 @@ class TestImportResolution12Files:
                                     f"(available: {module_exports[module]})"
                                 )
 
-        assert not unresolved, (
-            "Unresolved imports in 12-file project:\n" + "\n".join(unresolved)
-        )
+        assert not unresolved, "Unresolved imports in 12-file project:\n" + "\n".join(unresolved)
 
     def test_all_files_have_valid_syntax(self):
         skeleton = _make_12_file_skeleton()
-        result = asyncio.run(run_parallel_build(
-            skeleton=skeleton,
-            llm_fn=_mock_llm_12,
-            run_type_check=False,
-        ))
+        result = asyncio.run(
+            run_parallel_build(
+                skeleton=skeleton,
+                llm_fn=_mock_llm_12,
+                run_type_check=False,
+            )
+        )
         for path, code in result["all_files"].items():
             try:
                 ast.parse(code)
@@ -692,17 +900,20 @@ class TestImportResolution12Files:
     def test_model_chain_inheritance_preserved(self):
         """The progressive model chain should have correct inheritance."""
         skeleton = _make_12_file_skeleton()
-        result = asyncio.run(run_parallel_build(
-            skeleton=skeleton,
-            llm_fn=_mock_llm_12,
-            run_type_check=False,
-        ))
+        result = asyncio.run(
+            run_parallel_build(
+                skeleton=skeleton,
+                llm_fn=_mock_llm_12,
+                run_type_check=False,
+            )
+        )
 
         model_code = result["all_files"]["models/lead.py"]
         tree = ast.parse(model_code)
         classes = {
             node.name: [ast.unparse(b) for b in node.bases]
-            for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef)
         }
 
         assert "BaseModel" in classes.get("RawLead", [])

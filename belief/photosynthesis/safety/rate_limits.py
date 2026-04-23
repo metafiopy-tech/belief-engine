@@ -32,9 +32,7 @@ class _NullLimiter:
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.max_rate = float(kwargs.get("max_rate") or (args[0] if args else 0))
-        self.time_period = float(
-            kwargs.get("time_period") or (args[1] if len(args) > 1 else 60)
-        )
+        self.time_period = float(kwargs.get("time_period") or (args[1] if len(args) > 1 else 60))
 
     async def acquire(self, amount: float = 1.0) -> None:
         return None
@@ -115,9 +113,7 @@ class RateLimiterSet:
             async with self._goal:
                 pass
 
-    def tighten_on_header_signal(
-        self, remaining_pct: float, *, duration_s: float = 60.0
-    ) -> None:
+    def tighten_on_header_signal(self, remaining_pct: float, *, duration_s: float = 60.0) -> None:
         """Halve the limiter caps for `duration_s` when remaining < 10%."""
         if remaining_pct >= 10.0:
             return

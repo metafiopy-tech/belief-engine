@@ -92,10 +92,7 @@ def _format_from_metadata(meta: dict[str, Any], n: int, budget: int) -> str:
         score_f = float(score)
     except (TypeError, ValueError):
         score_f = 0.0
-    return (
-        f"### Prior {n} — goal: {goal_short}\n"
-        f"  verdict={verdict}, weighted_score={score_f:.2f}"
-    )
+    return f"### Prior {n} — goal: {goal_short}\n  verdict={verdict}, weighted_score={score_f:.2f}"
 
 
 __all__ = ["format_priors_block"]

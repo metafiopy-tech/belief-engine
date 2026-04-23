@@ -24,7 +24,6 @@ Two design choices worth calling out:
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -81,6 +80,7 @@ class AgentArchive:
             ef = self._embedding_function_override
         else:
             from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
             ef = DefaultEmbeddingFunction()
 
         self._collection = self._client.get_or_create_collection(
@@ -123,7 +123,10 @@ class AgentArchive:
         )
         logger.info(
             "AgentArchive: persisted %s (verdict=%s, score=%.2f, U=%.3f)",
-            outcome.run_id, outcome.verdict, outcome.weighted_score, u,
+            outcome.run_id,
+            outcome.verdict,
+            outcome.weighted_score,
+            u,
         )
 
     # ------------------------------------------------------------------
@@ -170,7 +173,9 @@ class AgentArchive:
 
         out: list[dict[str, Any]] = []
         ids = result.get("ids", [[]])[0]
-        distances = result.get("distances", [[]])[0] if result.get("distances") else [0.0] * len(ids)
+        distances = (
+            result.get("distances", [[]])[0] if result.get("distances") else [0.0] * len(ids)
+        )
         metadatas = result.get("metadatas", [[]])[0] if result.get("metadatas") else [{}] * len(ids)
         for i, id_ in enumerate(ids):
             meta = metadatas[i] if i < len(metadatas) else {}
@@ -181,12 +186,14 @@ class AgentArchive:
                     outcome_obj = BuildOutcome.from_json(raw)
                 except Exception as e:
                     logger.debug("outcome rehydration failed for %s: %s", id_, e)
-            out.append({
-                "id": id_,
-                "distance": distances[i] if i < len(distances) else 0.0,
-                "metadata": meta or {},
-                "outcome": outcome_obj,
-            })
+            out.append(
+                {
+                    "id": id_,
+                    "distance": distances[i] if i < len(distances) else 0.0,
+                    "metadata": meta or {},
+                    "outcome": outcome_obj,
+                }
+            )
         return out
 
     def size(self) -> int:

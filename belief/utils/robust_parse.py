@@ -87,7 +87,7 @@ def _extract_first_json_blob(text: str) -> Optional[str]:
             elif c == close_ch:
                 depth -= 1
                 if depth == 0:
-                    candidates.append((start, text[start:i + 1]))
+                    candidates.append((start, text[start : i + 1]))
                     break
     if not candidates:
         return None
@@ -113,9 +113,11 @@ def _repair_small(s: str) -> str:
     # Bare keys (identifier followed by colon inside an object) → "key":
     # Only applied if the above didn't already turn it into "key":
     repaired = _BARE_KEY_RE.sub(
-        lambda m: f'{m.group(1)}"{m.group(2)}":'
-                   if not m.group(0).lstrip("{, ").startswith('"')
-                   else m.group(0),
+        lambda m: (
+            f'{m.group(1)}"{m.group(2)}":'
+            if not m.group(0).lstrip("{, ").startswith('"')
+            else m.group(0)
+        ),
         repaired,
     )
     return repaired
@@ -161,7 +163,8 @@ def _close_dangling(s: str) -> str:
 
 
 def try_parse_json(
-    raw: Any, default: Any = None,
+    raw: Any,
+    default: Any = None,
 ) -> Any:
     """Parse ``raw`` as JSON in the most forgiving way possible.
 
@@ -214,10 +217,7 @@ def try_parse_json(
                 try:
                     return json.loads(_close_dangling(_repair_small(blob)))
                 except json.JSONDecodeError as exc:
-                    logger.debug(
-                        f"robust_parse: every repair failed ({exc}); "
-                        f"returning default"
-                    )
+                    logger.debug(f"robust_parse: every repair failed ({exc}); returning default")
                     return default
 
     # Nothing balanced — try repairs on the raw text.
@@ -225,14 +225,15 @@ def try_parse_json(
         return json.loads(_close_dangling(_repair_small(text)))
     except json.JSONDecodeError as exc:
         logger.debug(
-            f"robust_parse: no balanced blob and final repair failed "
-            f"({exc}); returning default"
+            f"robust_parse: no balanced blob and final repair failed ({exc}); returning default"
         )
         return default
 
 
 def extract_code_block(
-    raw: str, *, language: Optional[str] = None,
+    raw: str,
+    *,
+    language: Optional[str] = None,
 ) -> Optional[str]:
     """Pull the first fenced code block out of ``raw``.
 

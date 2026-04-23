@@ -41,17 +41,17 @@ class SelfAuthoredTool:
     """A tool authored by the engine for its own use."""
 
     id: str
-    name: str                                   # e.g. "fastapi_route_validator"
-    description: str                            # What it does, when to use it
-    code: str                                   # Full Python source
-    input_description: str = ""                 # What inputs it expects
-    output_description: str = ""                # What it returns
+    name: str  # e.g. "fastapi_route_validator"
+    description: str  # What it does, when to use it
+    code: str  # Full Python source
+    input_description: str = ""  # What inputs it expects
+    output_description: str = ""  # What it returns
     dependencies: list[str] = field(default_factory=list)
     version: int = 1
-    parent_id: Optional[str] = None             # If evolved from another tool
-    created_by: str = "sica"                    # "human" | "sica" | "jitterbug"
+    parent_id: Optional[str] = None  # If evolved from another tool
+    created_by: str = "sica"  # "human" | "sica" | "jitterbug"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    quality_score: float = 0.5                  # Updated after each use
+    quality_score: float = 0.5  # Updated after each use
     success_rate: float = 0.0
     use_count: int = 0
     last_used: Optional[datetime] = None
@@ -184,9 +184,13 @@ class ToolRegistry:
                 continue
             if meta.get("fsrs_decay_state") == "lapsed":
                 continue
-            tools.append(SelfAuthoredTool.from_metadata(
-                doc_id, results["documents"][i], meta,
-            ))
+            tools.append(
+                SelfAuthoredTool.from_metadata(
+                    doc_id,
+                    results["documents"][i],
+                    meta,
+                )
+            )
 
         return tools
 
@@ -205,9 +209,8 @@ class ToolRegistry:
         old_total = tool.use_count - 1
         if old_total > 0:
             tool.success_rate = (
-                (tool.success_rate * old_total + (1.0 if success else 0.0))
-                / tool.use_count
-            )
+                tool.success_rate * old_total + (1.0 if success else 0.0)
+            ) / tool.use_count
         else:
             tool.success_rate = 1.0 if success else 0.0
 
@@ -269,9 +272,13 @@ class ToolRegistry:
                 continue
             if meta.get("fsrs_decay_state") == "lapsed":
                 continue
-            tools.append(SelfAuthoredTool.from_metadata(
-                doc_id, results["documents"][0][i], meta,
-            ))
+            tools.append(
+                SelfAuthoredTool.from_metadata(
+                    doc_id,
+                    results["documents"][0][i],
+                    meta,
+                )
+            )
 
         return tools[:k]
 

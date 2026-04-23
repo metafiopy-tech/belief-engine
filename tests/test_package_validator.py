@@ -22,7 +22,6 @@ import pytest
 from belief.validators.import_to_package import resolve_import_to_package
 from belief.validators.package_validator import (
     PackageValidator,
-    ValidationResult,
     canonicalize_name,
 )
 
@@ -142,6 +141,7 @@ class TestStdlibLayer:
         """Stdlib rejection must not depend on the PyPI handler — so
         we pass a handler that raises if called, and verify timeit
         still resolves."""
+
         def _explode(url: str) -> int:
             raise AssertionError(f"Layer 5 called for stdlib name: {url}")
 
@@ -188,6 +188,7 @@ class TestTop15kLayer:
         overnight bug: passing ``pydantic_settings`` (underscored) to
         PyPI failed; canonicalising to ``pydantic-settings`` finds it.
         """
+
         def _explode(url: str) -> int:
             raise AssertionError(f"Top-15k should accept without PyPI call: {url}")
 
@@ -302,9 +303,7 @@ class TestFuzzySuggestion:
 
 class TestImportAliasing:
     @pytest.mark.asyncio
-    async def test_cv2_routed_to_opencv_python(
-        self, tmp_cache_dir: Path
-    ) -> None:
+    async def test_cv2_routed_to_opencv_python(self, tmp_cache_dir: Path) -> None:
         # Add opencv-python to the top-15k corpus so the alias resolves.
         _write_top_packages(
             tmp_cache_dir / "top-pypi-packages-15k.json",

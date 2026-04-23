@@ -75,6 +75,7 @@ class DebuggerAgent(BaseAgent):
             repo_context = ""
             try:
                 from belief.agents.repo_map import RepoMap
+
                 repo_map = RepoMap.from_code_files(state.code_files)
                 repo_context = repo_map.format_overview(max_tokens=1500)
             except Exception as e:
@@ -91,7 +92,7 @@ class DebuggerAgent(BaseAgent):
             # (e.g. `get_db`) while still blocking edits that would
             # clobber the generator's engine/Base/SessionLocal scaffolding.
             skeleton_files = set()
-            if hasattr(state, 'skeleton_files') and state.skeleton_files:
+            if hasattr(state, "skeleton_files") and state.skeleton_files:
                 skeleton_files = set(state.skeleton_files.keys())
 
             if not diagnosis or not diagnosis.get("files_to_fix"):
@@ -101,11 +102,18 @@ class DebuggerAgent(BaseAgent):
                     code = state.code_files.get(target_file, "")
                     if code:
                         fixed_code = await self._fix_via_search_replace(
-                            llm, state.user_goal, error, target_file, code,
-                            state.complexity_score, code_files=state.code_files,
+                            llm,
+                            state.user_goal,
+                            error,
+                            target_file,
+                            code,
+                            state.complexity_score,
+                            code_files=state.code_files,
                         )
                         fixed_code = _accept_if_additive(
-                            target_file, code, fixed_code,
+                            target_file,
+                            code,
+                            fixed_code,
                             is_skeleton=target_file in skeleton_files,
                         )
                         if fixed_code and fixed_code != code:
@@ -126,7 +134,9 @@ class DebuggerAgent(BaseAgent):
                         llm, fname, code, instruction, state.complexity_score
                     )
                     fixed_code = _accept_if_additive(
-                        fname, code, fixed_code,
+                        fname,
+                        code,
+                        fixed_code,
                         is_skeleton=fname in skeleton_files,
                     )
 
@@ -153,8 +163,12 @@ class DebuggerAgent(BaseAgent):
         return state
 
     async def _architect_diagnose(
-        self, llm, error: str, code_files: dict[str, str],
-        repo_context: str, complexity: int,
+        self,
+        llm,
+        error: str,
+        code_files: dict[str, str],
+        repo_context: str,
+        complexity: int,
     ) -> dict | None:
         """Phase 1: Architect analyzes root cause across all files (Sonnet).
 
@@ -174,7 +188,13 @@ class DebuggerAgent(BaseAgent):
                 continue
             lines = content.split("\n")[:150]
             truncated = "\n".join(lines)
-            lang = "typescript" if fname.endswith((".ts", ".tsx")) else "javascript" if fname.endswith((".js", ".jsx")) else "python"
+            lang = (
+                "typescript"
+                if fname.endswith((".ts", ".tsx"))
+                else "javascript"
+                if fname.endswith((".js", ".jsx"))
+                else "python"
+            )
             file_context.append(f"### {fname}\n```{lang}\n{truncated}\n```")
 
         # Cap total context
@@ -220,14 +240,21 @@ class DebuggerAgent(BaseAgent):
             )
             return {
                 "root_cause": result.root_cause,
-                "files_to_fix": [{"file": f.file, "instruction": f.instruction} for f in result.files_to_fix],
+                "files_to_fix": [
+                    {"file": f.file, "instruction": f.instruction} for f in result.files_to_fix
+                ],
             }
         except Exception as e:
             logger.debug(f"Architect diagnosis failed: {e}")
             return None
 
     async def _editor_apply(
-        self, llm, filename: str, code: str, instruction: str, complexity: int,
+        self,
+        llm,
+        filename: str,
+        code: str,
+        instruction: str,
+        complexity: int,
     ) -> str | None:
         """Phase 2: Editor applies a specific fix to one file (Haiku-eligible).
 
@@ -252,7 +279,7 @@ class DebuggerAgent(BaseAgent):
                 prompt=(
                     f"INSTRUCTION: {instruction}\n\n"
                     f"FILE: {filename}\n```python\n{code}\n```\n\n"
-                    f"Respond with JSON: {{\"old_str\": \"...\", \"new_str\": \"...\", \"explanation\": \"...\"}}"
+                    f'Respond with JSON: {{"old_str": "...", "new_str": "...", "explanation": "..."}}'
                 ),
                 response_schema=_EditResult,
                 temperature=0.1,
@@ -276,6 +303,7 @@ class DebuggerAgent(BaseAgent):
             if filename.endswith(".py"):
                 try:
                     import ast
+
                     ast.parse(new_code)
                 except SyntaxError:
                     return None
@@ -294,7 +322,13 @@ class DebuggerAgent(BaseAgent):
             return None
 
     async def _fix_via_search_replace(
-        self, llm, goal: str, error: str, filename: str, code: str, complexity: int,
+        self,
+        llm,
+        goal: str,
+        error: str,
+        filename: str,
+        code: str,
+        complexity: int,
         code_files: dict[str, str] | None = None,
     ) -> str | None:
         """Fix a file using search/replace blocks — handles large files without truncation."""
@@ -303,6 +337,7 @@ class DebuggerAgent(BaseAgent):
         if code_files:
             try:
                 from belief.agents.repo_map import RepoMap
+
                 repo_map = RepoMap.from_code_files(code_files)
                 repo_context = repo_map.format_overview(max_tokens=1000)
                 if repo_context:
@@ -332,6 +367,7 @@ Respond ONLY with valid JSON:
 
         try:
             from pydantic import BaseModel
+
             class _FixResult(BaseModel):
                 old_str: str = ""
                 new_str: str = ""
@@ -368,11 +404,15 @@ Respond ONLY with valid JSON:
                 try:
                     ast.parse(new_code)
                 except SyntaxError:
-                    logger.warning(f"Debugger: search/replace produced invalid Python for {filename}")
+                    logger.warning(
+                        f"Debugger: search/replace produced invalid Python for {filename}"
+                    )
                     return None
             elif filename.endswith((".ts", ".tsx", ".js", ".jsx")):
                 if abs(new_code.count("{") - new_code.count("}")) > 1:
-                    logger.warning(f"Debugger: search/replace produced unmatched braces in {filename}")
+                    logger.warning(
+                        f"Debugger: search/replace produced unmatched braces in {filename}"
+                    )
                     return None
 
             logger.info(f"Debugger: search/replace fix — {result.explanation[:60]}")
@@ -398,8 +438,11 @@ Respond ONLY with valid JSON:
             code=code[:4000],
         )
         fixed_code = await llm.generate_text(
-            role=self.role, system=DEBUGGER_SYSTEM, prompt=prompt,
-            temperature=0.1, complexity=complexity,
+            role=self.role,
+            system=DEBUGGER_SYSTEM,
+            prompt=prompt,
+            temperature=0.1,
+            complexity=complexity,
         )
         fixed_code = fixed_code.strip()
         fixed_code = re.sub(r"^```(?:python)?\s*\n?", "", fixed_code)
@@ -409,7 +452,9 @@ Respond ONLY with valid JSON:
             try:
                 ast.parse(fixed_code)
             except SyntaxError:
-                logger.warning(f"Debugger: LLM returned invalid Python for {filename}, keeping original")
+                logger.warning(
+                    f"Debugger: LLM returned invalid Python for {filename}, keeping original"
+                )
                 return None
 
         return fixed_code
@@ -483,9 +528,7 @@ def _accept_if_additive(
 # ── Deterministic fixes (no LLM needed) ──────────────────────────────────
 
 
-def _try_deterministic_fix(
-    error: str, code_files: dict[str, str]
-) -> tuple[str, str, str] | None:
+def _try_deterministic_fix(error: str, code_files: dict[str, str]) -> tuple[str, str, str] | None:
     """Try to fix the error without an LLM call.
 
     Returns (filename, fixed_code, fix_type) or None.
@@ -507,9 +550,7 @@ def _try_deterministic_fix(
     return None
 
 
-def _fix_syntax_error(
-    error: str, code_files: dict[str, str]
-) -> tuple[str, str, str] | None:
+def _fix_syntax_error(error: str, code_files: dict[str, str]) -> tuple[str, str, str] | None:
     """Fix common syntax errors deterministically."""
     # Find which file has the syntax error
     for fname, code in code_files.items():
@@ -522,7 +563,7 @@ def _fix_syntax_error(
             lines = code.splitlines()
             if e.lineno and e.lineno >= len(lines):
                 # File is truncated — remove the last line
-                fixed = "\n".join(lines[:e.lineno - 1]) + "\n"
+                fixed = "\n".join(lines[: e.lineno - 1]) + "\n"
                 try:
                     ast.parse(fixed)
                     return (fname, fixed, "truncated_file")
@@ -545,9 +586,7 @@ def _fix_syntax_error(
     return None
 
 
-def _fix_module_not_found(
-    error: str, code_files: dict[str, str]
-) -> tuple[str, str, str] | None:
+def _fix_module_not_found(error: str, code_files: dict[str, str]) -> tuple[str, str, str] | None:
     """Fix ModuleNotFoundError by adding missing __init__.py."""
     # Extract the module name: "No module named 'pipeline'"
     match = re.search(r"No module named '([^']+)'", error)
@@ -567,9 +606,7 @@ def _fix_module_not_found(
     return None
 
 
-def _fix_import_error(
-    error: str, code_files: dict[str, str]
-) -> tuple[str, str, str] | None:
+def _fix_import_error(error: str, code_files: dict[str, str]) -> tuple[str, str, str] | None:
     """Fix 'cannot import name X from Y' by checking available symbols."""
     # Extract: cannot import name 'Foo' from 'module'
     match = re.search(r"cannot import name '(\w+)' from '([^']+)'", error)

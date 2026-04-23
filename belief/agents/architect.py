@@ -207,9 +207,10 @@ class ArchitectAgent(BaseAgent):
             return state
 
         max_files = _MAX_FILES.get(state.complexity_score, 12)
-        plan_steps = "\n".join(
-            f"  {s.order}. {s.description}" for s in (plan.steps[:10] if plan else [])
-        ) or "  (no plan available)"
+        plan_steps = (
+            "\n".join(f"  {s.order}. {s.description}" for s in (plan.steps[:10] if plan else []))
+            or "  (no plan available)"
+        )
 
         llm = LLMClient(self.router)
         try:
@@ -223,10 +224,16 @@ class ArchitectAgent(BaseAgent):
                 plan_steps=plan_steps,
                 acceptance_criteria="\n".join(f"  - {c}" for c in spec.acceptance_criteria),
                 constraints=", ".join(spec.constraints) if spec.constraints else "none",
-                credentials=", ".join(c.env_var for c in spec.credentials) if spec.credentials else "none",
+                credentials=", ".join(c.env_var for c in spec.credentials)
+                if spec.credentials
+                else "none",
                 tools=", ".join(spec.tools_needed) if spec.tools_needed else "none",
-                recommended_approach=research.recommended_approach if research else "Build from scratch",
-                patterns=", ".join(research.patterns_found[:5]) if research and research.patterns_found else "none",
+                recommended_approach=research.recommended_approach
+                if research
+                else "Build from scratch",
+                patterns=", ".join(research.patterns_found[:5])
+                if research and research.patterns_found
+                else "none",
                 prior_builds=self._build_context(state),
             )
 
@@ -237,8 +244,12 @@ class ArchitectAgent(BaseAgent):
             )
 
             raw = await llm.generate_text(
-                role=self.role, system=ARCHITECT_SKELETON_SYSTEM, prompt=prompt,
-                temperature=0.2, max_tokens=arch_max_tokens, complexity=state.complexity_score,
+                role=self.role,
+                system=ARCHITECT_SKELETON_SYSTEM,
+                prompt=prompt,
+                temperature=0.2,
+                max_tokens=arch_max_tokens,
+                complexity=state.complexity_score,
             )
 
             skeleton = _parse_skeleton(raw)
@@ -291,16 +302,17 @@ class ArchitectAgent(BaseAgent):
 
 def _repair_truncated_json(text: str) -> str | None:
     """Repair truncated JSON from the architect's skeleton output.
-    
+
     Uses the same stack-based approach as belief.llm._repair_json.
     """
     from belief.llm import _repair_json
+
     return _repair_json(text)
 
 
 def _parse_skeleton(raw: str) -> SkeletonArtifact | None:
     """Parse SkeletonArtifact from LLM JSON output.
-    
+
     Handles three cases:
     1. Clean JSON — parse directly
     2. Truncated JSON — repair by closing brackets, then parse
@@ -324,7 +336,7 @@ def _parse_skeleton(raw: str) -> SkeletonArtifact | None:
         elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                json_str = text[brace_start: i + 1]
+                json_str = text[brace_start : i + 1]
                 break
 
     if json_str:
@@ -342,8 +354,7 @@ def _parse_skeleton(raw: str) -> SkeletonArtifact | None:
             data = json.loads(repaired)
             skeleton = SkeletonArtifact.model_validate(data)
             logger.info(
-                f"Architect: repaired truncated JSON — recovered "
-                f"{len(skeleton.file_tree)} files"
+                f"Architect: repaired truncated JSON — recovered {len(skeleton.file_tree)} files"
             )
             return skeleton
         except Exception as e:
@@ -357,13 +368,15 @@ def _skeleton_to_manifest(skeleton: SkeletonArtifact) -> FileManifestPlan:
     files = []
     for entry in skeleton.file_tree:
         deps = [e.target for e in skeleton.dependencies_for(entry.path)]
-        files.append(FileManifest(
-            filename=entry.path,
-            purpose=entry.description,
-            public_interface="",
-            depends_on=deps,
-            is_entry_point=(entry.role == FileRole.ENTRY_POINT),
-        ))
+        files.append(
+            FileManifest(
+                filename=entry.path,
+                purpose=entry.description,
+                public_interface="",
+                depends_on=deps,
+                is_entry_point=(entry.role == FileRole.ENTRY_POINT),
+            )
+        )
     return FileManifestPlan(
         files=files,
         architecture_notes=f"Skeleton: {skeleton.description}",
@@ -384,110 +397,140 @@ def _fallback_manifest(goal: str, target_type: str = "python") -> FileManifestPl
     goal_lower = goal.lower()
 
     # Detect what kind of project this is
-    has_api = any(kw in goal_lower for kw in ("api", "server", "fastapi", "flask", "endpoint", "rest"))
-    has_db = any(kw in goal_lower for kw in ("database", "sqlalchemy", "sql", "sqlite", "postgres", "crud"))
+    has_api = any(
+        kw in goal_lower for kw in ("api", "server", "fastapi", "flask", "endpoint", "rest")
+    )
+    has_db = any(
+        kw in goal_lower for kw in ("database", "sqlalchemy", "sql", "sqlite", "postgres", "crud")
+    )
     has_service = any(kw in goal_lower for kw in ("service", "business logic", "service layer"))
     has_tests = any(kw in goal_lower for kw in ("test", "comprehensive"))
-    has_pipeline = any(kw in goal_lower for kw in ("pipeline", "stage", "process", "etl", "workflow"))
+    has_pipeline = any(
+        kw in goal_lower for kw in ("pipeline", "stage", "process", "etl", "workflow")
+    )
 
     files = []
 
     # Models — always present
-    files.append(FileManifest(
-        filename="models.py",
-        purpose="Data models and schemas",
-        public_interface="Pydantic/dataclass models",
-        depends_on=[],
-    ))
+    files.append(
+        FileManifest(
+            filename="models.py",
+            purpose="Data models and schemas",
+            public_interface="Pydantic/dataclass models",
+            depends_on=[],
+        )
+    )
 
     # Config
-    files.append(FileManifest(
-        filename="config.py",
-        purpose="Configuration and settings",
-        public_interface="Settings class",
-        depends_on=[],
-    ))
+    files.append(
+        FileManifest(
+            filename="config.py",
+            purpose="Configuration and settings",
+            public_interface="Settings class",
+            depends_on=[],
+        )
+    )
 
     # Exceptions
-    files.append(FileManifest(
-        filename="exceptions.py",
-        purpose="Custom exception classes",
-        public_interface="Exception hierarchy",
-        depends_on=[],
-    ))
+    files.append(
+        FileManifest(
+            filename="exceptions.py",
+            purpose="Custom exception classes",
+            public_interface="Exception hierarchy",
+            depends_on=[],
+        )
+    )
 
     if has_db:
-        files.append(FileManifest(
-            filename="database.py",
-            purpose="Database connection and session management",
-            public_interface="get_db(), engine, Base",
-            depends_on=["config.py"],
-        ))
+        files.append(
+            FileManifest(
+                filename="database.py",
+                purpose="Database connection and session management",
+                public_interface="get_db(), engine, Base",
+                depends_on=["config.py"],
+            )
+        )
 
     if has_service or has_api:
-        files.append(FileManifest(
-            filename="services.py",
-            purpose="Business logic and service layer",
-            public_interface="Service classes with CRUD methods",
-            depends_on=["models.py", "exceptions.py"] + (["database.py"] if has_db else []),
-        ))
+        files.append(
+            FileManifest(
+                filename="services.py",
+                purpose="Business logic and service layer",
+                public_interface="Service classes with CRUD methods",
+                depends_on=["models.py", "exceptions.py"] + (["database.py"] if has_db else []),
+            )
+        )
 
     if has_pipeline:
-        files.append(FileManifest(
-            filename="base.py",
-            purpose="Abstract base classes for pipeline stages",
-            public_interface="PipelineStage ABC",
-            depends_on=["models.py"],
-        ))
-        files.append(FileManifest(
-            filename="stages.py",
-            purpose="Pipeline stage implementations",
-            public_interface="Stage classes",
-            depends_on=["base.py", "models.py"],
-        ))
-        files.append(FileManifest(
-            filename="pipeline.py",
-            purpose="Pipeline orchestrator",
-            public_interface="Pipeline class, run()",
-            depends_on=["stages.py", "models.py"],
-        ))
+        files.append(
+            FileManifest(
+                filename="base.py",
+                purpose="Abstract base classes for pipeline stages",
+                public_interface="PipelineStage ABC",
+                depends_on=["models.py"],
+            )
+        )
+        files.append(
+            FileManifest(
+                filename="stages.py",
+                purpose="Pipeline stage implementations",
+                public_interface="Stage classes",
+                depends_on=["base.py", "models.py"],
+            )
+        )
+        files.append(
+            FileManifest(
+                filename="pipeline.py",
+                purpose="Pipeline orchestrator",
+                public_interface="Pipeline class, run()",
+                depends_on=["stages.py", "models.py"],
+            )
+        )
 
     if has_api:
-        files.append(FileManifest(
-            filename="routes.py",
-            purpose="API route handlers",
-            public_interface="FastAPI router with endpoints",
-            depends_on=["models.py", "exceptions.py"] + (
-                ["services.py"] if has_service else []
-            ) + (["database.py"] if has_db else []),
-        ))
-        files.append(FileManifest(
-            filename="server.py",
-            purpose="FastAPI application setup and configuration",
-            public_interface="app = FastAPI()",
-            depends_on=["routes.py", "config.py", "exceptions.py"],
-        ))
+        files.append(
+            FileManifest(
+                filename="routes.py",
+                purpose="API route handlers",
+                public_interface="FastAPI router with endpoints",
+                depends_on=["models.py", "exceptions.py"]
+                + (["services.py"] if has_service else [])
+                + (["database.py"] if has_db else []),
+            )
+        )
+        files.append(
+            FileManifest(
+                filename="server.py",
+                purpose="FastAPI application setup and configuration",
+                public_interface="app = FastAPI()",
+                depends_on=["routes.py", "config.py", "exceptions.py"],
+            )
+        )
 
     # Entry point
-    files.append(FileManifest(
-        filename="main.py",
-        purpose=f"Entry point: {goal[:80]}",
-        public_interface="main()",
-        is_entry_point=True,
-        depends_on=["server.py"] if has_api else (
-            ["pipeline.py"] if has_pipeline else ["models.py"]
-        ),
-    ))
+    files.append(
+        FileManifest(
+            filename="main.py",
+            purpose=f"Entry point: {goal[:80]}",
+            public_interface="main()",
+            is_entry_point=True,
+            depends_on=["server.py"]
+            if has_api
+            else (["pipeline.py"] if has_pipeline else ["models.py"]),
+        )
+    )
 
     if has_tests:
-        files.append(FileManifest(
-            filename="test_main.py",
-            purpose="Comprehensive test suite",
-            public_interface="pytest test functions",
-            depends_on=["models.py"] + (["services.py"] if has_service else []) + (
-                ["server.py"] if has_api else []
-            ),
-        ))
+        files.append(
+            FileManifest(
+                filename="test_main.py",
+                purpose="Comprehensive test suite",
+                public_interface="pytest test functions",
+                depends_on=["models.py"]
+                + (["services.py"] if has_service else [])
+                + (["server.py"] if has_api else []),
+            )
+        )
 
     files.append(FileManifest(filename="requirements.txt", purpose="Dependencies"))
 
@@ -497,7 +540,9 @@ def _fallback_manifest(goal: str, target_type: str = "python") -> FileManifestPl
         entry_point="main.py",
     )
 
+
 # ── Phase 2: Multi-service detection ─────────────────────────────────────────
+
 
 def _detect_service_architecture(skeleton: SkeletonArtifact, state) -> object | None:
     """Detect if a skeleton represents a multi-service project.
@@ -512,8 +557,9 @@ def _detect_service_architecture(skeleton: SkeletonArtifact, state) -> object | 
     """
     try:
         from belief.models.service_architecture import (
-            ServiceArchitecture, ServiceSpec, RouteSpec, ServiceDependency,
-            SharedModelSpec, CommunicationType,
+            ServiceArchitecture,
+            ServiceSpec,
+            SharedModelSpec,
         )
     except ImportError:
         return None
@@ -525,16 +571,22 @@ def _detect_service_architecture(skeleton: SkeletonArtifact, state) -> object | 
         parts = entry.path.split("/")
         if len(parts) > 1:
             packages.add(parts[0])
-        if entry.path.endswith(("server.py", "app.py", "main.py")) and entry.role.value == "entry_point":
+        if (
+            entry.path.endswith(("server.py", "app.py", "main.py"))
+            and entry.role.value == "entry_point"
+        ):
             server_files.append(entry.path)
 
     # Remove common non-service packages
     packages -= {"tests", "test", "shared", "common", "lib", "utils"}
 
-    goal = state.user_goal.lower() if hasattr(state, 'user_goal') else ""
+    goal = state.user_goal.lower() if hasattr(state, "user_goal") else ""
     is_multi_service = (
         len(server_files) >= 2
-        or (len(packages) >= 3 and any(kw in goal for kw in ("microservice", "multi-service", "services")))
+        or (
+            len(packages) >= 3
+            and any(kw in goal for kw in ("microservice", "multi-service", "services"))
+        )
         or state.complexity_score >= 5
     )
 
@@ -557,11 +609,13 @@ def _detect_service_architecture(skeleton: SkeletonArtifact, state) -> object | 
         for chain in skeleton.model_chains:
             for model in chain.models:
                 if model.file_path.startswith(f"{shared_pkg}/"):
-                    shared_models.append(SharedModelSpec(
-                        name=model.name,
-                        fields={f.name: f.type_annotation for f in model.fields},
-                        description=model.docstring or "",
-                    ))
+                    shared_models.append(
+                        SharedModelSpec(
+                            name=model.name,
+                            fields={f.name: f.type_annotation for f in model.fields},
+                            description=model.docstring or "",
+                        )
+                    )
 
     # Build service specs from packages
     for pkg in sorted(packages):
@@ -578,7 +632,9 @@ def _detect_service_architecture(skeleton: SkeletonArtifact, state) -> object | 
             description=f"Service generated from {pkg}/ package",
             port=8000 + len(services),
             framework="fastapi",
-            files=[e.path.split("/", 1)[1] for e in pkg_files if not e.path.endswith("__init__.py")],
+            files=[
+                e.path.split("/", 1)[1] for e in pkg_files if not e.path.endswith("__init__.py")
+            ],
             routes=routes,
         )
         services.append(service)

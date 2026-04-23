@@ -38,12 +38,15 @@ def workspace(tmp_path):
     prompts_dir = str(tmp_path / "prompts")
 
     from belief.memory.soil import Soil
+
     soil = Soil(persist_dir=soil_dir)
 
     from belief.evolution.archive import Archive
+
     archive = Archive(db_path=archive_db)
 
     from belief.metrics.dashboard import MetricsDashboard
+
     dashboard = MetricsDashboard(db_path=metrics_db)
 
     return {
@@ -61,12 +64,18 @@ def workspace(tmp_path):
 class TestCollectionArchitecture:
     def test_five_collections_exist(self, workspace):
         soil = workspace["soil"]
-        expected = {"belief_tools", "belief_episodes", "belief_principles",
-                    "belief_failures", "belief_covenants"}
+        expected = {
+            "belief_tools",
+            "belief_episodes",
+            "belief_principles",
+            "belief_failures",
+            "belief_covenants",
+        }
         assert set(soil._collections.keys()) == expected
 
     def test_fsrs_fields_on_deposit(self, workspace):
         from belief.memory.nutrients import Nutrient, NutrientType
+
         soil = workspace["soil"]
 
         n = Nutrient(
@@ -89,6 +98,7 @@ class TestCollectionArchitecture:
 class TestEpisodeRecording:
     def test_record_episode(self, workspace):
         from belief.memory.episode_recorder import record_episode
+
         soil = workspace["soil"]
 
         state = {
@@ -99,7 +109,7 @@ class TestEpisodeRecording:
                 "test_main.py": "def test_cli(): pass\n",
             },
         }
-        eid = record_episode(soil, state)
+        record_episode(soil, state)
 
         col = soil._collections["belief_episodes"]
         assert col.count() >= 1
@@ -155,10 +165,7 @@ class TestAutocatalyticCore:
             select_target_cluster,
         )
 
-        failures = [
-            {"content": "ImportError: no module named 'click'"}
-            for _ in range(8)
-        ]
+        failures = [{"content": "ImportError: no module named 'click'"} for _ in range(8)]
         clusters = cluster_failures(failures)
         assert len(clusters) >= 1
 
@@ -204,15 +211,21 @@ class TestCrystallization:
         from belief.evolution.crystallizer import CandidateInvariant, filter_candidates
 
         good = CandidateInvariant(
-            name="good_invariant", description="X",
+            name="good_invariant",
+            description="X",
             implementation_kind="ast",
-            support=19, violations=1, precision=0.95,
+            support=19,
+            violations=1,
+            precision=0.95,
             proposer="template",
         )
         bad = CandidateInvariant(
-            name="bad_invariant", description="Y",
+            name="bad_invariant",
+            description="Y",
             implementation_kind="ast",
-            support=5, violations=5, precision=0.50,
+            support=5,
+            violations=5,
+            precision=0.50,
             proposer="template",
         )
 
@@ -271,7 +284,9 @@ class TestArchiveIntegration:
             parent_id=seed.id,
             created_at=datetime.now(timezone.utc),
             system_prompts=seed.system_prompts,
-            tool_ids=[], principle_ids=[], covenant_ids=[],
+            tool_ids=[],
+            principle_ids=[],
+            covenant_ids=[],
             model_config=seed.model_config,
             diff_from_parent="test child",
             proposal_rationale="integration test",
@@ -301,8 +316,13 @@ class TestProgression:
     def test_format_report(self):
         from belief.evolution.progression import ProgressionMetrics, format_progression_report
 
-        m = ProgressionMetrics(current_stage=1, total_tool_count=5, cluster_count=3,
-                               cluster_silhouette=0.3, seed_tool_count=2)
+        m = ProgressionMetrics(
+            current_stage=1,
+            total_tool_count=5,
+            cluster_count=3,
+            cluster_silhouette=0.3,
+            seed_tool_count=2,
+        )
         report = format_progression_report(m)
         assert "Stage: 1" in report
         assert "Cluster" in report
@@ -329,6 +349,7 @@ class TestSafetyProbes:
     @pytest.mark.asyncio
     async def test_env_tampering(self):
         from belief.safety.probes import _ENV_SNAPSHOTS, check_environment_tampering
+
         _ENV_SNAPSHOTS.clear()
         await check_environment_tampering()  # Snapshot
         await check_environment_tampering()  # Compare — should pass
@@ -342,18 +363,24 @@ class TestGoodhartCanary:
     def test_divergence_detected(self):
         from belief.safety.goodhart_canary import check_goodhart_divergence
 
-        assert check_goodhart_divergence(
-            [0.5, 0.6, 0.7, 0.8, 0.85],
-            [0.5, 0.5, 0.48, 0.45, 0.42],
-        ) is True
+        assert (
+            check_goodhart_divergence(
+                [0.5, 0.6, 0.7, 0.8, 0.85],
+                [0.5, 0.5, 0.48, 0.45, 0.42],
+            )
+            is True
+        )
 
     def test_no_divergence(self):
         from belief.safety.goodhart_canary import check_goodhart_divergence
 
-        assert check_goodhart_divergence(
-            [0.5, 0.55, 0.6, 0.65, 0.7],
-            [0.5, 0.55, 0.6, 0.65, 0.7],
-        ) is False
+        assert (
+            check_goodhart_divergence(
+                [0.5, 0.55, 0.6, 0.65, 0.7],
+                [0.5, 0.55, 0.6, 0.65, 0.7],
+            )
+            is False
+        )
 
 
 # ── 11. Metrics dashboard ────────────────────────────────────────────────
@@ -366,15 +393,17 @@ class TestMetricsDashboard:
         dashboard = workspace["dashboard"]
 
         for i in range(8):
-            dashboard.record(IterationMetrics(
-                iteration=i,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                benchmark_score=0.5 + i * 0.04,
-                cost_per_solved=1.0 - i * 0.05,
-                novel_capabilities=max(0, i - 3),
-                tool_library_size=i,
-                covenant_count=7 + i // 2,
-            ))
+            dashboard.record(
+                IterationMetrics(
+                    iteration=i,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    benchmark_score=0.5 + i * 0.04,
+                    cost_per_solved=1.0 - i * 0.05,
+                    novel_capabilities=max(0, i - 3),
+                    tool_library_size=i,
+                    covenant_count=7 + i // 2,
+                )
+            )
 
         loaded = dashboard.load_all()
         assert len(loaded) == 8
@@ -400,11 +429,13 @@ class TestDspyModules:
 
     def test_compiler_importable(self):
         from belief.optimization.compiler import BeliefOptimizer
+
         opt = BeliefOptimizer()
         assert opt.teacher == "claude-sonnet-4-6"
 
     def test_prompt_store(self, workspace):
         from belief.optimization.prompt_store import PromptStore
+
         store = PromptStore(store_dir=workspace["prompts_dir"])
         store.save({"test": "instruction"}, "v-e2e")
         loaded = store.load_for_version("v-e2e")
@@ -417,12 +448,14 @@ class TestDspyModules:
 class TestCovenantRegistry:
     def test_static_covenants_loaded(self, workspace):
         from belief.validators.covenant_registry import CovenantRegistry
+
         registry = CovenantRegistry(workspace["soil"])
         stats = registry.get_covenant_stats()
         assert stats["static_count"] == 6
 
     def test_fire_on_clean_code(self, workspace):
         from belief.validators.covenant_registry import CovenantRegistry
+
         registry = CovenantRegistry(workspace["soil"])
         results = registry.fire_all({"main.py": "def main():\n    pass\n"})
         assert len(results) >= 6
@@ -437,4 +470,5 @@ class TestFullLoopSummary:
 
     def test_version_is_3(self):
         import belief
+
         assert belief.__version__ == "3.0.0"

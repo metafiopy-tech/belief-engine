@@ -98,13 +98,15 @@ dependencies = {dependencies}
                 if methods:
                     sig += f"  # methods: {', '.join(methods[:5])}"
 
-                exports.append(ExportedSymbol(
-                    name=node.name,
-                    kind="class",
-                    file_path=filename,
-                    line=node.lineno,
-                    signature=sig,
-                ))
+                exports.append(
+                    ExportedSymbol(
+                        name=node.name,
+                        kind="class",
+                        file_path=filename,
+                        line=node.lineno,
+                        signature=sig,
+                    )
+                )
 
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if not node.name.startswith("_"):
@@ -123,26 +125,30 @@ dependencies = {dependencies}
                     prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
                     sig = f"{prefix} {node.name}({', '.join(params)}){ret}"
 
-                    exports.append(ExportedSymbol(
-                        name=node.name,
-                        kind="function",
-                        file_path=filename,
-                        line=node.lineno,
-                        signature=sig,
-                    ))
+                    exports.append(
+                        ExportedSymbol(
+                            name=node.name,
+                            kind="function",
+                            file_path=filename,
+                            line=node.lineno,
+                            signature=sig,
+                        )
+                    )
 
             elif isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name) and not target.id.startswith("_"):
                         # Include app-like assignments and constants
                         if target.id[0].isupper() or target.id in ("app", "router"):
-                            exports.append(ExportedSymbol(
-                                name=target.id,
-                                kind="variable",
-                                file_path=filename,
-                                line=node.lineno,
-                                signature=f"{target.id} = ...",
-                            ))
+                            exports.append(
+                                ExportedSymbol(
+                                    name=target.id,
+                                    kind="variable",
+                                    file_path=filename,
+                                    line=node.lineno,
+                                    signature=f"{target.id} = ...",
+                                )
+                            )
 
         return exports
 

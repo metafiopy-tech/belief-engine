@@ -10,7 +10,6 @@ can never accidentally inherit engine behaviour.
 
 from __future__ import annotations
 
-import asyncio
 import re
 import subprocess
 import tempfile
@@ -92,8 +91,7 @@ async def run_raw(
         import httpx
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
-            "httpx is required for the raw runner. "
-            "Install it with: pip install httpx"
+            "httpx is required for the raw runner. Install it with: pip install httpx"
         ) from exc
 
     start = time.time()
@@ -101,20 +99,24 @@ async def run_raw(
     # 1. Generate code from the raw model
     try:
         async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
-            resp = await client.post("/api/chat", json={
-                "model": model,
-                "stream": False,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": goal},
-                ],
-                "options": {"temperature": 0.0, "num_predict": 4096},
-            })
+            resp = await client.post(
+                "/api/chat",
+                json={
+                    "model": model,
+                    "stream": False,
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": goal},
+                    ],
+                    "options": {"temperature": 0.0, "num_predict": 4096},
+                },
+            )
             resp.raise_for_status()
             raw_output = resp.json()["message"]["content"]
     except Exception as exc:
         return RawRunResult(
-            goal=goal, model=model,
+            goal=goal,
+            model=model,
             time_seconds=time.time() - start,
             error=f"Model call failed: {exc}",
         )
@@ -123,7 +125,9 @@ async def run_raw(
     files = parse_file_blocks(raw_output)
     if not files:
         return RawRunResult(
-            goal=goal, model=model, code_files={},
+            goal=goal,
+            model=model,
+            code_files={},
             time_seconds=time.time() - start,
             error="No ### FILE: blocks found in model output",
         )
@@ -144,9 +148,10 @@ async def run_raw(
         if req_file.exists():
             try:
                 subprocess.run(
-                    ["pip3", "install", "-r", str(req_file), "-q",
-                     "--break-system-packages"],
-                    cwd=tmpdir, capture_output=True, timeout=60,
+                    ["pip3", "install", "-r", str(req_file), "-q", "--break-system-packages"],
+                    cwd=tmpdir,
+                    capture_output=True,
+                    timeout=60,
                 )
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 pass  # Non-fatal — tests may still pass if deps already installed
@@ -154,10 +159,11 @@ async def run_raw(
         # Run pytest
         try:
             proc = subprocess.run(
-                ["python3", "-m", "pytest", ".", "-q", "--tb=no",
-                 "--timeout=30", "--no-header"],
-                capture_output=True, text=True,
-                cwd=tmpdir, timeout=120,
+                ["python3", "-m", "pytest", ".", "-q", "--tb=no", "--timeout=30", "--no-header"],
+                capture_output=True,
+                text=True,
+                cwd=tmpdir,
+                timeout=120,
             )
             tests_passed, tests_total = parse_pytest_output(proc.stdout)
             if tests_total == 0 and proc.returncode not in (0, 1):

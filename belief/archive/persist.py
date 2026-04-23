@@ -103,6 +103,7 @@ def _build_outcome_from_state(final_state: dict[str, Any]) -> BuildOutcome | Non
     configs: dict[str, AgentConfiguration] = {}
     try:
         from belief.prompts import PLANNER_SYSTEM
+
         configs["planner"] = AgentConfiguration(
             agent_name="planner",
             system_prompt=PLANNER_SYSTEM,

@@ -25,6 +25,7 @@ Assembly theory:
     creative_novelty, unique_workhorse, trivial)
   - scan_library_for_promotions batch-runs should_promote
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -59,49 +60,63 @@ from belief.evolution.assembly_theory import (
 class TestShouldTriggerJitterbug:
     def test_contract_when_pass_rate_drops(self):
         assert should_trigger_jitterbug(
-            recent_pass_rate=0.50, target_pass_rate=0.80,
-            recent_novelty=0.50, archive_coverage=0.50,
+            recent_pass_rate=0.50,
+            target_pass_rate=0.80,
+            recent_novelty=0.50,
+            archive_coverage=0.50,
         ) == (True, "contract")
 
     def test_expand_when_novelty_drops(self):
         assert should_trigger_jitterbug(
-            recent_pass_rate=0.78, target_pass_rate=0.80,
-            recent_novelty=0.05, archive_coverage=0.80,
+            recent_pass_rate=0.78,
+            target_pass_rate=0.80,
+            recent_novelty=0.05,
+            archive_coverage=0.80,
         ) == (True, "expand")
 
     def test_equilibrium_when_both_healthy(self):
         assert should_trigger_jitterbug(
-            recent_pass_rate=0.85, target_pass_rate=0.80,
-            recent_novelty=0.50, archive_coverage=0.80,
+            recent_pass_rate=0.85,
+            target_pass_rate=0.80,
+            recent_novelty=0.50,
+            archive_coverage=0.80,
         ) == (False, "equilibrium")
 
     def test_pragmatic_wins_over_epistemic(self):
         """When both pressures fire, contract runs first (spec order)."""
         assert should_trigger_jitterbug(
-            recent_pass_rate=0.50, target_pass_rate=0.80,
-            recent_novelty=0.05, archive_coverage=0.50,
+            recent_pass_rate=0.50,
+            target_pass_rate=0.80,
+            recent_novelty=0.05,
+            archive_coverage=0.50,
         ) == (True, "contract")
 
     def test_pressure_below_threshold_is_equilibrium(self):
         # pragmatic = 0.8 - 0.66 = 0.14, below 0.15 threshold
         assert should_trigger_jitterbug(
-            recent_pass_rate=0.66, target_pass_rate=0.80,
-            recent_novelty=0.50, archive_coverage=0.50,
+            recent_pass_rate=0.66,
+            target_pass_rate=0.80,
+            recent_novelty=0.50,
+            archive_coverage=0.50,
         ) == (False, "equilibrium")
 
     def test_pass_rate_above_target_does_not_fire(self):
         """No pragmatic pressure when the engine is beating its target."""
         assert should_trigger_jitterbug(
-            recent_pass_rate=0.95, target_pass_rate=0.80,
-            recent_novelty=0.50, archive_coverage=0.50,
+            recent_pass_rate=0.95,
+            target_pass_rate=0.80,
+            recent_novelty=0.50,
+            archive_coverage=0.50,
         ) == (False, "equilibrium")
 
     def test_custom_thresholds_respected(self):
         # Loosen contract threshold to 0.30 — the drop from 0.80 to
         # 0.70 is now below threshold even though default would fire.
         assert should_trigger_jitterbug(
-            recent_pass_rate=0.70, target_pass_rate=0.80,
-            recent_novelty=0.50, archive_coverage=0.50,
+            recent_pass_rate=0.70,
+            target_pass_rate=0.80,
+            recent_novelty=0.50,
+            archive_coverage=0.50,
             contract_threshold=0.30,
         ) == (False, "equilibrium")
 
@@ -125,8 +140,7 @@ class _FakeResult:
 class TestPragmaticPressure:
     def test_mixed_results(self):
         rate, pressure = compute_pragmatic_pressure(
-            [_FakeResult(True), _FakeResult(True),
-             _FakeResult(False), _FakeResult(True)],
+            [_FakeResult(True), _FakeResult(True), _FakeResult(False), _FakeResult(True)],
             target=0.80,
         )
         assert rate == 0.75
@@ -134,7 +148,8 @@ class TestPragmaticPressure:
 
     def test_all_pass_no_pressure(self):
         rate, pressure = compute_pragmatic_pressure(
-            [_FakeResult(True), _FakeResult(True)], target=0.80,
+            [_FakeResult(True), _FakeResult(True)],
+            target=0.80,
         )
         assert rate == 1.0
         assert pressure == 0.0
@@ -149,14 +164,16 @@ class TestPragmaticPressure:
 class TestEpistemicPressure:
     def test_basic_ratio(self):
         novelty, pressure = compute_epistemic_pressure(
-            recent_count=10, novel_count=2,
+            recent_count=10,
+            novel_count=2,
         )
         assert novelty == pytest.approx(0.2)
         assert pressure == pytest.approx(0.1)
 
     def test_saturated_novelty_no_pressure(self):
         novelty, pressure = compute_epistemic_pressure(
-            recent_count=10, novel_count=5,
+            recent_count=10,
+            novel_count=5,
         )
         assert novelty == 0.5
         assert pressure == 0.0
@@ -171,8 +188,12 @@ class TestEFESignalSource:
     def test_from_archive_stub(self):
         class _Arc:
             def get_all_results_recent(self, n):
-                return [_FakeResult(True, 0.3), _FakeResult(True, 0.9),
-                        _FakeResult(False, 0.1), _FakeResult(True, 0.5)]
+                return [
+                    _FakeResult(True, 0.3),
+                    _FakeResult(True, 0.9),
+                    _FakeResult(False, 0.1),
+                    _FakeResult(True, 0.5),
+                ]
 
             def get_niche_map(self):
                 return {"a": 1, "b": 2}
@@ -198,15 +219,20 @@ class TestEFESignalSource:
 
 class TestEFETrigger:
     def test_callable_returns_decision(self):
-        trig = EFETrigger(source=EFESignalSource(
-            recent_pass_rate=0.50, recent_novelty=0.50,
-            archive_coverage=0.80, window=20,
-        ))
+        trig = EFETrigger(
+            source=EFESignalSource(
+                recent_pass_rate=0.50,
+                recent_novelty=0.50,
+                archive_coverage=0.80,
+                window=20,
+            )
+        )
         assert trig() == (True, "contract")
 
     def test_evaluate_and_call_match(self):
-        src = EFESignalSource(recent_pass_rate=0.90, recent_novelty=0.50,
-                              archive_coverage=0.80, window=20)
+        src = EFESignalSource(
+            recent_pass_rate=0.90, recent_novelty=0.50, archive_coverage=0.80, window=20
+        )
         trig = EFETrigger(source=src)
         assert trig.evaluate() == trig() == (False, "equilibrium")
 
@@ -214,23 +240,23 @@ class TestEFETrigger:
 # ── Assembly theory ───────────────────────────────────────────────────────
 
 
-_PROCESS_TOOL = '''
+_PROCESS_TOOL = """
 def process(items):
     result = []
     for item in items:
         result.append(item)
     return result
-'''
+"""
 
-_COLLECT_TOOL = '''
+_COLLECT_TOOL = """
 def collect(items):
     result = []
     for item in items:
         result.append(item)
     return result
-'''
+"""
 
-_CLASS_TOOL = 'class X: pass\n'
+_CLASS_TOOL = "class X: pass\n"
 
 
 class TestExtractSignatures:
@@ -286,8 +312,7 @@ class TestCopyNumbers:
     def test_basic_count(self):
         """When library contains three identical tools, shared signatures
         should have copy_number 3."""
-        cn = copy_numbers(_PROCESS_TOOL, [_COLLECT_TOOL, _COLLECT_TOOL,
-                                           _COLLECT_TOOL])
+        cn = copy_numbers(_PROCESS_TOOL, [_COLLECT_TOOL, _COLLECT_TOOL, _COLLECT_TOOL])
         assert any(v == 3 for v in cn.values())
         assert all(v >= 0 for v in cn.values())
 
@@ -297,8 +322,7 @@ class TestCopyNumbers:
 
 class TestShouldPromote:
     def test_building_block(self):
-        v = should_promote(_PROCESS_TOOL, [_COLLECT_TOOL] * 5,
-                           usage_count=DEFAULT_USAGE_HIGH + 1)
+        v = should_promote(_PROCESS_TOOL, [_COLLECT_TOOL] * 5, usage_count=DEFAULT_USAGE_HIGH + 1)
         assert isinstance(v, PromotionVerdict)
         assert v.category == "building_block"
         assert v.should_promote
@@ -309,8 +333,9 @@ class TestShouldPromote:
         assert not v.should_promote
 
     def test_unique_workhorse(self):
-        v = should_promote(_CLASS_TOOL, [_PROCESS_TOOL, _COLLECT_TOOL],
-                           usage_count=DEFAULT_USAGE_HIGH + 1)
+        v = should_promote(
+            _CLASS_TOOL, [_PROCESS_TOOL, _COLLECT_TOOL], usage_count=DEFAULT_USAGE_HIGH + 1
+        )
         assert v.category == "unique_workhorse"
         assert v.should_promote
 

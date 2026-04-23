@@ -43,10 +43,10 @@ from belief.evolution.archive import (
 logger = logging.getLogger("belief.evolution.sica")
 
 # ── Composite utility weights (from SICA paper) ─────────────────────────────
-W_SCORE = 0.7   # Benchmark pass rate
-W_COST = 0.15   # Cost efficiency (lower is better)
-W_TIME = 0.15   # Speed (faster is better)
-COST_BUDGET = 10.0   # Max USD per benchmark run
+W_SCORE = 0.7  # Benchmark pass rate
+W_COST = 0.15  # Cost efficiency (lower is better)
+W_TIME = 0.15  # Speed (faster is better)
+COST_BUDGET = 10.0  # Max USD per benchmark run
 TIME_BUDGET = 3600.0  # Max seconds per benchmark run (1 hour)
 
 
@@ -72,6 +72,7 @@ def composite_utility(
 @dataclass
 class ChallengeOutcome:
     """Outcome of a single challenge in a benchmark run."""
+
     challenge_id: str
     passed: bool
     weighted_score: float = 0.0
@@ -80,6 +81,7 @@ class ChallengeOutcome:
 @dataclass
 class IterationResult:
     """Result of one self-improvement iteration."""
+
     iteration: int
     proposal_title: str = ""
     target_file: str = ""
@@ -102,6 +104,7 @@ class IterationResult:
 @dataclass
 class SelfImprovementArchive:
     """Archive of all self-improvement iterations."""
+
     iterations: list[IterationResult] = field(default_factory=list)
     best_utility: float = 0.0
     best_iteration: int = 0
@@ -250,6 +253,7 @@ class SelfImprovementCycle:
 
             # ── Step 3: Validate target is evolvable (standard path) ─────
             from belief.evolution.scaffold import ScaffoldDecomposition
+
             decomp = ScaffoldDecomposition.from_project(self.project_root)
             if not decomp.is_safe_to_modify(result.target_file):
                 result.error = f"Target {result.target_file} is in fixed scaffold — skipping"
@@ -267,15 +271,10 @@ class SelfImprovementCycle:
                 try:
                     permitted, reason = self.danger_gate(result.target_file)
                 except Exception as exc:
-                    logger.warning(
-                        f"SICA: danger_gate raised ({exc}); proceeding "
-                        f"as if permitted"
-                    )
+                    logger.warning(f"SICA: danger_gate raised ({exc}); proceeding as if permitted")
                     permitted, reason = True, f"gate-error: {exc}"
                 if not permitted:
-                    logger.info(
-                        f"SICA: deferred {result.target_file} — {reason}"
-                    )
+                    logger.info(f"SICA: deferred {result.target_file} — {reason}")
                     result.error = f"deferred: {reason}"
                     result.duration_seconds = time.time() - t0
                     self.archive.add(result)
@@ -301,9 +300,7 @@ class SelfImprovementCycle:
             result.post_passing = post["passing_ids"]
             result.improvement = result.post_score - result.pre_score
             result.cost_usd = baseline["cost"] + post["cost"]
-            result.post_utility = composite_utility(
-                post["pass_rate"], post["cost"], post["time"]
-            )
+            result.post_utility = composite_utility(post["pass_rate"], post["cost"], post["time"])
 
             # ── Step 6: Regression detection ────────────────────────────
             pre_set = set(result.pre_passing)
@@ -371,6 +368,7 @@ class SelfImprovementCycle:
             if iteration > 0 and iteration % 10 == 0:
                 try:
                     from belief.optimization.dspy_modules import is_dspy_available
+
                     if is_dspy_available():
                         from belief.optimization.compiler import BeliefOptimizer
                         from belief.optimization.dspy_modules import get_all_modules
@@ -392,6 +390,7 @@ class SelfImprovementCycle:
             if iteration > 0 and iteration % 10 == 0:
                 try:
                     from belief.evolution.jitterbug import run_jitterbug_cycle
+
                     logger.info(f"SICA: triggering jitterbug cycle at iteration {iteration}")
                     jb_result = await run_jitterbug_cycle(
                         n_goals=5,
@@ -420,6 +419,7 @@ class SelfImprovementCycle:
     ) -> dict[str, Any]:
         """Run a benchmark and return summary with per-challenge tracking."""
         from belief.benchmark import run_benchmark
+
         t0 = time.time()
         results = await run_benchmark(tiers=tiers, challenge_ids=ids)
         elapsed = time.time() - t0
@@ -458,10 +458,7 @@ class SelfImprovementCycle:
                 "target_file": "",
             }
 
-        failures = [
-            r for r in baseline.get("results", [])
-            if r.verdict != "pass"
-        ]
+        failures = [r for r in baseline.get("results", []) if r.verdict != "pass"]
         if not failures:
             logger.info("SICA: all challenges passing — no proposal needed")
             return None
@@ -485,7 +482,10 @@ class SelfImprovementCycle:
                 )
                 if r.regressions:
                     archive_lines.append(f"    Regressions: {', '.join(r.regressions[:3])}")
-            archive_context = "\nRECENT SICA HISTORY (avoid repeating rejected approaches):\n" + "\n".join(archive_lines)
+            archive_context = (
+                "\nRECENT SICA HISTORY (avoid repeating rejected approaches):\n"
+                + "\n".join(archive_lines)
+            )
 
         try:
             from belief.config.models import ModelRouter
@@ -534,6 +534,7 @@ class SelfImprovementCycle:
             if self.soil is None:
                 try:
                     from belief.memory.soil import Soil
+
                     self.soil = Soil()
                 except Exception:
                     return False
@@ -554,6 +555,7 @@ class SelfImprovementCycle:
     def _snapshot(self, target: Path, snapshot_dir: Path | None = None) -> Path | None:
         """Save a snapshot before modification."""
         import tempfile
+
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         try:
             if snapshot_dir is None:
@@ -585,8 +587,10 @@ class SelfImprovementCycle:
         try:
             # Determine if full replacement or append
             is_full = (
-                code.startswith('"""') or code.startswith("import ")
-                or code.startswith("from ") or code.startswith("#")
+                code.startswith('"""')
+                or code.startswith("import ")
+                or code.startswith("from ")
+                or code.startswith("#")
             ) and len(code) > 200
 
             if is_full:
@@ -612,8 +616,11 @@ class SelfImprovementCycle:
         """Update Q-value in ChromaDB for the strategy used."""
         try:
             from belief.memory.q_value_store import update_q_value
-            reward = 1.0 if result.accepted and result.improvement > 0 else (
-                0.5 if result.accepted else 0.0
+
+            reward = (
+                1.0
+                if result.accepted and result.improvement > 0
+                else (0.5 if result.accepted else 0.0)
             )
             await update_q_value(
                 key=f"sica:{result.proposal_title[:50]}",
@@ -709,7 +716,7 @@ class SelfImprovementCycle:
             code_bucket = 0  # Small/failing output
 
         tool_count = 0  # Self-authored tools (future integration)
-        domain_id = 0   # General purpose (future: derive from challenge tags)
+        domain_id = 0  # General purpose (future: derive from challenge tags)
 
         return (code_bucket, tool_count, domain_id)
 
@@ -733,6 +740,7 @@ class SelfImprovementCycle:
         try:
             from belief.memory.soil import Soil
             from belief.memory.tool_registry import ToolRegistry
+
             soil = Soil()
             registry = ToolRegistry(soil)
             metrics.tool_library_size = len(registry.get_active_tools())
@@ -751,10 +759,15 @@ class SelfImprovementCycle:
             data = json.loads(self.archive_path.read_text())
             archive = SelfImprovementArchive()
             for entry in data.get("iterations", []):
-                archive.iterations.append(IterationResult(**{
-                    k: v for k, v in entry.items()
-                    if k in IterationResult.__dataclass_fields__
-                }))
+                archive.iterations.append(
+                    IterationResult(
+                        **{
+                            k: v
+                            for k, v in entry.items()
+                            if k in IterationResult.__dataclass_fields__
+                        }
+                    )
+                )
             archive.best_score = data.get("best_score", 0.0)
             archive.best_utility = data.get("best_utility", 0.0)
             archive.best_iteration = data.get("best_iteration", 0)

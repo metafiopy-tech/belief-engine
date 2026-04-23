@@ -44,6 +44,7 @@ def _get_soil():
     global _soil_instance
     if _soil_instance is None:
         from belief.memory.soil import Soil
+
         soil_dir = Path("~/.belief-engine/soil").expanduser()
         _soil_instance = Soil(soil_dir)
     return _soil_instance
@@ -51,11 +52,11 @@ def _get_soil():
 
 # ── Pydantic schema for LLM extraction ───────────────────────────────────────
 
+
 class ExtractedNutrient(BaseModel):
     """A single nutrient extracted by the LLM from a build result."""
-    nutrient_type: str = Field(
-        description="One of: pattern, antipattern, skeleton, covenant"
-    )
+
+    nutrient_type: str = Field(description="One of: pattern, antipattern, skeleton, covenant")
     content: str = Field(
         description="The knowledge itself — a concise, transferable insight. "
         "Must be generalizable beyond this specific build."
@@ -66,31 +67,27 @@ class ExtractedNutrient(BaseModel):
     )
     difficulty: float = Field(
         default=5.0,
-        description="How complex is this pattern? 1=trivial idiom, 10=architectural pattern"
+        description="How complex is this pattern? 1=trivial idiom, 10=architectural pattern",
     )
     tags: list[str] = Field(
         default_factory=list,
-        description="Categorization tags: framework names, concepts, error types"
+        description="Categorization tags: framework names, concepts, error types",
     )
     framework: str = Field(
-        default="",
-        description="Primary framework if applicable: fastapi, fastmcp, etc."
+        default="", description="Primary framework if applicable: fastapi, fastmcp, etc."
     )
     code_sample: str = Field(
-        default="",
-        description="Representative code snippet if this is a code pattern (optional)"
+        default="", description="Representative code snippet if this is a code pattern (optional)"
     )
 
 
 class DecomposerOutput(BaseModel):
     """Structured output from the decomposer LLM call."""
+
     nutrients: list[ExtractedNutrient] = Field(
         description="3-7 atomic nutrients extracted from this build result"
     )
-    build_summary: str = Field(
-        default="",
-        description="One-line summary of the build outcome"
-    )
+    build_summary: str = Field(default="", description="One-line summary of the build outcome")
 
 
 # ── Prompt ───────────────────────────────────────────────────────────────────
@@ -153,6 +150,7 @@ Extract 3-7 atomic nutrients. For each, provide:
 
 # ── Tier detection ───────────────────────────────────────────────────────────
 
+
 def _detect_tier(file_count: int, has_packages: bool) -> NutrientTier:
     """Detect the complexity tier of a build from its output."""
     if file_count <= 1:
@@ -167,6 +165,7 @@ def _detect_tier(file_count: int, has_packages: bool) -> NutrientTier:
 
 
 # ── Verification gate ────────────────────────────────────────────────────────
+
 
 def _verify_nutrient(
     extracted: ExtractedNutrient,
@@ -204,6 +203,7 @@ def _verify_nutrient(
 
 # ── The node ─────────────────────────────────────────────────────────────────
 
+
 async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
     """Post-build LangGraph node: extract nutrients and deposit in soil.
 
@@ -237,6 +237,7 @@ async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
     # Record build episode for crystallizer analysis
     try:
         from belief.memory.episode_recorder import record_episode
+
         soil = _get_soil()
         episode_id = record_episode(soil, state)
         logger.debug(f"Decomposer: recorded episode {episode_id}")
@@ -249,6 +250,7 @@ async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
         build_count = soil.count()
         if build_count > 0 and build_count % 10 == 0:
             from belief.memory.recombination import RecombinationEngine
+
             engine = RecombinationEngine(soil)
             nutrient = await engine.recombine_once()
             if nutrient:
@@ -269,15 +271,21 @@ async def _extract_and_deposit(state: dict[str, Any]) -> list[Nutrient]:
     goal = state.get("user_goal", "")
     spec = state.get("requirement_spec")
     if spec:
-        goal = (spec.get("goal_refined") if isinstance(spec, dict)
-                else getattr(spec, "goal_refined", "")) or goal
+        goal = (
+            spec.get("goal_refined")
+            if isinstance(spec, dict)
+            else getattr(spec, "goal_refined", "")
+        ) or goal
 
     # Determine verdict
     validation = state.get("validation_result")
     verdict = "unknown"
     if validation:
-        v = (validation.get("verdict") if isinstance(validation, dict)
-             else getattr(validation, "verdict", None))
+        v = (
+            validation.get("verdict")
+            if isinstance(validation, dict)
+            else getattr(validation, "verdict", None)
+        )
         if v:
             verdict = v.value if hasattr(v, "value") else str(v)
 
@@ -285,10 +293,16 @@ async def _extract_and_deposit(state: dict[str, Any]) -> list[Nutrient]:
     exec_success = False
     exec_error = ""
     if exec_result:
-        exec_success = (exec_result.get("success") if isinstance(exec_result, dict)
-                        else getattr(exec_result, "success", False))
-        exec_error = (exec_result.get("error_summary", "") if isinstance(exec_result, dict)
-                      else getattr(exec_result, "error_summary", ""))
+        exec_success = (
+            exec_result.get("success")
+            if isinstance(exec_result, dict)
+            else getattr(exec_result, "success", False)
+        )
+        exec_error = (
+            exec_result.get("error_summary", "")
+            if isinstance(exec_result, dict)
+            else getattr(exec_result, "error_summary", "")
+        )
 
     build_passed = verdict == "pass" or exec_success
     has_concrete_error = bool(exec_error)
@@ -367,10 +381,7 @@ async def _extract_and_deposit(state: dict[str, Any]) -> list[Nutrient]:
         for ext in extraction.nutrients:
             # Verification gate
             if not _verify_nutrient(ext, build_passed, has_concrete_error, skeleton_clean):
-                logger.debug(
-                    f"Decomposer: skipped {ext.nutrient_type} "
-                    f"(failed verification gate)"
-                )
+                logger.debug(f"Decomposer: skipped {ext.nutrient_type} (failed verification gate)")
                 continue
 
             # Map to NutrientType enum

@@ -60,19 +60,13 @@ class TestExtractFeatures:
         assert sum(feats.agent_one_hot) == 0
 
     def test_cost_ratio(self) -> None:
-        feats = extract_features(
-            {"agent_name": "builder", "cost_so_far": 2.5}, max_budget=10.0
-        )
+        feats = extract_features({"agent_name": "builder", "cost_so_far": 2.5}, max_budget=10.0)
         assert feats.cost_ratio == 0.25
 
     def test_error_keywords_detection_is_case_insensitive(self) -> None:
-        pos = extract_features(
-            {"agent_name": "tester", "output_summary": "Traceback: Exception!"}
-        )
+        pos = extract_features({"agent_name": "tester", "output_summary": "Traceback: Exception!"})
         assert pos.error_keywords == 1
-        neg = extract_features(
-            {"agent_name": "tester", "output_summary": "all tests passed"}
-        )
+        neg = extract_features({"agent_name": "tester", "output_summary": "all tests passed"})
         assert neg.error_keywords == 0
 
     def test_step_position_normalized(self) -> None:
@@ -113,7 +107,8 @@ class TestShouldEscalate:
 
 class TestUntrainedProbe:
     def test_predict_confidence_returns_max_when_no_model(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         p = ConfidenceProbe(tmp_path / "probe.pkl")
         assert p.model is None
@@ -151,9 +146,7 @@ def _make_synthetic_rows(n: int, *, seed: int = 0) -> list[dict[str, Any]]:
                     "build_id": build_id,
                     "step_index": step,
                     "agent_name": agent,
-                    "output_summary": (
-                        "clean output" if passed else "traceback: exception raised"
-                    ),
+                    "output_summary": ("clean output" if passed else "traceback: exception raised"),
                     "edge_decision": "",
                     "cost_so_far": 0.1 if passed else 2.0,
                     "iteration": step,
@@ -217,8 +210,11 @@ class TestTrain:
         p1 = ConfidenceProbe(path)
         p1.train(_make_synthetic_rows(80), min_samples=50)
         clean = {
-            "agent_name": "builder", "iteration": 0, "cost_so_far": 0.1,
-            "output_summary": "clean output", "step_index": 0,
+            "agent_name": "builder",
+            "iteration": 0,
+            "cost_so_far": 0.1,
+            "output_summary": "clean output",
+            "step_index": 0,
         }
         before = p1.predict_confidence(clean)
 
@@ -257,7 +253,9 @@ class TestEvaluate:
 
 class TestProbeRoutingEnabled:
     def test_disabled_when_env_off(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         monkeypatch.delenv("BELIEF_ENABLE_PROBE", raising=False)
         set_default_probe(ConfidenceProbe(tmp_path / "probe.pkl"))
@@ -267,7 +265,9 @@ class TestProbeRoutingEnabled:
             set_default_probe(None)
 
     def test_disabled_when_env_on_but_no_model(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         monkeypatch.setenv("BELIEF_ENABLE_PROBE", "1")
         set_default_probe(ConfidenceProbe(tmp_path / "probe.pkl"))
@@ -279,7 +279,9 @@ class TestProbeRoutingEnabled:
 
     @pytest.mark.skipif(not SK_AVAILABLE, reason="sklearn not installed")
     def test_enabled_when_env_on_and_model_trained(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         monkeypatch.setenv("BELIEF_ENABLE_PROBE", "1")
         probe = ConfidenceProbe(tmp_path / "probe.pkl")

@@ -35,6 +35,7 @@ class HealthStatus(str, Enum):
 @dataclass
 class HealthCheck:
     """Result of a single health check."""
+
     timestamp: str
     status: HealthStatus
     response_time_ms: float = 0.0
@@ -47,6 +48,7 @@ class HealthCheck:
 @dataclass
 class MonitorState:
     """Accumulated state from multiple health checks."""
+
     url: str
     checks: list[HealthCheck] = field(default_factory=list)
     consecutive_failures: int = 0
@@ -102,6 +104,7 @@ class HealthMonitor:
 
         try:
             from belief.core.http import get_async_client
+
             async with get_async_client(timeout=self.timeout) as client:
                 resp = await client.get(self.health_url)
                 elapsed = (time.time() - t0) * 1000

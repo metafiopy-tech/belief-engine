@@ -48,11 +48,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -96,9 +95,7 @@ _POSITIVE_CACHE_TTL_S = 24 * 3600
 _NEGATIVE_CACHE_TTL_S = 3600
 
 # Stdlib name set — authoritative per Python 3.10+.
-_STDLIB_NAMES: frozenset[str] = frozenset(
-    getattr(sys, "stdlib_module_names", frozenset())
-)
+_STDLIB_NAMES: frozenset[str] = frozenset(getattr(sys, "stdlib_module_names", frozenset()))
 
 
 # ---------------------------------------------------------------------------
@@ -115,12 +112,13 @@ class ValidationResult:
     at stdlib layer" → debugger knows to drop the import, not
     rewrite the package name).
     """
+
     raw_input: str
     canonical_name: str
     accepted: bool
     layer: str
     reason: str
-    suggestion: str | None = None   # fuzzy match when rejected
+    suggestion: str | None = None  # fuzzy match when rejected
 
     def to_log_dict(self) -> dict[str, Any]:
         """JSON-safe dict for the rejection log."""
@@ -351,13 +349,14 @@ def _fuzzy_match_suggestion(
     if not canonical:
         return None
     try:
-        from rapidfuzz import process, fuzz
+        # Availability probe for the rapidfuzz top-level package; the
+        # actual Levenshtein implementation is imported below.
+        import rapidfuzz  # noqa: F401
     except ImportError:  # pragma: no cover
         return None
 
-    # `process.extractOne` with a distance cutoff.  `fuzz.ratio` is a
-    # percentage (0-100); we derive distance as (len * (1 - ratio/100)).
-    # Easier: use `rapidfuzz.distance.Levenshtein.distance` directly.
+    # Use ``rapidfuzz.distance.Levenshtein.distance`` directly — it's
+    # simpler and faster than piping scores through ``fuzz.ratio``.
     try:
         from rapidfuzz.distance import Levenshtein
     except ImportError:  # pragma: no cover

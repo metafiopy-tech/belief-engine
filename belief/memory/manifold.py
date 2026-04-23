@@ -167,10 +167,9 @@ def nutrient_domains(nutrient) -> set[str]:
         # "async " with a trailing space to avoid substring collisions
         # in goal text, but tag lookup should match the bare "async")
         # and also tolerate hyphenated forms of multi-word keywords.
-        kw_variants = (
-            {kw.strip() for kw in keywords}
-            | {kw.strip().replace(" ", "-") for kw in keywords}
-        )
+        kw_variants = {kw.strip() for kw in keywords} | {
+            kw.strip().replace(" ", "-") for kw in keywords
+        }
         if tag_set & kw_variants:
             domains.add(dom)
 
@@ -202,10 +201,9 @@ def primary_domain(nutrient) -> str:
         # "async " with a trailing space to avoid substring collisions
         # in goal text, but tag lookup should match the bare "async")
         # and also tolerate hyphenated forms of multi-word keywords.
-        kw_variants = (
-            {kw.strip() for kw in keywords}
-            | {kw.strip().replace(" ", "-") for kw in keywords}
-        )
+        kw_variants = {kw.strip() for kw in keywords} | {
+            kw.strip().replace(" ", "-") for kw in keywords
+        }
         if set(tags) & kw_variants:
             return dom
 
@@ -288,22 +286,22 @@ def build_manifold(
             clusters.append(DomainCluster(domain=domain, size=0))
             continue
         stabilities = [float(getattr(n, "stability", 1.0)) for n in members]
-        lapse_flags = [
-            1 if int(getattr(n, "lapse_count", 0) or 0) > 0 else 0
-            for n in members
-        ]
-        clusters.append(DomainCluster(
-            domain=domain,
-            size=len(members),
-            mean_stability=sum(stabilities) / len(stabilities),
-            lapse_rate=sum(lapse_flags) / len(lapse_flags),
-            sample_content=_top_samples(members, k=3),
-        ))
+        lapse_flags = [1 if int(getattr(n, "lapse_count", 0) or 0) > 0 else 0 for n in members]
+        clusters.append(
+            DomainCluster(
+                domain=domain,
+                size=len(members),
+                mean_stability=sum(stabilities) / len(stabilities),
+                lapse_rate=sum(lapse_flags) / len(lapse_flags),
+                sample_content=_top_samples(members, k=3),
+            )
+        )
 
     cross_edges = [
         CrossEdge(domain_a=a, domain_b=b, count=c)
         for (a, b), c in sorted(
-            edge_counts.items(), key=lambda kv: (-kv[1], kv[0]),
+            edge_counts.items(),
+            key=lambda kv: (-kv[1], kv[0]),
         )
     ]
 
@@ -356,8 +354,7 @@ def format_report(
     lines.append("  Domain Manifold")
     lines.append("═" * 62)
     lines.append(
-        f"  active nutrients: {report.total_active}   "
-        f"invalidated: {report.total_invalidated}"
+        f"  active nutrients: {report.total_active}   invalidated: {report.total_invalidated}"
     )
     lines.append("")
 
@@ -390,21 +387,16 @@ def format_report(
         lines.append("  (no nutrients span multiple domains)")
     else:
         for e in report.cross_edges[:10]:
-            lines.append(
-                f"  {e.domain_a:<9} ── {e.count:>4} nutrients ──> {e.domain_b}"
-            )
+            lines.append(f"  {e.domain_a:<9} ── {e.count:>4} nutrients ──> {e.domain_b}")
         if len(report.cross_edges) > 10:
             lines.append(f"  … and {len(report.cross_edges) - 10} more edges")
     lines.append("")
 
     # Coverage gaps
-    lines.append(
-        f"  ─── Coverage gaps (< {gap_threshold} active nutrients) ─────────────"
-    )
+    lines.append(f"  ─── Coverage gaps (< {gap_threshold} active nutrients) ─────────────")
     if not report.coverage_gaps:
         lines.append("  (every domain is adequately covered)")
     else:
-        lines.append("  photosynthesis should target: " +
-                     ", ".join(report.coverage_gaps))
+        lines.append("  photosynthesis should target: " + ", ".join(report.coverage_gaps))
     lines.append("═" * 62)
     return "\n".join(lines)

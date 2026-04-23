@@ -148,7 +148,7 @@ def _orm_column_type(type_annotation: str) -> str:
     # Peel a single level of generic wrapping, e.g. `Optional[int]` → `int`.
     for prefix in ("Optional[", "list[", "List[", "Mapped["):
         if annot.startswith(prefix) and annot.endswith("]"):
-            annot = annot[len(prefix):-1].strip()
+            annot = annot[len(prefix) : -1].strip()
             break
     annot_lower = annot.lower()
     # Long-text heuristic: any "text" or "content" style ends up as Text.
@@ -220,6 +220,7 @@ def _file_is_db_module(skeleton: SkeletonArtifact, file_path: str) -> bool:
 # Skeleton Code Generators (deterministic — no LLM needed for most skeletons)
 # ---------------------------------------------------------------------------
 
+
 def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> str | None:
     """
     Generate Pydantic model code for all models in chains that belong to this file.
@@ -247,12 +248,14 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
         lines.append("from __future__ import annotations")
         lines.append("")
 
-    lines.extend([
-        "from typing import Optional",
-        "",
-        "from pydantic import BaseModel, ConfigDict, Field",
-        "",
-    ])
+    lines.extend(
+        [
+            "from typing import Optional",
+            "",
+            "from pydantic import BaseModel, ConfigDict, Field",
+            "",
+        ]
+    )
 
     # Collect base classes that are in the same file
     local_names = {m.name for m in models_in_file}
@@ -267,9 +270,7 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
             external_bases.add(model.base_class)
 
     if external_bases:
-        resolved, unresolved = _resolve_external_bases(
-            skeleton, file_path, external_bases
-        )
+        resolved, unresolved = _resolve_external_bases(skeleton, file_path, external_bases)
         for module_path, names in sorted(resolved.items()):
             names_str = ", ".join(sorted(names))
             lines.append(f"from {module_path} import {names_str}")
@@ -294,9 +295,7 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
     # Track whether any ORM (non-pydantic) class appears in this file so
     # we can decide whether to emit SQLAlchemy Column imports at the top.
     any_orm_class = any(
-        m.base_class != "BaseModel"
-        and m.base_class not in local_names
-        for m in models_in_file
+        m.base_class != "BaseModel" and m.base_class not in local_names for m in models_in_file
     )
     if any_orm_class:
         lines.append("from sqlalchemy import Column, DateTime, Integer, String, Text")
@@ -317,15 +316,12 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
         # `pass` and deferring to the builder doesn't work — the builder's
         # contract is "don't touch skeleton files", so an empty ORM class
         # ships to pytest and hits `does not have __tablename__`.
-        base_is_pydantic = (
-            model.base_class == "BaseModel"
-            or model.base_class in local_names
-        )
+        base_is_pydantic = model.base_class == "BaseModel" or model.base_class in local_names
 
         # Class definition
         lines.append("")
         if model.docstring:
-            lines.append(f'class {model.name}({model.base_class}):')
+            lines.append(f"class {model.name}({model.base_class}):")
             lines.append(f'    """{model.docstring}"""')
         else:
             lines.append(f"class {model.name}({model.base_class}):")
@@ -366,9 +362,7 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
                         f'    {f.name}: {f.type_annotation} = Field(default={default}, description="{desc}")'
                     )
                 else:
-                    lines.append(
-                        f'    {f.name}: {f.type_annotation} = Field(description="{desc}")'
-                    )
+                    lines.append(f'    {f.name}: {f.type_annotation} = Field(description="{desc}")')
             else:
                 if default is not None:
                     lines.append(f"    {f.name}: {f.type_annotation} = {default}")
@@ -480,7 +474,9 @@ def _generate_protocol_code(skeleton: SkeletonArtifact, file_path: str) -> str |
 
         for method in proto.methods:
             prefix = "async def" if method.is_async else "def"
-            lines.append(f"    {prefix} {method.name}({method.params}) -> {method.return_type}: ...")
+            lines.append(
+                f"    {prefix} {method.name}({method.params}) -> {method.return_type}: ..."
+            )
 
         lines.append("")
 
@@ -588,9 +584,7 @@ def _strip_module_header(source: str) -> str:
             and isinstance(node.value, ast.Constant)
             and isinstance(node.value.value, str)
         )
-        is_future = (
-            isinstance(node, ast.ImportFrom) and node.module == "__future__"
-        )
+        is_future = isinstance(node, ast.ImportFrom) and node.module == "__future__"
         if is_docstring or is_future:
             drop_until = max(drop_until, node.end_lineno or 0)
         else:
@@ -684,6 +678,7 @@ def _generate_exception_code(skeleton: SkeletonArtifact, file_path: str) -> str 
 # Main generation orchestrator
 # ---------------------------------------------------------------------------
 
+
 def generate_skeleton_file(
     skeleton: SkeletonArtifact,
     file_path: str,
@@ -718,7 +713,7 @@ def generate_skeleton_file(
         _generate_model_chain_code,
         _generate_abc_code,
         _generate_protocol_code,
-        _generate_database_code,   # Must come before config (database.py is often tagged CONFIG)
+        _generate_database_code,  # Must come before config (database.py is often tagged CONFIG)
         _generate_config_code,
         _generate_exception_code,
     ]
@@ -770,5 +765,7 @@ def generate_all_skeletons(
                 f"This file will need LLM generation in Pass 2."
             )
 
-    logger.info(f"Pass 1 complete: {len(results)}/{len(skeleton_files)} files generated deterministically")
+    logger.info(
+        f"Pass 1 complete: {len(results)}/{len(skeleton_files)} files generated deterministically"
+    )
     return results

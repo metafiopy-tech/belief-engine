@@ -85,14 +85,10 @@ def tracker(tmp_path: Path) -> CostTracker:
 
 @pytest.fixture()
 def ks_state(tmp_path: Path) -> KillSwitchState:
-    return KillSwitchState(
-        control_db=tmp_path / "control.db", kill_file=tmp_path / "KILL"
-    )
+    return KillSwitchState(control_db=tmp_path / "control.db", kill_file=tmp_path / "KILL")
 
 
-def test_watchdog_ignores_all_zero_series(
-    tracker: CostTracker, ks_state: KillSwitchState
-) -> None:
+def test_watchdog_ignores_all_zero_series(tracker: CostTracker, ks_state: KillSwitchState) -> None:
     # No calls -> series is all zeros; watchdog must not flip
     result = run_watchdog(tracker, ks_state)
     assert not result.flipped_to_paused
@@ -115,7 +111,10 @@ def test_watchdog_flips_to_paused_on_mad_spike(
                 (
                     now - (48 - i) * 3600,
                     "claude-haiku-4-5-20251001",
-                    0, 0, 0, 0,
+                    0,
+                    0,
+                    0,
+                    0,
                     0.02,
                     "background",
                 ),
@@ -127,7 +126,10 @@ def test_watchdog_flips_to_paused_on_mad_spike(
             (
                 now - 30,
                 "claude-haiku-4-5-20251001",
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 5.00,
                 "spike",
             ),

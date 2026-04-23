@@ -56,7 +56,7 @@ class LocalBenchmarkReport:
     soil_after: int = 0
     soil_deposited: int = 0
     cost_usd: float = 0.0
-    escalations: int = 0          # Session 17 probe-gated escalations
+    escalations: int = 0  # Session 17 probe-gated escalations
     started_at: float = 0.0
     finished_at: float = 0.0
     tiers: list[int] = field(default_factory=list)
@@ -78,9 +78,7 @@ class LocalBenchmarkReport:
                 encoding="utf-8",
             )
         except OSError as exc:
-            logger.warning(
-                f"local_benchmark: write_json({out}) failed: {exc}"
-            )
+            logger.warning(f"local_benchmark: write_json({out}) failed: {exc}")
         return out
 
 
@@ -105,24 +103,27 @@ def _coerce_challenges(raw: Any) -> list[dict]:
     out: list[dict] = []
     for item in raw:
         if isinstance(item, dict):
-            out.append({
-                "id": item.get("id") or item.get("challenge_id") or "",
-                "passed": bool(item.get("passed", False)),
-                "score": float(item.get("score", 0.0) or 0.0),
-                "cost_usd": float(item.get("cost_usd", 0.0) or 0.0),
-                "time_s": float(item.get("time_s",
-                                          item.get("duration_s", 0.0)) or 0.0),
-                "error": item.get("error") or "",
-            })
+            out.append(
+                {
+                    "id": item.get("id") or item.get("challenge_id") or "",
+                    "passed": bool(item.get("passed", False)),
+                    "score": float(item.get("score", 0.0) or 0.0),
+                    "cost_usd": float(item.get("cost_usd", 0.0) or 0.0),
+                    "time_s": float(item.get("time_s", item.get("duration_s", 0.0)) or 0.0),
+                    "error": item.get("error") or "",
+                }
+            )
         else:
-            out.append({
-                "id": getattr(item, "challenge_id", ""),
-                "passed": bool(getattr(item, "passed", False)),
-                "score": float(getattr(item, "score", 0.0) or 0.0),
-                "cost_usd": float(getattr(item, "cost_usd", 0.0) or 0.0),
-                "time_s": float(getattr(item, "time_s", 0.0) or 0.0),
-                "error": getattr(item, "error", "") or "",
-            })
+            out.append(
+                {
+                    "id": getattr(item, "challenge_id", ""),
+                    "passed": bool(getattr(item, "passed", False)),
+                    "score": float(getattr(item, "score", 0.0) or 0.0),
+                    "cost_usd": float(getattr(item, "cost_usd", 0.0) or 0.0),
+                    "time_s": float(getattr(item, "time_s", 0.0) or 0.0),
+                    "error": getattr(item, "error", "") or "",
+                }
+            )
     return out
 
 
@@ -147,15 +148,14 @@ def build_report(
     Works with whatever subset of fields are present.
     """
     challenges = _coerce_challenges(summary.get("challenges"))
-    total = int(summary.get("total")
-                or summary.get("total_challenges")
-                or len(challenges)
-                or 0)
+    total = int(summary.get("total") or summary.get("total_challenges") or len(challenges) or 0)
     passed_ids = list(summary.get("passing_ids") or [])
-    passed = int(summary.get("passed")
-                 or summary.get("passed_challenges")
-                 or len(passed_ids)
-                 or sum(1 for c in challenges if c["passed"]))
+    passed = int(
+        summary.get("passed")
+        or summary.get("passed_challenges")
+        or len(passed_ids)
+        or sum(1 for c in challenges if c["passed"])
+    )
 
     if summary.get("pass_rate") is not None:
         pass_rate = float(summary["pass_rate"])
@@ -167,7 +167,8 @@ def build_report(
     else:
         weighted_score = (
             sum(c.get("score", 0.0) for c in challenges) / max(1, total)
-            if challenges else pass_rate
+            if challenges
+            else pass_rate
         )
 
     return LocalBenchmarkReport(
@@ -180,8 +181,7 @@ def build_report(
         soil_before=int(soil_before),
         soil_after=int(soil_after),
         soil_deposited=max(0, int(soil_after) - int(soil_before)),
-        cost_usd=round(float(summary.get("cost", summary.get("cost_usd", 0.0))
-                              or 0.0), 4),
+        cost_usd=round(float(summary.get("cost", summary.get("cost_usd", 0.0)) or 0.0), 4),
         escalations=int(escalations),
         started_at=float(started_at),
         finished_at=float(finished_at),
@@ -274,7 +274,8 @@ class ReportDelta:
 
 
 def compare_reports(
-    left: LocalBenchmarkReport, right: LocalBenchmarkReport,
+    left: LocalBenchmarkReport,
+    right: LocalBenchmarkReport,
 ) -> ReportDelta:
     """Subtract ``left`` from ``right`` — field-by-field delta."""
     diff: dict[str, dict] = {}
@@ -295,7 +296,8 @@ def compare_reports(
         right_mode=right.mode,
         pass_rate_delta=round(right.pass_rate - left.pass_rate, 4),
         weighted_score_delta=round(
-            right.weighted_score - left.weighted_score, 4,
+            right.weighted_score - left.weighted_score,
+            4,
         ),
         build_time_delta_s=round(right.build_time_s - left.build_time_s, 3),
         cost_delta_usd=round(right.cost_usd - left.cost_usd, 4),
@@ -320,9 +322,7 @@ def format_comparison(
         f"  Δ soil count     : {delta.soil_delta:+d}",
     ]
     if delta.challenges_diff:
-        lines.append(
-            f"  Challenges that flipped ({len(delta.challenges_diff)}):"
-        )
+        lines.append(f"  Challenges that flipped ({len(delta.challenges_diff)}):")
         for cid, rec in list(delta.challenges_diff.items())[:10]:
             lp = "✓" if rec["left_passed"] else "✗"
             rp = "✓" if rec["right_passed"] else "✗"

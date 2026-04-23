@@ -58,6 +58,7 @@ class PolarityState(BaseModel):
 
     Source: engine_loop.py CrossTalkManager + frequency_layer.py
     """
+
     latios_coherence: float = 0.5
     latias_coherence: float = 0.5
     world_state: WorldState = WorldState.DORMANT
@@ -71,16 +72,14 @@ class PolarityState(BaseModel):
     def update_latios(self, confidence: float) -> None:
         alpha = 0.3
         self.latios_coherence = round(
-            alpha * max(0.0, min(1.0, confidence))
-            + (1 - alpha) * self.latios_coherence, 4
+            alpha * max(0.0, min(1.0, confidence)) + (1 - alpha) * self.latios_coherence, 4
         )
         self._recalculate()
 
     def update_latias(self, intensity: float) -> None:
         alpha = 0.3
         self.latias_coherence = round(
-            alpha * max(0.0, min(1.0, intensity))
-            + (1 - alpha) * self.latias_coherence, 4
+            alpha * max(0.0, min(1.0, intensity)) + (1 - alpha) * self.latias_coherence, 4
         )
         self._recalculate()
 
@@ -138,8 +137,8 @@ class UnifiedState(BaseModel):
     similar_builds_context: str = ""  # Injected from CLI before pipeline runs
 
     # ── Metabolization (nutrient memory) ─────────────────────
-    nutrient_profile: Optional[dict] = None      # Retrieved nutrients (from recomposer)
-    nutrient_context: str = ""                    # Formatted context block for architect
+    nutrient_profile: Optional[dict] = None  # Retrieved nutrients (from recomposer)
+    nutrient_context: str = ""  # Formatted context block for architect
     extracted_nutrients: list[dict] = Field(default_factory=list)  # Decomposer output
 
     # ── Polarity (Latios/Latias) ─────────────────────────────

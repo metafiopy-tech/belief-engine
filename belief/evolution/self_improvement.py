@@ -38,31 +38,34 @@ logger = logging.getLogger(__name__)
 # Improvement Proposal
 # ---------------------------------------------------------------------------
 
+
 class ImprovementType(str, Enum):
-    PROMPT = "prompt"              # Modify an agent prompt
-    PARAMETER = "parameter"        # Change a config parameter
-    PIPELINE = "pipeline"          # Modify pipeline routing
-    NEW_TOOL = "new_tool"          # Add a new utility/tool
-    REFACTOR = "refactor"          # Restructure existing code
+    PROMPT = "prompt"  # Modify an agent prompt
+    PARAMETER = "parameter"  # Change a config parameter
+    PIPELINE = "pipeline"  # Modify pipeline routing
+    NEW_TOOL = "new_tool"  # Add a new utility/tool
+    REFACTOR = "refactor"  # Restructure existing code
 
 
 @dataclass
 class ImprovementProposal:
     """A proposed improvement from SEED."""
+
     title: str
     description: str
     improvement_type: ImprovementType
-    target_file: str              # File to modify
-    current_code: str             # Current content
-    proposed_code: str            # Proposed replacement
-    expected_benefit: str         # What this should improve
-    risk_level: str = "low"       # low, medium, high
+    target_file: str  # File to modify
+    current_code: str  # Current content
+    proposed_code: str  # Proposed replacement
+    expected_benefit: str  # What this should improve
+    risk_level: str = "low"  # low, medium, high
     metrics_before: dict = field(default_factory=dict)
 
 
 @dataclass
 class MentorVerdict:
     """Mentor's evaluation of a proposal."""
+
     approved: bool
     reasoning: str
     conditions: list[str] = field(default_factory=list)  # Must-haves before applying
@@ -72,6 +75,7 @@ class MentorVerdict:
 @dataclass
 class PatchResult:
     """Result of applying a patch."""
+
     success: bool
     file_path: str
     backup_path: Optional[str] = None
@@ -83,6 +87,7 @@ class PatchResult:
 # ---------------------------------------------------------------------------
 # SEED — proposes improvements
 # ---------------------------------------------------------------------------
+
 
 class SEED:
     """
@@ -142,9 +147,7 @@ class SEED:
         recent = self.build_history[-5:]
 
         # Pattern: high correction rounds → prompts need work
-        avg_corrections = sum(
-            b.get("correction_rounds", 0) for b in recent
-        ) / len(recent)
+        avg_corrections = sum(b.get("correction_rounds", 0) for b in recent) / len(recent)
 
         if avg_corrections > 1.5:
             return ImprovementProposal(
@@ -163,9 +166,7 @@ class SEED:
             )
 
         # Pattern: high failure rate → architecture issues
-        avg_failures = sum(
-            len(b.get("failures", [])) for b in recent
-        ) / len(recent)
+        avg_failures = sum(len(b.get("failures", [])) for b in recent) / len(recent)
 
         if avg_failures > 0.5:
             return ImprovementProposal(
@@ -184,9 +185,7 @@ class SEED:
             )
 
         # Pattern: high token usage → compression not aggressive enough
-        avg_tokens = sum(
-            b.get("avg_tokens_per_file", 0) for b in recent
-        ) / len(recent)
+        avg_tokens = sum(b.get("avg_tokens_per_file", 0) for b in recent) / len(recent)
 
         if avg_tokens > 1500:
             return ImprovementProposal(
@@ -243,6 +242,7 @@ class SEED:
 # ---------------------------------------------------------------------------
 # Mentor — evaluates proposals
 # ---------------------------------------------------------------------------
+
 
 class Mentor:
     """
@@ -313,6 +313,7 @@ class Mentor:
 # ---------------------------------------------------------------------------
 # SelfPatch — applies approved patches
 # ---------------------------------------------------------------------------
+
 
 class SelfPatch:
     """
@@ -438,6 +439,7 @@ class SelfPatch:
 # Full loop
 # ---------------------------------------------------------------------------
 
+
 def run_improvement_loop(
     seed: SEED,
     mentor: Mentor,
@@ -463,7 +465,9 @@ def run_improvement_loop(
     logger.info(f"SEED proposal: {proposal.title}")
 
     verdict = mentor.evaluate(proposal, llm_fn=llm_fn)
-    logger.info(f"Mentor verdict: {'APPROVED' if verdict.approved else 'REJECTED'} — {verdict.reasoning}")
+    logger.info(
+        f"Mentor verdict: {'APPROVED' if verdict.approved else 'REJECTED'} — {verdict.reasoning}"
+    )
 
     if not verdict.approved:
         return PatchResult(
@@ -485,11 +489,11 @@ def run_improvement_loop(
 class FailureCluster:
     """A cluster of similar failures identified from build traces."""
 
-    error_type: str                             # Normalized error category
-    count: int                                  # How many failures
+    error_type: str  # Normalized error category
+    count: int  # How many failures
     example_errors: list[str] = field(default_factory=list)
     failure_traces: list[dict] = field(default_factory=list)
-    suggested_tool_name: str = ""               # e.g. "fastapi_route_validator"
+    suggested_tool_name: str = ""  # e.g. "fastapi_route_validator"
     suggested_tool_description: str = ""
     input_description: str = ""
     output_description: str = ""
@@ -543,19 +547,20 @@ def cluster_failures(failures: list[dict]) -> list[FailureCluster]:
         tool_name = _suggest_tool_name(error_type)
         tool_desc = _suggest_tool_description(error_type, traces)
 
-        clusters.append(FailureCluster(
-            error_type=error_type,
-            count=len(traces),
-            example_errors=[
-                t.get("content", t.get("description", ""))[:200]
-                for t in traces[:5]
-            ],
-            failure_traces=traces,
-            suggested_tool_name=tool_name,
-            suggested_tool_description=tool_desc,
-            input_description="Python source code as a string",
-            output_description="List of validation error strings",
-        ))
+        clusters.append(
+            FailureCluster(
+                error_type=error_type,
+                count=len(traces),
+                example_errors=[
+                    t.get("content", t.get("description", ""))[:200] for t in traces[:5]
+                ],
+                failure_traces=traces,
+                suggested_tool_name=tool_name,
+                suggested_tool_description=tool_desc,
+                input_description="Python source code as a string",
+                output_description="List of validation error strings",
+            )
+        )
 
     # Sort by count descending
     clusters.sort(key=lambda c: c.count, reverse=True)
@@ -609,9 +614,7 @@ def formulate_tool_goal(cluster: FailureCluster) -> str:
         example_errors = [e for e in cluster.example_errors[:3] if e]
 
     error_examples = (
-        "\n  ".join(example_errors)
-        if example_errors
-        else "No specific examples available"
+        "\n  ".join(example_errors) if example_errors else "No specific examples available"
     )
 
     # 3. Pull any referenced files/modules for extra context (optional)
@@ -621,11 +624,7 @@ def formulate_tool_goal(cluster: FailureCluster) -> str:
             val = trace.get(key)
             if isinstance(val, str) and val and val not in files:
                 files.append(val)
-    files_line = (
-        f"Files/modules where this recurs: {', '.join(files[:5])}\n\n"
-        if files
-        else ""
-    )
+    files_line = f"Files/modules where this recurs: {', '.join(files[:5])}\n\n" if files else ""
 
     goal = (
         f"Build a Python module with a single main function that addresses "
@@ -662,10 +661,7 @@ def evaluate_tool_against_failures(
     if not failure_traces:
         return 0.0
 
-    code_samples = [
-        trace.get("code_sample", trace.get("content", ""))
-        for trace in failure_traces
-    ]
+    code_samples = [trace.get("code_sample", trace.get("content", "")) for trace in failure_traces]
     code_samples = [c for c in code_samples if c and len(c) >= 10]
     if not code_samples:
         return 0.0
@@ -692,9 +688,7 @@ def evaluate_tool_against_failures(
                 pass
         print(json.dumps({"caught": caught, "tested": len(samples)}))
     """)
-    harness = harness_template.replace(
-        "TOOL_CODE_PLACEHOLDER", tool_code
-    ).replace(
+    harness = harness_template.replace("TOOL_CODE_PLACEHOLDER", tool_code).replace(
         "SAMPLES_PLACEHOLDER", json.dumps(code_samples)
     )
 
@@ -774,12 +768,15 @@ async def execute_new_tool_proposal(
     # 3. Run the engine's own pipeline to build the tool
     try:
         from belief.graph import build_pipeline as build_graph
+
         graph = build_graph()
-        result = await graph.ainvoke({
-            "user_goal": tool_goal,
-            "max_iterations": 2,
-            "max_cost_usd": 2.0,
-        })
+        result = await graph.ainvoke(
+            {
+                "user_goal": tool_goal,
+                "max_iterations": 2,
+                "max_cost_usd": 2.0,
+            }
+        )
     except Exception as e:
         return PatchResult(
             success=False,
@@ -885,7 +882,7 @@ def _normalize_error(error_text: str) -> str:
         return "database_error"
 
     # Strip specifics and use first meaningful word
-    words = re.sub(r'[^a-z_\s]', '', text).split()
+    words = re.sub(r"[^a-z_\s]", "", text).split()
     if len(words) >= 2:
         return f"{words[0]}_{words[1]}"
     return "unknown"

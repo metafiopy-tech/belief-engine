@@ -35,10 +35,10 @@ class InvariantTemplate:
     """A pre-defined invariant pattern to check against build traces."""
 
     name: str
-    condition: Callable[[dict], bool]   # When to check
-    predicate: Callable[[dict], bool]   # What should hold
+    condition: Callable[[dict], bool]  # When to check
+    predicate: Callable[[dict], bool]  # What should hold
     description: str
-    implementation_kind: str            # "ast" | "regex" | "assertion"
+    implementation_kind: str  # "ast" | "regex" | "assertion"
 
 
 @dataclass
@@ -48,11 +48,11 @@ class CandidateInvariant:
     name: str
     description: str
     implementation_kind: str
-    support: int                        # Traces where condition AND predicate hold
-    violations: int                     # Traces where condition holds but predicate fails
-    precision: float                    # support / (support + violations)
+    support: int  # Traces where condition AND predicate hold
+    violations: int  # Traces where condition holds but predicate fails
+    precision: float  # support / (support + violations)
     evidence_trace_ids: list[str] = field(default_factory=list)
-    proposer: str = "template"          # "template" | "claude"
+    proposer: str = "template"  # "template" | "claude"
     implementation_code: Optional[str] = None
 
     @property
@@ -211,16 +211,18 @@ def sweep_templates(traces: list[dict]) -> list[CandidateInvariant]:
         precision = support / total
 
         if support >= 5 and precision >= 0.90:
-            candidates.append(CandidateInvariant(
-                name=template.name,
-                description=template.description,
-                implementation_kind=template.implementation_kind,
-                support=support,
-                violations=violations,
-                precision=precision,
-                evidence_trace_ids=evidence_ids[:20],
-                proposer="template",
-            ))
+            candidates.append(
+                CandidateInvariant(
+                    name=template.name,
+                    description=template.description,
+                    implementation_kind=template.implementation_kind,
+                    support=support,
+                    violations=violations,
+                    precision=precision,
+                    evidence_trace_ids=evidence_ids[:20],
+                    proposer="template",
+                )
+            )
 
     logger.info(
         f"Template sweep: {len(candidates)} candidates from "
@@ -287,11 +289,14 @@ async def propose_invariants(
     recent = traces[-20:]
     slim_traces = []
     for t in recent:
-        slim_traces.append({
-            k: v for k, v in t.items()
-            if k not in ("code_files", "implementation_code")
-            and not isinstance(v, (bytes, bytearray))
-        })
+        slim_traces.append(
+            {
+                k: v
+                for k, v in t.items()
+                if k not in ("code_files", "implementation_code")
+                and not isinstance(v, (bytes, bytearray))
+            }
+        )
 
     cov_descriptions = [
         {"name": c.get("name", ""), "description": c.get("description", "")}
@@ -363,16 +368,18 @@ def _parse_proposals(response: str, traces: list[dict]) -> list[CandidateInvaria
         total = support + violations
         precision = support / total if total > 0 else 0.0
 
-        candidates.append(CandidateInvariant(
-            name=name,
-            description=item.get("description", ""),
-            implementation_kind=kind,
-            support=support,
-            violations=violations,
-            precision=precision,
-            evidence_trace_ids=supporting[:20],
-            proposer="claude",
-        ))
+        candidates.append(
+            CandidateInvariant(
+                name=name,
+                description=item.get("description", ""),
+                implementation_kind=kind,
+                support=support,
+                violations=violations,
+                precision=precision,
+                evidence_trace_ids=supporting[:20],
+                proposer="claude",
+            )
+        )
 
     return candidates
 
@@ -434,9 +441,7 @@ def filter_candidates(
 
         surviving.append(candidate)
 
-    logger.info(
-        f"Houdini filter: {len(surviving)}/{len(candidates)} candidates survived"
-    )
+    logger.info(f"Houdini filter: {len(surviving)}/{len(candidates)} candidates survived")
     return surviving
 
 
@@ -463,6 +468,7 @@ def promote_to_covenant(candidate: CandidateInvariant, soil) -> str:
 
     # Validate the generated code is valid Python
     import ast as ast_mod
+
     try:
         ast_mod.parse(code)
     except SyntaxError as e:

@@ -23,6 +23,7 @@ import tempfile
 import time
 import venv
 from pathlib import Path
+from typing import Any
 
 from belief.agents.base import BaseAgent
 from belief.config.models import ModelRole
@@ -37,32 +38,32 @@ INSTALL_TIMEOUT = 120
 # Patterns that indicate a long-running server process
 _SERVER_PATTERNS = [
     r"(?:app|server|mcp|uvicorn)\.run\s*\(",  # app.run(), server.run(), mcp.run(), uvicorn.run()
-    r"\.serve_forever\s*\(",         # socketserver
-    r"uvicorn\.run\s*\(",            # uvicorn
-    r"\.start_serving\s*\(",         # asyncio server
-    r"asyncio\.run\s*\(\s*main\b",   # async server main loops
-    r"serve\s*\(\s*\)",              # grpc, other serve() patterns
+    r"\.serve_forever\s*\(",  # socketserver
+    r"uvicorn\.run\s*\(",  # uvicorn
+    r"\.start_serving\s*\(",  # asyncio server
+    r"asyncio\.run\s*\(\s*main\b",  # async server main loops
+    r"serve\s*\(\s*\)",  # grpc, other serve() patterns
 ]
 
 # Patterns that indicate a server/API app even without a .run() call in __main__
 # These are checked against the FULL file, not just the tail
 _APP_PATTERNS = [
-    r"app\s*=\s*FastAPI\s*\(",       # FastAPI app creation
-    r"FastAPI\s*\(",                  # FastAPI() anywhere
-    r"app\s*=\s*Flask\s*\(",         # Flask app creation
+    r"app\s*=\s*FastAPI\s*\(",  # FastAPI app creation
+    r"FastAPI\s*\(",  # FastAPI() anywhere
+    r"app\s*=\s*Flask\s*\(",  # Flask app creation
     r"@app\.(get|post|put|delete|patch)\s*\(",  # Route decorators
-    r"FastMCP\s*\(",                  # MCP server creation
-    r"mcp\s*=\s*FastMCP",            # MCP server assignment
+    r"FastMCP\s*\(",  # MCP server creation
+    r"mcp\s*=\s*FastMCP",  # MCP server assignment
 ]
 
 # Patterns that indicate a Click CLI application
 _CLI_PATTERNS = [
-    r"@click\.(command|group)\s*\(",          # @click.command() or @click.group()
-    r"@\w+\.(command|group)\s*\(",            # @cli.command() or @app.group()
-    r"click\.group\s*\(",                     # click.group() call
-    r"click\.command\s*\(",                   # click.command() call
-    r"from\s+click\s+import",                 # Click import
-    r"import\s+click",                        # Click import
+    r"@click\.(command|group)\s*\(",  # @click.command() or @click.group()
+    r"@\w+\.(command|group)\s*\(",  # @cli.command() or @app.group()
+    r"click\.group\s*\(",  # click.group() call
+    r"click\.command\s*\(",  # click.command() call
+    r"from\s+click\s+import",  # Click import
+    r"import\s+click",  # Click import
 ]
 
 
@@ -83,7 +84,7 @@ def _is_server_code(code: str) -> bool:
     # Then check the __main__ block / tail for run patterns
     main_match = re.search(r'if\s+__name__\s*==\s*["\']__main__["\']\s*:', code)
     if main_match:
-        tail = code[main_match.start():]
+        tail = code[main_match.start() :]
     else:
         lines = code.strip().splitlines()
         tail = "\n".join(lines[-30:])
@@ -124,9 +125,17 @@ def _detect_entry_points(code_files: dict[str, str], manifest) -> list[str]:
     # 2. Server/app/main files in package directories (Python + TypeScript)
     for fname in sorted(code_files.keys()):
         base = fname.split("/")[-1] if "/" in fname else fname
-        if base in ("server.py", "app.py", "main.py",
-                     "index.ts", "server.ts", "app.ts", "main.ts",
-                     "index.tsx", "main.go"):
+        if base in (
+            "server.py",
+            "app.py",
+            "main.py",
+            "index.ts",
+            "server.ts",
+            "app.ts",
+            "main.ts",
+            "index.tsx",
+            "main.go",
+        ):
             _add(fname)
 
     # 3. Files with FastAPI/Flask/MCP/Express app creation
@@ -139,9 +148,12 @@ def _detect_entry_points(code_files: dict[str, str], manifest) -> list[str]:
         # TypeScript/JS servers (Express, Next.js, etc.)
         if fname.endswith((".ts", ".tsx", ".js", ".jsx")):
             ts_server_patterns = [
-                r"express\s*\(\s*\)", r"createServer\s*\(",
-                r"app\.listen\s*\(", r"Hono\s*\(\s*\)",
-                r"new\s+Koa\s*\(", r"Fastify\s*\(",
+                r"express\s*\(\s*\)",
+                r"createServer\s*\(",
+                r"app\.listen\s*\(",
+                r"Hono\s*\(\s*\)",
+                r"new\s+Koa\s*\(",
+                r"Fastify\s*\(",
             ]
             for pat in ts_server_patterns:
                 if re.search(pat, content):
@@ -150,9 +162,13 @@ def _detect_entry_points(code_files: dict[str, str], manifest) -> list[str]:
 
     # 4. Fallback
     if not entry_points:
-        candidates = [f for f in code_files
-                       if f.endswith((".py", ".ts", ".tsx", ".js", ".go"))
-                       and "/test" not in f and not f.startswith("test")]
+        candidates = [
+            f
+            for f in code_files
+            if f.endswith((".py", ".ts", ".tsx", ".js", ".go"))
+            and "/test" not in f
+            and not f.startswith("test")
+        ]
         if candidates:
             _add(candidates[0])
 
@@ -168,7 +184,8 @@ class ExecutorAgent(BaseAgent):
 
         if not state.code_files:
             state.execution_result = ExecutionResult(
-                exit_code=-1, success=False,
+                exit_code=-1,
+                success=False,
                 error_summary="No code files to execute",
             )
             state.phase = Phase.GAP_ANALYSIS
@@ -181,21 +198,16 @@ class ExecutorAgent(BaseAgent):
 
         if not entry_points:
             state.execution_result = ExecutionResult(
-                exit_code=-1, success=False,
+                exit_code=-1,
+                success=False,
                 error_summary="No entry points found in code_files",
             )
             state.phase = Phase.GAP_ANALYSIS
             return state
 
         # Check if ANY entry point is a server or a Click CLI
-        is_server = any(
-            _is_server_code(state.code_files.get(ep, ""))
-            for ep in entry_points
-        )
-        is_cli = any(
-            _is_click_cli(state.code_files.get(ep, ""))
-            for ep in entry_points
-        )
+        is_server = any(_is_server_code(state.code_files.get(ep, "")) for ep in entry_points)
+        is_cli = any(_is_click_cli(state.code_files.get(ep, "")) for ep in entry_points)
 
         # Both servers and CLIs use import verification instead of script execution.
         # Servers block forever if run as scripts. CLIs may work as scripts but
@@ -211,8 +223,11 @@ class ExecutorAgent(BaseAgent):
             )
 
         result = await asyncio.to_thread(
-            self._execute_in_sandbox, state.code_files, state.test_files,
-            entry_points, use_import_verify,
+            self._execute_in_sandbox,
+            state.code_files,
+            state.test_files,
+            entry_points,
+            use_import_verify,
         )
         state.execution_result = result
 
@@ -225,8 +240,11 @@ class ExecutorAgent(BaseAgent):
         return state
 
     def _execute_in_sandbox(
-        self, code_files: dict[str, str], test_files: dict[str, str],
-        entry_points: list[str], use_import_verify: bool = False,
+        self,
+        code_files: dict[str, str],
+        test_files: dict[str, str],
+        entry_points: list[str],
+        use_import_verify: bool = False,
     ) -> ExecutionResult:
         """Write files to a temp dir and verify the project works.
 
@@ -294,12 +312,15 @@ class ExecutorAgent(BaseAgent):
             if all_test_files:
                 try:
                     from belief.agents.tester import _filter_and_cap_tests
+
                     pre_count = sum(
                         c.count("\ndef test_") + c.count("\n    def test_")
                         for c in all_test_files.values()
                     )
                     all_test_files = _filter_and_cap_tests(
-                        all_test_files, code_files=code_files, max_total=14,
+                        all_test_files,
+                        code_files=code_files,
+                        max_total=14,
                     )
                     post_count = sum(
                         c.count("\ndef test_") + c.count("\n    def test_")
@@ -316,23 +337,18 @@ class ExecutorAgent(BaseAgent):
                     logger.debug(f"Executor: test cap skipped: {e}")
 
             if all_test_files:
-                pytest_result = self._run_pytest_verification(
-                    system_python, tmp, install_result
-                )
+                pytest_result = self._run_pytest_verification(system_python, tmp, install_result)
                 if pytest_result is not None:
                     # ── Smoke test: verify code works WITHOUT pytest ──────
                     # pytest manipulates sys.path (prepend mode adds dirs
                     # that conftest.py lives in). Code can pass pytest but
                     # fail when run normally. This smoke test catches that.
                     if pytest_result.success and entry_points:
-                        smoke = self._smoke_test(
-                            system_python, tmp, entry_points, code_files
-                        )
+                        smoke = self._smoke_test(system_python, tmp, entry_points, code_files)
                         if smoke:
                             pytest_result.stdout = (
-                                (pytest_result.stdout or "") +
-                                f"\nSMOKE_TEST: {smoke}"
-                            )
+                                pytest_result.stdout or ""
+                            ) + f"\nSMOKE_TEST: {smoke}"
                             # Check if smoke test found import failures
                             if "FAIL:" in smoke:
                                 # Tests pass but code has structural issues
@@ -347,7 +363,9 @@ class ExecutorAgent(BaseAgent):
                                     f"outside pytest: {', '.join(fail_modules[:3])}. "
                                     f"Check __init__.py files and import paths."
                                 )
-                                logger.info(f"Executor: smoke test found {len(fail_modules)} import failure(s)")
+                                logger.info(
+                                    f"Executor: smoke test found {len(fail_modules)} import failure(s)"
+                                )
                             else:
                                 logger.info(f"Executor: smoke test passed — {smoke}")
                     return pytest_result
@@ -388,8 +406,7 @@ class ExecutorAgent(BaseAgent):
         for dirpath, dirnames, filenames in os.walk(tmp):
             # Skip hidden dirs, __pycache__, .venv
             dirnames[:] = [
-                d for d in dirnames
-                if not d.startswith(".") and d != "__pycache__" and d != ".venv"
+                d for d in dirnames if not d.startswith(".") and d != "__pycache__" and d != ".venv"
             ]
             # If this directory (or any child) has .py files, ensure __init__.py
             has_py = any(f.endswith(".py") for f in filenames)
@@ -404,9 +421,7 @@ class ExecutorAgent(BaseAgent):
             logger.info(f"Executor: auto-created {created} __init__.py file(s)")
         return created
 
-    def _static_import_check(
-        self, code_files: dict[str, str], tmp: Path
-    ) -> list[str]:
+    def _static_import_check(self, code_files: dict[str, str], tmp: Path) -> list[str]:
         """Static analysis of imports — detect issues before execution.
 
         Checks:
@@ -449,7 +464,7 @@ class ExecutorAgent(BaseAgent):
                         parts = current_pkg.split(".")
                         up = node.level - 1
                         if up < len(parts):
-                            base = ".".join(parts[:len(parts) - up])
+                            base = ".".join(parts[: len(parts) - up])
                             target = f"{base}.{node.module}" if node.module else base
                         else:
                             target = node.module or ""
@@ -484,10 +499,21 @@ class ExecutorAgent(BaseAgent):
 
         try:
             proc = subprocess.run(
-                [python, "-m", "pytest", "-x", "-v", "--tb=short", "--no-header", "-q",
-                 "--import-mode=importlib"],
-                capture_output=True, text=True,
-                timeout=60, cwd=str(tmp),
+                [
+                    python,
+                    "-m",
+                    "pytest",
+                    "-x",
+                    "-v",
+                    "--tb=short",
+                    "--no-header",
+                    "-q",
+                    "--import-mode=importlib",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(tmp),
                 env=env,
             )
 
@@ -496,6 +522,7 @@ class ExecutorAgent(BaseAgent):
 
             # Parse results
             import re as _re
+
             passed = 0
             failed = 0
             errored = 0
@@ -521,10 +548,7 @@ class ExecutorAgent(BaseAgent):
                     # Extract the first error for the debugger
                     error_summary = _extract_error(proc.stderr or proc.stdout)
 
-                logger.info(
-                    f"Executor: pytest {passed}/{total} passed "
-                    f"({elapsed}s)"
-                )
+                logger.info(f"Executor: pytest {passed}/{total} passed ({elapsed}s)")
 
                 return ExecutionResult(
                     exit_code=proc.returncode,
@@ -554,7 +578,9 @@ class ExecutorAgent(BaseAgent):
             # code itself.  Fall back to import verification — if the actual
             # source modules load cleanly the project is structurally sound
             # regardless of broken test imports.
-            if proc.returncode != 0 and ("ImportError" in output or "ModuleNotFoundError" in output):
+            if proc.returncode != 0 and (
+                "ImportError" in output or "ModuleNotFoundError" in output
+            ):
                 error_msg = _extract_error(output)
                 logger.info(
                     f"Executor: pytest collection failed — {error_msg}. "
@@ -566,7 +592,8 @@ class ExecutorAgent(BaseAgent):
 
         except subprocess.TimeoutExpired:
             return ExecutionResult(
-                exit_code=-1, success=False,
+                exit_code=-1,
+                success=False,
                 error_summary="pytest timed out after 60s",
                 install_success=install_result.install_success,
                 duration_seconds=round(time.time() - t0, 2),
@@ -576,7 +603,10 @@ class ExecutorAgent(BaseAgent):
             return None
 
     def _smoke_test(
-        self, python: str, tmp: Path, entry_points: list[str],
+        self,
+        python: str,
+        tmp: Path,
+        entry_points: list[str],
         code_files: dict[str, str],
     ) -> str:
         """Smoke test: verify code works WITHOUT pytest's sys.path manipulation.
@@ -605,8 +635,11 @@ class ExecutorAgent(BaseAgent):
             try:
                 proc = subprocess.run(
                     [python, "-c", f"import sys; sys.path.insert(0, '{tmp}'); import {module}"],
-                    capture_output=True, text=True,
-                    timeout=10, cwd=str(tmp), env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=str(tmp),
+                    env=env,
                 )
                 if proc.returncode != 0:
                     error = _extract_error(proc.stderr)
@@ -629,8 +662,11 @@ class ExecutorAgent(BaseAgent):
                 try:
                     proc = subprocess.run(
                         [python, str(ep_path)],
-                        capture_output=True, text=True,
-                        timeout=15, cwd=str(tmp), env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        cwd=str(tmp),
+                        env=env,
                     )
                     ep_status = "pass" if proc.returncode == 0 else "fail"
                     if ep_status == "fail":
@@ -680,7 +716,7 @@ class ExecutorAgent(BaseAgent):
             return install_result
 
         content = req_file.read_text().strip()
-        deps = [l.strip() for l in content.splitlines() if l.strip() and not l.startswith("#")]
+        deps = [ln.strip() for ln in content.splitlines() if ln.strip() and not ln.startswith("#")]
         if not deps:
             return install_result
 
@@ -691,14 +727,21 @@ class ExecutorAgent(BaseAgent):
             logger.warning("PackageValidator unavailable (%s); falling back to naive install", e)
             verified_deps = list(deps)
         else:
+
             async def _validate_all(all_deps: list[str]) -> list[tuple[str, Any]]:
                 validator = PackageValidator()
                 pairs: list[tuple[str, Any]] = []
                 for dep in all_deps:
                     pkg_name = (
-                        dep.split(">=")[0].split("<=")[0].split("==")[0]
-                        .split("~=")[0].split("[")[0].split("<")[0]
-                        .split(">")[0].split("!=")[0].strip()
+                        dep.split(">=")[0]
+                        .split("<=")[0]
+                        .split("==")[0]
+                        .split("~=")[0]
+                        .split("[")[0]
+                        .split("<")[0]
+                        .split(">")[0]
+                        .split("!=")[0]
+                        .strip()
                     )
                     if not pkg_name:
                         continue
@@ -724,29 +767,42 @@ class ExecutorAgent(BaseAgent):
                     if result is not None:
                         logger.info(
                             "Executor: VERIFIED %s via %s (%s)",
-                            result.canonical_name, result.layer, result.reason,
+                            result.canonical_name,
+                            result.layer,
+                            result.reason,
                         )
                         # Use the canonical PyPI name in the install line
                         # so pip resolves cleanly (and carry over any
                         # user-supplied version specifier).
                         pkg_name = (
-                            dep.split(">=")[0].split("<=")[0].split("==")[0]
-                            .split("~=")[0].split("[")[0].split("<")[0]
-                            .split(">")[0].split("!=")[0].strip()
+                            dep.split(">=")[0]
+                            .split("<=")[0]
+                            .split("==")[0]
+                            .split("~=")[0]
+                            .split("[")[0]
+                            .split("<")[0]
+                            .split(">")[0]
+                            .split("!=")[0]
+                            .strip()
                         )
-                        specifier = dep[len(pkg_name):] if pkg_name else ""
+                        specifier = dep[len(pkg_name) :] if pkg_name else ""
                         verified_deps.append(f"{result.canonical_name}{specifier}")
                     else:
                         verified_deps.append(dep)
                 else:
                     pkg_name = (
-                        dep.split(">=")[0].split("<=")[0].split("==")[0]
-                        .split("~=")[0].split("[")[0].split("<")[0]
-                        .split(">")[0].split("!=")[0].strip()
+                        dep.split(">=")[0]
+                        .split("<=")[0]
+                        .split("==")[0]
+                        .split("~=")[0]
+                        .split("[")[0]
+                        .split("<")[0]
+                        .split(">")[0]
+                        .split("!=")[0]
+                        .strip()
                     )
                     msg = (
-                        f"Executor: BLOCKED '{pkg_name}' at layer={result.layer} — "
-                        f"{result.reason}"
+                        f"Executor: BLOCKED '{pkg_name}' at layer={result.layer} — {result.reason}"
                     )
                     if result.suggestion:
                         msg += f" Did you mean '{result.suggestion}'?"
@@ -754,7 +810,9 @@ class ExecutorAgent(BaseAgent):
 
         if len(verified_deps) < len(deps):
             blocked = len(deps) - len(verified_deps)
-            logger.info(f"Executor: blocked {blocked} unverified package(s), installing {len(verified_deps)}")
+            logger.info(
+                f"Executor: blocked {blocked} unverified package(s), installing {len(verified_deps)}"
+            )
 
         if not verified_deps:
             return install_result
@@ -765,8 +823,10 @@ class ExecutorAgent(BaseAgent):
             pip = str(venv_dir / "bin" / "pip")
             proc = subprocess.run(
                 [pip, "install"] + verified_deps,
-                capture_output=True, text=True,
-                timeout=INSTALL_TIMEOUT, cwd=str(tmp),
+                capture_output=True,
+                text=True,
+                timeout=INSTALL_TIMEOUT,
+                cwd=str(tmp),
             )
             install_result.install_stdout = proc.stdout[-1000:]
             install_result.install_stderr = proc.stderr[-1000:]
@@ -786,9 +846,8 @@ class ExecutorAgent(BaseAgent):
             if not audit_passed:
                 install_result.install_success = False
                 install_result.install_stderr = (
-                    (install_result.install_stderr or "")
-                    + "\npip-audit: vulnerable dependencies detected (see log)"
-                )
+                    install_result.install_stderr or ""
+                ) + "\npip-audit: vulnerable dependencies detected (see log)"
 
         return install_result
 
@@ -801,22 +860,31 @@ class ExecutorAgent(BaseAgent):
         guarddog CLI → silently skipped.
         """
         import shutil as _shutil
+
         guarddog = _shutil.which("guarddog")
         if guarddog is None:
             logger.debug("guarddog not on PATH; skipping typosquat check")
             return
         for dep in verified_deps:
             pkg = (
-                dep.split(">=")[0].split("<=")[0].split("==")[0]
-                .split("~=")[0].split("[")[0].split("<")[0]
-                .split(">")[0].split("!=")[0].strip()
+                dep.split(">=")[0]
+                .split("<=")[0]
+                .split("==")[0]
+                .split("~=")[0]
+                .split("[")[0]
+                .split("<")[0]
+                .split(">")[0]
+                .split("!=")[0]
+                .strip()
             )
             if not pkg:
                 continue
             try:
                 proc = subprocess.run(
                     [guarddog, "pypi", "verify", pkg],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
                 )
             except (subprocess.TimeoutExpired, OSError) as e:
                 logger.debug("guarddog timed out/failed on %s: %s", pkg, e)
@@ -826,7 +894,8 @@ class ExecutorAgent(BaseAgent):
             if (proc.stdout or "").strip():
                 logger.warning(
                     "guarddog: potential typosquat signal on %s: %s",
-                    pkg, proc.stdout.strip()[:400],
+                    pkg,
+                    proc.stdout.strip()[:400],
                 )
 
     def _post_install_pip_audit(self, req_file: Path) -> bool:
@@ -838,6 +907,7 @@ class ExecutorAgent(BaseAgent):
         when pip-audit finds a known CVE in a pinned dep.
         """
         import shutil as _shutil
+
         pip_audit = _shutil.which("pip-audit")
         if pip_audit is None:
             logger.debug("pip-audit not on PATH; skipping CVE check")
@@ -845,7 +915,9 @@ class ExecutorAgent(BaseAgent):
         try:
             proc = subprocess.run(
                 [pip_audit, "--strict", "-r", str(req_file)],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
         except (subprocess.TimeoutExpired, OSError) as e:
             logger.warning("pip-audit timed out/failed: %s — continuing", e)
@@ -909,8 +981,10 @@ class ExecutorAgent(BaseAgent):
             logger.info("Executor: running npm install for TypeScript project")
             proc = subprocess.run(
                 [npm, "install", "--no-audit", "--no-fund"],
-                capture_output=True, text=True,
-                timeout=INSTALL_TIMEOUT, cwd=str(tmp),
+                capture_output=True,
+                text=True,
+                timeout=INSTALL_TIMEOUT,
+                cwd=str(tmp),
             )
             result.install_success = proc.returncode == 0
             result.install_stdout = proc.stdout[-500:]
@@ -927,8 +1001,10 @@ class ExecutorAgent(BaseAgent):
                 logger.info("Executor: running tsc --noEmit")
                 proc = subprocess.run(
                     [npx, "tsc", "--noEmit"],
-                    capture_output=True, text=True,
-                    timeout=60, cwd=str(tmp),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=str(tmp),
                 )
                 if proc.returncode != 0:
                     type_output = proc.stdout + proc.stderr
@@ -937,7 +1013,9 @@ class ExecutorAgent(BaseAgent):
                     # skipLibCheck handles most third-party type issues
                     if error_count > 3:
                         result.success = False
-                        result.stderr = f"TypeScript: {error_count} type errors:\n{type_output[-1500:]}"
+                        result.stderr = (
+                            f"TypeScript: {error_count} type errors:\n{type_output[-1500:]}"
+                        )
                         result.duration_seconds = time.time() - t0
                         return result
                     elif error_count > 0:
@@ -946,14 +1024,17 @@ class ExecutorAgent(BaseAgent):
             # Step 4: Run vitest (if tests exist)
             has_tests = any(
                 f.name.endswith((".test.ts", ".spec.ts", ".test.js", ".spec.js"))
-                for f in tmp.rglob("*") if "node_modules" not in str(f)
+                for f in tmp.rglob("*")
+                if "node_modules" not in str(f)
             )
             if has_tests and npx:
                 logger.info("Executor: running vitest")
                 proc = subprocess.run(
                     [npx, "vitest", "run", "--reporter=verbose"],
-                    capture_output=True, text=True,
-                    timeout=60, cwd=str(tmp),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=str(tmp),
                     env={**os.environ, "NODE_ENV": "test"},
                 )
                 test_output = proc.stdout + "\n" + proc.stderr
@@ -986,16 +1067,22 @@ class ExecutorAgent(BaseAgent):
                 if ep.endswith((".ts", ".tsx")):
                     proc = subprocess.run(
                         [npx, "tsx", ep],
-                        capture_output=True, text=True,
-                        timeout=15, cwd=str(tmp),
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        cwd=str(tmp),
                     )
                     if proc.returncode == 0:
-                        result.stdout = (result.stdout or "") + "\nEntry point executed successfully"
+                        result.stdout = (
+                            result.stdout or ""
+                        ) + "\nEntry point executed successfully"
                 elif ep.endswith(".js") and node:
                     proc = subprocess.run(
                         [node, "--check", ep],
-                        capture_output=True, text=True,
-                        timeout=10, cwd=str(tmp),
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        cwd=str(tmp),
                     )
 
             result.success = True
@@ -1014,7 +1101,10 @@ class ExecutorAgent(BaseAgent):
         return result
 
     def _verify_via_import(
-        self, python: str, tmp: Path, entry_point: str,
+        self,
+        python: str,
+        tmp: Path,
+        entry_point: str,
         code_files: dict[str, str],
     ) -> ExecutionResult:
         """Verify a server/API project by importing it with PYTHONPATH set.
@@ -1035,12 +1125,14 @@ class ExecutorAgent(BaseAgent):
         # Step 0: Security scan — block dangerous code before execution
         try:
             from belief.hardening import scan_all_files, has_critical_violations
+
             violations = scan_all_files(code_files)
             if has_critical_violations(violations):
                 critical = [v for v in violations if v.severity == "critical"]
                 summary = "; ".join(f"{v.file}:{v.line} {v.message}" for v in critical[:3])
                 return ExecutionResult(
-                    exit_code=1, success=False,
+                    exit_code=1,
+                    success=False,
                     error_summary=f"Security violation: {summary}",
                     install_success=True,
                 )
@@ -1057,6 +1149,7 @@ class ExecutorAgent(BaseAgent):
         # not treated as fatal — let the actual import attempt catch real errors.
         try:
             from belief.codebase.imports import verify_imports
+
             import_issues = verify_imports(code_files)
             if import_issues:
                 for issue in import_issues[:3]:
@@ -1074,13 +1167,15 @@ class ExecutorAgent(BaseAgent):
                 continue
             try:
                 from belief.languages import detect_language, get_adapter
+
                 lang = detect_language(fname)
                 adapter = get_adapter(lang)
                 if adapter.is_source_file(fname):
                     result = adapter.verify_code(content, fname)
                     if not result.success:
                         return ExecutionResult(
-                            exit_code=1, success=False,
+                            exit_code=1,
+                            success=False,
                             error_summary=f"Syntax error in {fname}: {'; '.join(result.errors[:2])}",
                             install_success=True,
                         )
@@ -1091,7 +1186,8 @@ class ExecutorAgent(BaseAgent):
                         ast.parse(content)
                     except SyntaxError as e:
                         return ExecutionResult(
-                            exit_code=1, success=False,
+                            exit_code=1,
+                            success=False,
                             error_summary=f"Syntax error in {fname} line {e.lineno}: {e.msg}",
                             install_success=True,
                         )
@@ -1099,8 +1195,10 @@ class ExecutorAgent(BaseAgent):
         # Step 2: Bottom-up import order using the DAG planner
         try:
             from belief.agents.parallel_planner import build_plan_from_files
+
             source_files = [
-                f for f in code_files
+                f
+                for f in code_files
                 if f.endswith(".py") and "/test" not in f and not f.startswith("test")
             ]
             plan = build_plan_from_files(source_files)
@@ -1136,22 +1234,26 @@ class ExecutorAgent(BaseAgent):
 
             check_script = (
                 f'import sys; sys.path.insert(0, "{tmp}"); '
-                f'import importlib; importlib.invalidate_caches(); '
-                f'{import_cmd}; '
+                f"import importlib; importlib.invalidate_caches(); "
+                f"{import_cmd}; "
                 f'print("OK")'
             )
 
             try:
                 proc = subprocess.run(
                     [python, "-c", check_script],
-                    capture_output=True, text=True,
-                    timeout=15, cwd=str(tmp), env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    cwd=str(tmp),
+                    env=env,
                 )
                 if proc.returncode != 0:
                     error = proc.stderr[-500:] if proc.stderr else proc.stdout[-500:]
                     elapsed = round(time.time() - t0, 2)
                     return ExecutionResult(
-                        exit_code=1, success=False,
+                        exit_code=1,
+                        success=False,
                         stdout=proc.stdout[-1000:],
                         stderr=proc.stderr[-1000:],
                         duration_seconds=elapsed,
@@ -1160,7 +1262,8 @@ class ExecutorAgent(BaseAgent):
                     )
             except subprocess.TimeoutExpired:
                 return ExecutionResult(
-                    exit_code=-1, success=False,
+                    exit_code=-1,
+                    success=False,
                     error_summary=f"Import of {fname} timed out after 15s",
                     install_success=True,
                 )
@@ -1237,8 +1340,10 @@ except Exception as e:
         try:
             proc = subprocess.run(
                 [python, "-c", verify_script],
-                capture_output=True, text=True,
-                timeout=30, cwd=str(tmp),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(tmp),
                 env=env,
             )
             elapsed = round(time.time() - t0, 2)
@@ -1247,7 +1352,11 @@ except Exception as e:
 
             success = "IMPORT_OK" in stdout and proc.returncode == 0
             if success:
-                last_line = [l for l in stdout.strip().splitlines() if l.strip()][-1] if stdout.strip() else ""
+                last_line = (
+                    [ln for ln in stdout.strip().splitlines() if ln.strip()][-1]
+                    if stdout.strip()
+                    else ""
+                )
                 logger.info(f"Server verification passed: {last_line}")
 
             return ExecutionResult(
@@ -1262,20 +1371,24 @@ except Exception as e:
 
         except subprocess.TimeoutExpired:
             return ExecutionResult(
-                exit_code=-1, success=False,
+                exit_code=-1,
+                success=False,
                 error_summary="Server verification timed out after 30s",
                 install_success=True,
             )
 
-    def _run_script(self, python: str, tmp: Path, entry_point: str,
-                    install_result: ExecutionResult) -> ExecutionResult:
+    def _run_script(
+        self, python: str, tmp: Path, entry_point: str, install_result: ExecutionResult
+    ) -> ExecutionResult:
         """Standard execution: run the entry point as a script."""
         try:
             env = {**os.environ, "PYTHONPATH": str(tmp)}
             proc = subprocess.run(
                 [python, str(tmp / entry_point)],
-                capture_output=True, text=True,
-                timeout=EXEC_TIMEOUT, cwd=str(tmp),
+                capture_output=True,
+                text=True,
+                timeout=EXEC_TIMEOUT,
+                cwd=str(tmp),
                 env=env,
             )
             result = ExecutionResult(
@@ -1293,11 +1406,11 @@ except Exception as e:
 
         except subprocess.TimeoutExpired:
             return ExecutionResult(
-                exit_code=-1, success=False,
+                exit_code=-1,
+                success=False,
                 error_summary=f"Execution timed out after {EXEC_TIMEOUT}s",
                 install_success=install_result.install_success,
             )
-
 
 
 def _extract_error(stderr: str) -> str:
@@ -1322,24 +1435,38 @@ def _extract_error(stderr: str) -> str:
         # Import errors — the #1 failure mode
         ("modulenotfounderror: no module named '", lambda s: _diagnose_import(s)),
         ("importerror: cannot import name '", lambda s: _diagnose_import(s)),
-        ("importerror: attempted relative import", "Relative import used outside a package. File needs to be inside a package with __init__.py, or use absolute imports."),
-
+        (
+            "importerror: attempted relative import",
+            "Relative import used outside a package. File needs to be inside a package with __init__.py, or use absolute imports.",
+        ),
         # Syntax errors
         ("syntaxerror:", lambda s: _find_line(s, "SyntaxError")),
-
         # Type/attribute errors
         ("attributeerror: '", lambda s: _diagnose_attribute(s)),
         ("typeerror:", lambda s: _find_line(s, "TypeError")),
-
         # Runtime errors
-        ("filenotfounderror:", "Code references a file that doesn't exist. Check file paths and working directory assumptions."),
-        ("permissionerror:", "File permission denied. Check if the code is trying to write to a read-only location."),
-        ("connectionrefusederror:", "Network connection refused. Service dependency not running or wrong port."),
+        (
+            "filenotfounderror:",
+            "Code references a file that doesn't exist. Check file paths and working directory assumptions.",
+        ),
+        (
+            "permissionerror:",
+            "File permission denied. Check if the code is trying to write to a read-only location.",
+        ),
+        (
+            "connectionrefusederror:",
+            "Network connection refused. Service dependency not running or wrong port.",
+        ),
         ("keyerror:", lambda s: _find_line(s, "KeyError")),
-
         # Dependency errors
-        ("no matching distribution found for", "pip install failed — package doesn't exist or version constraint is unsatisfiable. Check requirements.txt."),
-        ("could not find a version that satisfies", "Version constraint in requirements.txt can't be satisfied. Relax the version pin."),
+        (
+            "no matching distribution found for",
+            "pip install failed — package doesn't exist or version constraint is unsatisfiable. Check requirements.txt.",
+        ),
+        (
+            "could not find a version that satisfies",
+            "Version constraint in requirements.txt can't be satisfied. Relax the version pin.",
+        ),
     ]
 
     for indicator, diagnosis in patterns:
@@ -1362,6 +1489,7 @@ def _extract_error(stderr: str) -> str:
 def _diagnose_import(stderr: str) -> str:
     """Diagnose import errors with actionable fix suggestions."""
     import re
+
     # Extract the module name
     match = re.search(r"No module named '([^']+)'", stderr)
     if match:
@@ -1387,6 +1515,7 @@ def _diagnose_import(stderr: str) -> str:
 def _diagnose_attribute(stderr: str) -> str:
     """Diagnose attribute errors — often caused by wrong API version."""
     import re
+
     match = re.search(r"AttributeError: '(\w+)' object has no attribute '(\w+)'", stderr)
     if match:
         obj_type, attr = match.group(1), match.group(2)
@@ -1405,6 +1534,7 @@ def _find_line(stderr: str, keyword: str) -> str:
 def _parse_pytest(output: str) -> PytestResult:
     """Parse pytest output into structured result."""
     import re
+
     result = PytestResult(ran=True, raw_output=output[-2000:])
 
     # Parse summary line: "5 passed, 2 failed in 1.23s"
@@ -1424,9 +1554,11 @@ def _parse_pytest(output: str) -> PytestResult:
         outcome = match.group(1).lower()
         if outcome == "error":
             outcome = "error"
-        result.items.append(PytestTestItem(
-            node_id=match.group(2),
-            outcome=outcome,
-        ))
+        result.items.append(
+            PytestTestItem(
+                node_id=match.group(2),
+                outcome=outcome,
+            )
+        )
 
     return result

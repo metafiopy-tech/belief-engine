@@ -21,6 +21,7 @@ Covers:
     build_report from both dict shapes, compare_reports delta,
     format_comparison smoke
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -116,6 +117,7 @@ try:
         NutrientProfile,
         NutrientType,
     )
+
     _HAS_MEMORY_PACKAGE = True
 except ImportError:
     _HAS_MEMORY_PACKAGE = False
@@ -129,8 +131,7 @@ def _mk(content: str):
     )
 
 
-@pytest.mark.skipif(not _HAS_MEMORY_PACKAGE,
-                    reason="belief.memory requires chromadb")
+@pytest.mark.skipif(not _HAS_MEMORY_PACKAGE, reason="belief.memory requires chromadb")
 class TestNutrientProfileCompact:
     def _populated(self) -> NutrientProfile:
         return NutrientProfile(
@@ -181,7 +182,7 @@ class TestNutrientProfileCompact:
 # ── Skeleton cache ────────────────────────────────────────────────────────
 
 
-from belief.cache.skeleton_cache import (
+from belief.cache.skeleton_cache import (  # noqa: E402 — grouped with the tests that use it
     cache_size,
     cache_skeleton,
     fingerprint_spec,
@@ -208,8 +209,7 @@ class TestSkeletonCache:
         assert a == b
 
     def test_miss_when_not_cached(self, tmp_path):
-        assert get_cached_skeleton({"goal": "nothing"},
-                                    base_dir=tmp_path) is None
+        assert get_cached_skeleton({"goal": "nothing"}, base_dir=tmp_path) is None
 
     def test_hit_count_increments(self, tmp_path):
         spec = {"goal": "y"}
@@ -237,15 +237,16 @@ class TestSkeletonCache:
 
     def test_cache_size_counts_entries(self, tmp_path):
         for i in range(3):
-            cache_skeleton({"goal": f"g{i}"}, {"files": {}},
-                            base_dir=tmp_path)
+            cache_skeleton({"goal": f"g{i}"}, {"files": {}}, base_dir=tmp_path)
         assert cache_size(tmp_path) == 3
 
     def test_non_json_values_do_not_crash_fingerprint(self):
         """Fingerprint must not raise on unusual values."""
+
         class _Opaque:
             def __str__(self):
                 return "opaque"
+
         fp = fingerprint_spec({"obj": _Opaque(), "n": 1})
         assert isinstance(fp, str)
         assert len(fp) == 16
@@ -254,7 +255,7 @@ class TestSkeletonCache:
 # ── AST parse cache ───────────────────────────────────────────────────────
 
 
-from belief.validators.ast_cache import (
+from belief.validators.ast_cache import (  # noqa: E402 — grouped with the tests that use it
     cache_stats,
     clear_parse_cache,
     parse_cached,
@@ -288,9 +289,9 @@ class TestASTCache:
 
     def test_stats_reflect_hits_and_misses(self):
         clear_parse_cache()
-        parse_cached("a = 1")      # miss
-        parse_cached("a = 1")      # hit
-        parse_cached("b = 2")      # miss
+        parse_cached("a = 1")  # miss
+        parse_cached("a = 1")  # hit
+        parse_cached("b = 2")  # miss
         stats = cache_stats()
         assert stats["hits"] == 1
         assert stats["misses"] == 2
@@ -307,7 +308,7 @@ class TestASTCache:
 # ── robust_parse ──────────────────────────────────────────────────────────
 
 
-from belief.utils.robust_parse import (
+from belief.utils.robust_parse import (  # noqa: E402 — grouped with the tests that use it
     extract_code_block,
     strip_code_fences,
     try_parse_json,
@@ -316,7 +317,7 @@ from belief.utils.robust_parse import (
 
 class TestStripCodeFences:
     def test_json_fence(self):
-        assert strip_code_fences("```json\n{\"a\": 1}\n```") == '{"a": 1}'
+        assert strip_code_fences('```json\n{"a": 1}\n```') == '{"a": 1}'
 
     def test_bare_fence(self):
         assert strip_code_fences("```\n[1,2]\n```") == "[1,2]"
@@ -343,7 +344,7 @@ class TestTryParseJson:
         assert try_parse_json("{'a': 1, 'b': 2}") == {"a": 1, "b": 2}
 
     def test_bare_keys(self):
-        assert try_parse_json('{a: 1, b: 2}') == {"a": 1, "b": 2}
+        assert try_parse_json("{a: 1, b: 2}") == {"a": 1, "b": 2}
 
     def test_truncated_object(self):
         result = try_parse_json('{"a": 1, "b": {"c": 2')
@@ -388,7 +389,7 @@ class TestExtractCodeBlock:
 # ── Local benchmark reporter ──────────────────────────────────────────────
 
 
-from belief.metrics.local_benchmark import (
+from belief.metrics.local_benchmark import (  # noqa: E402 — grouped with the tests that use it
     LocalBenchmarkReport,
     build_report,
     compare_reports,
@@ -400,10 +401,17 @@ from belief.metrics.local_benchmark import (
 class TestLocalBenchmarkReport:
     def test_write_and_reload_json(self, tmp_path):
         r = LocalBenchmarkReport(
-            mode="local", pass_rate=0.8, weighted_score=0.82,
-            total_challenges=20, passed_challenges=16,
-            build_time_s=600.0, soil_before=100, soil_after=120,
-            soil_deposited=20, cost_usd=0.0, escalations=2,
+            mode="local",
+            pass_rate=0.8,
+            weighted_score=0.82,
+            total_challenges=20,
+            passed_challenges=16,
+            build_time_s=600.0,
+            soil_before=100,
+            soil_after=120,
+            soil_deposited=20,
+            cost_usd=0.0,
+            escalations=2,
         )
         path = r.write_json(tmp_path / "report.json")
         assert path.exists()
@@ -412,20 +420,25 @@ class TestLocalBenchmarkReport:
         assert loaded["soil_deposited"] == 20
 
     def test_build_report_from_pass_rate_shape(self):
-        summary = {"pass_rate": 0.9, "total": 10, "cost": 0.0,
-                    "passing_ids": [f"c-{i}" for i in range(9)]}
-        r = build_report(summary, soil_before=5, soil_after=8,
-                         build_time_s=30.0)
+        summary = {
+            "pass_rate": 0.9,
+            "total": 10,
+            "cost": 0.0,
+            "passing_ids": [f"c-{i}" for i in range(9)],
+        }
+        r = build_report(summary, soil_before=5, soil_after=8, build_time_s=30.0)
         assert r.pass_rate == 0.9
         assert r.total_challenges == 10
         assert r.passed_challenges == 9
         assert r.soil_deposited == 3
 
     def test_build_report_from_challenges_shape(self):
-        summary = {"challenges": [
-            {"id": "c-1", "passed": True, "score": 1.0},
-            {"id": "c-2", "passed": False, "score": 0.0},
-        ]}
+        summary = {
+            "challenges": [
+                {"id": "c-1", "passed": True, "score": 1.0},
+                {"id": "c-2", "passed": False, "score": 0.0},
+            ]
+        }
         r = build_report(summary, soil_before=0, soil_after=0)
         assert r.total_challenges == 2
         assert r.passed_challenges == 1
@@ -434,19 +447,28 @@ class TestLocalBenchmarkReport:
     def test_run_local_benchmark(self, tmp_path):
         async def runner(tiers=None, ids=None, **kw):
             return {
-                "pass_rate": 0.75, "total": 4,
+                "pass_rate": 0.75,
+                "total": 4,
                 "passing_ids": ["a", "b", "c"],
                 "cost": 0.0,
             }
+
         class _Soil:
             n = 10
-            def count(self): return self.n
+
+            def count(self):
+                return self.n
+
         soil = _Soil()
 
         async def _run():
             return await run_local_benchmark(
-                runner, tiers=[1, 2], soil=soil, notes="smoke",
+                runner,
+                tiers=[1, 2],
+                soil=soil,
+                notes="smoke",
             )
+
         report = asyncio.run(_run())
         assert report.pass_rate == 0.75
         assert report.tiers == [1, 2]
@@ -456,8 +478,9 @@ class TestLocalBenchmarkReport:
 
 
 class TestCompareReports:
-    def _make(self, pass_rate: float, score: float,
-              challenges: Optional[list[dict]] = None) -> LocalBenchmarkReport:
+    def _make(
+        self, pass_rate: float, score: float, challenges: Optional[list[dict]] = None
+    ) -> LocalBenchmarkReport:
         return LocalBenchmarkReport(
             pass_rate=pass_rate,
             weighted_score=score,
@@ -472,14 +495,22 @@ class TestCompareReports:
         assert d.weighted_score_delta == pytest.approx(0.2)
 
     def test_challenge_flip_recorded(self):
-        left = self._make(0.5, 0.5, challenges=[
-            {"id": "c-1", "passed": True},
-            {"id": "c-2", "passed": False, "error": "timeout"},
-        ])
-        right = self._make(0.5, 0.5, challenges=[
-            {"id": "c-1", "passed": False, "error": "new-regression"},
-            {"id": "c-2", "passed": True},
-        ])
+        left = self._make(
+            0.5,
+            0.5,
+            challenges=[
+                {"id": "c-1", "passed": True},
+                {"id": "c-2", "passed": False, "error": "timeout"},
+            ],
+        )
+        right = self._make(
+            0.5,
+            0.5,
+            challenges=[
+                {"id": "c-1", "passed": False, "error": "new-regression"},
+                {"id": "c-2", "passed": True},
+            ],
+        )
         d = compare_reports(left, right)
         assert "c-1" in d.challenges_diff
         assert "c-2" in d.challenges_diff

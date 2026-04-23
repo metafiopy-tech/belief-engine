@@ -1,0 +1,43 @@
+# Pre-commit hooks — Session 8.5a (v3.2).
+#
+# Guards against the 108-ruff-error drift that prompted this cleanup.
+# Installed with:
+#
+#     pip3 install pre-commit && pre-commit install
+#
+# To run against the whole tree (e.g. after pulling a big branch):
+#
+#     pre-commit run --all-files
+#
+# Version pins match the ruff used to land this session so a checkout
+# of an older commit + a newer pre-commit can't introduce silent
+# behaviour changes.  Bump both ``ruff`` and the lock text below in a
+# single commit.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.11  # Session 8.5a baseline — ruff 0.15.11
+    hooks:
+      # Lint (no --fix — we want the dev to see failures and choose).
+      - id: ruff
+        name: ruff check
+        args: ["--no-cache"]
+      # Formatter — write mode, reformats in place.  Safer than check
+      # mode at commit time because the dev already intends to commit.
+      - id: ruff-format
+        name: ruff format
+        args: ["--no-cache"]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Kill trailing whitespace and missing final newline — two of
+      # the most common sources of noisy git diffs.
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      # Refuse to commit files that are obviously wrong shape.
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      # Refuse files >500KB as a rough guard against committed blobs.
+      - id: check-added-large-files
+        args: ["--maxkb=500"]

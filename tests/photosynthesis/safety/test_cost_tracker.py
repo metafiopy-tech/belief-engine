@@ -27,7 +27,9 @@ def tracker(tmp_path: Path) -> CostTracker:
 
 
 def test_price_usd_known_model() -> None:
-    cost = price_usd("claude-haiku-4-5-20251001", Usage(input_tokens=1_000_000, output_tokens=1_000_000))
+    cost = price_usd(
+        "claude-haiku-4-5-20251001", Usage(input_tokens=1_000_000, output_tokens=1_000_000)
+    )
     # Haiku: $1 input + $5 output per M tokens
     assert cost == pytest.approx(6.0, rel=1e-3)
 

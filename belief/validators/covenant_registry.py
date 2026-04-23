@@ -24,7 +24,7 @@ class CovenantResult:
     """Result of firing a single covenant against code."""
 
     name: str
-    source: str             # "static" | "dynamic"
+    source: str  # "static" | "dynamic"
     passed: bool
     violations: list[dict] = field(default_factory=list)
     time_ms: float = 0.0
@@ -72,22 +72,24 @@ class CovenantRegistry:
 
                 # Only load crystallized covenants (not hand-written ones)
                 if "crystallized" in tags:
-                    self._dynamic_covenants.append({
-                        "id": doc_id,
-                        "name": meta.get("content", doc_id)[:80],
-                        "description": meta.get("content", ""),
-                        "code": meta.get("code_sample", ""),
-                        "implementation_kind": (
-                            "ast" if "ast" in tags
-                            else "regex" if "regex" in tags
-                            else "assertion"
-                        ),
-                        "tags": tags,
-                    })
+                    self._dynamic_covenants.append(
+                        {
+                            "id": doc_id,
+                            "name": meta.get("content", doc_id)[:80],
+                            "description": meta.get("content", ""),
+                            "code": meta.get("code_sample", ""),
+                            "implementation_kind": (
+                                "ast"
+                                if "ast" in tags
+                                else "regex"
+                                if "regex" in tags
+                                else "assertion"
+                            ),
+                            "tags": tags,
+                        }
+                    )
 
-            logger.info(
-                f"Registry: loaded {len(self._dynamic_covenants)} dynamic covenants"
-            )
+            logger.info(f"Registry: loaded {len(self._dynamic_covenants)} dynamic covenants")
         except Exception as e:
             logger.warning(f"Registry: failed to load dynamic covenants: {e}")
 
@@ -116,20 +118,24 @@ class CovenantRegistry:
             try:
                 violations = covenant["checker"](code_files)
                 elapsed_ms = (time.time() - t0) * 1000
-                results.append(CovenantResult(
-                    name=name,
-                    source="static",
-                    passed=len(violations) == 0,
-                    violations=violations,
-                    time_ms=elapsed_ms,
-                ))
+                results.append(
+                    CovenantResult(
+                        name=name,
+                        source="static",
+                        passed=len(violations) == 0,
+                        violations=violations,
+                        time_ms=elapsed_ms,
+                    )
+                )
             except Exception:
-                results.append(CovenantResult(
-                    name=name,
-                    source="static",
-                    passed=True,
-                    time_ms=(time.time() - t0) * 1000,
-                ))
+                results.append(
+                    CovenantResult(
+                        name=name,
+                        source="static",
+                        passed=True,
+                        time_ms=(time.time() - t0) * 1000,
+                    )
+                )
 
         # Fire dynamic covenants
         for covenant in self._dynamic_covenants:
@@ -140,27 +146,29 @@ class CovenantRegistry:
             try:
                 violations = self._fire_dynamic(covenant, code_files)
                 elapsed_ms = (time.time() - t0) * 1000
-                results.append(CovenantResult(
-                    name=name,
-                    source="dynamic",
-                    passed=len(violations) == 0,
-                    violations=violations,
-                    time_ms=elapsed_ms,
-                ))
+                results.append(
+                    CovenantResult(
+                        name=name,
+                        source="dynamic",
+                        passed=len(violations) == 0,
+                        violations=violations,
+                        time_ms=elapsed_ms,
+                    )
+                )
             except Exception as e:
                 logger.debug(f"Dynamic covenant {name} failed: {e}")
-                results.append(CovenantResult(
-                    name=name,
-                    source="dynamic",
-                    passed=True,
-                    time_ms=(time.time() - t0) * 1000,
-                ))
+                results.append(
+                    CovenantResult(
+                        name=name,
+                        source="dynamic",
+                        passed=True,
+                        time_ms=(time.time() - t0) * 1000,
+                    )
+                )
 
         return results
 
-    def _fire_dynamic(
-        self, covenant: dict, code_files: dict[str, str]
-    ) -> list[dict]:
+    def _fire_dynamic(self, covenant: dict, code_files: dict[str, str]) -> list[dict]:
         """Execute a dynamic covenant's code against code files."""
         code = covenant.get("code", "")
         if not code:
@@ -200,17 +208,21 @@ class CovenantRegistry:
         """Return descriptions of all covenants (for the Claude proposer)."""
         descriptions: list[dict] = []
         for cov in self._static_covenants:
-            descriptions.append({
-                "name": cov["name"],
-                "description": cov["description"],
-                "source": "static",
-            })
+            descriptions.append(
+                {
+                    "name": cov["name"],
+                    "description": cov["description"],
+                    "source": "static",
+                }
+            )
         for cov in self._dynamic_covenants:
-            descriptions.append({
-                "name": cov.get("name", ""),
-                "description": cov.get("description", ""),
-                "source": "dynamic",
-            })
+            descriptions.append(
+                {
+                    "name": cov.get("name", ""),
+                    "description": cov.get("description", ""),
+                    "source": "dynamic",
+                }
+            )
         return descriptions
 
     def get_covenant_stats(self) -> dict:
@@ -240,6 +252,7 @@ def _load_static_covenants() -> list[dict]:
 
     def _make_checker(enforcer_fn, needs_context=False):
         """Wrap a single-file enforcer into a multi-file checker."""
+
         def checker(code_files: dict[str, str]) -> list[dict]:
             violations = []
             all_code = "\n".join(code_files.values())
@@ -251,15 +264,18 @@ def _load_static_covenants() -> list[dict]:
                 try:
                     result = enforcer_fn(fname, code, uses_sqlalchemy)
                     for v in result:
-                        violations.append({
-                            "file": v.file,
-                            "line": v.line,
-                            "message": v.message,
-                            "severity": v.severity,
-                        })
+                        violations.append(
+                            {
+                                "file": v.file,
+                                "line": v.line,
+                                "message": v.message,
+                                "severity": v.severity,
+                            }
+                        )
                 except Exception:
                     pass
             return violations
+
         return checker
 
     return [

@@ -12,13 +12,11 @@ Usage:
 
 from __future__ import annotations
 
-import ast
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("belief.languages")
 
@@ -32,6 +30,7 @@ class Language(str, Enum):
 @dataclass
 class VerificationResult:
     """Result of verifying generated code."""
+
     success: bool
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -42,6 +41,7 @@ class VerificationResult:
 @dataclass
 class ExportedSymbol:
     """A public symbol exported from a source file."""
+
     name: str
     kind: str  # "class", "function", "variable", "interface", "struct", "type"
     file_path: str
@@ -121,6 +121,7 @@ class LanguageAdapter(ABC):
     def is_test_file(self, filename: str) -> bool:
         """Check if a filename matches test file patterns."""
         import fnmatch
+
         base = filename.split("/")[-1]
         return any(fnmatch.fnmatch(base, pat) for pat in self.test_file_patterns)
 
@@ -150,11 +151,14 @@ def get_adapter(language: str | Language) -> LanguageAdapter:
     if language not in _adapters:
         # Lazy-load Python adapter (always available)
         from belief.languages.python_adapter import PythonAdapter
+
         register_adapter(PythonAdapter())
 
     adapter = _adapters.get(language)
     if adapter is None:
-        raise ValueError(f"No adapter registered for {language}. Available: {list(_adapters.keys())}")
+        raise ValueError(
+            f"No adapter registered for {language}. Available: {list(_adapters.keys())}"
+        )
     return adapter
 
 

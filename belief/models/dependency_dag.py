@@ -29,9 +29,11 @@ from belief.models.skeleton import SkeletonArtifact
 # DAG Node
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class DAGNode:
     """A node in the dependency DAG."""
+
     path: str
     in_degree: int = 0
     level: int = -1  # Assigned by topological sort
@@ -43,14 +45,15 @@ class DAGNode:
 # Cycle Detection Error
 # ---------------------------------------------------------------------------
 
+
 class DependencyCycleError(Exception):
     """Raised when the dependency graph contains a cycle."""
+
     def __init__(self, remaining_nodes: list[str]):
         self.remaining_nodes = remaining_nodes
         super().__init__(
             f"Dependency cycle detected among {len(remaining_nodes)} files: "
-            f"{', '.join(remaining_nodes[:5])}"
-            + ("..." if len(remaining_nodes) > 5 else "")
+            f"{', '.join(remaining_nodes[:5])}" + ("..." if len(remaining_nodes) > 5 else "")
         )
 
 
@@ -58,12 +61,14 @@ class DependencyCycleError(Exception):
 # Kahn's Algorithm
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TopologicalResult:
     """Result of topological sorting."""
-    sorted_files: list[str]           # All files in topological order
-    levels: list[list[str]]           # Files grouped by execution level
-    node_levels: dict[str, int]       # file_path → level number
+
+    sorted_files: list[str]  # All files in topological order
+    levels: list[list[str]]  # Files grouped by execution level
+    node_levels: dict[str, int]  # file_path → level number
     total_levels: int
 
     def files_at_level(self, level: int) -> list[str]:
@@ -162,6 +167,7 @@ def topological_sort(skeleton: SkeletonArtifact) -> TopologicalResult:
 # DAG from SkeletonArtifact (with skeleton/impl split awareness)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BuildPlan:
     """
@@ -170,10 +176,11 @@ class BuildPlan:
     Phase 1 (Pass 1): Generate skeleton files in topological order
     Phase 2 (Pass 2): Generate implementation files in topological order
     """
-    skeleton_order: list[list[str]]   # Skeleton files grouped by level
-    impl_order: list[list[str]]       # Implementation files grouped by level
-    full_order: list[list[str]]       # All files in combined level order
-    topo_result: TopologicalResult    # Raw topological sort result
+
+    skeleton_order: list[list[str]]  # Skeleton files grouped by level
+    impl_order: list[list[str]]  # Implementation files grouped by level
+    full_order: list[list[str]]  # All files in combined level order
+    topo_result: TopologicalResult  # Raw topological sort result
 
     @property
     def total_skeleton_files(self) -> int:
@@ -230,6 +237,7 @@ def create_build_plan(skeleton: SkeletonArtifact) -> BuildPlan:
 # Utilities
 # ---------------------------------------------------------------------------
 
+
 def dependency_depth(skeleton: SkeletonArtifact, file_path: str) -> int:
     """
     Calculate the maximum dependency depth for a file.
@@ -257,10 +265,7 @@ def critical_path(skeleton: SkeletonArtifact) -> list[str]:
             current = file_path
             while current:
                 path.append(current)
-                deps = [
-                    e.target for e in skeleton.dependency_edges
-                    if e.source == current
-                ]
+                deps = [e.target for e in skeleton.dependency_edges if e.source == current]
                 # Pick the dependency with the highest level
                 if deps:
                     current = max(deps, key=lambda d: topo.node_levels.get(d, 0))

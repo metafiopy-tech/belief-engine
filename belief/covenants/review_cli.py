@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 from belief.covenants.proposer import (
     CovenantProposal,
@@ -47,8 +46,10 @@ def cmd_review(status_filter: str | None = None) -> None:
         prev = p.metrics.get("would_have_prevented", "—")
         broken = p.metrics.get("would_have_broken", "—")
         sig_short = (p.error_signature or "")[:60]
-        print(f"{p.proposal_id:<18} {p.status:<14} {p.cluster_size:<8} "
-              f"{prev!s:<10} {broken!s:<8} {sig_short}")
+        print(
+            f"{p.proposal_id:<18} {p.status:<14} {p.cluster_size:<8} "
+            f"{prev!s:<10} {broken!s:<8} {sig_short}"
+        )
 
 
 def cmd_approve(proposal_id: str) -> None:
@@ -121,10 +122,7 @@ def _find(proposals: list[CovenantProposal], pid: str) -> CovenantProposal | Non
 
 def _append_manifest(p: CovenantProposal) -> None:
     _MANIFEST_FILE.parent.mkdir(parents=True, exist_ok=True)
-    line = (
-        f"{p.proposal_id}\tcluster={p.cluster_size}\t"
-        f"sig={p.error_signature[:120]}\n"
-    )
+    line = f"{p.proposal_id}\tcluster={p.cluster_size}\tsig={p.error_signature[:120]}\n"
     with _MANIFEST_FILE.open("a", encoding="utf-8") as f:
         f.write(line)
 

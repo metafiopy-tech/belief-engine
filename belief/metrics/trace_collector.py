@@ -105,9 +105,7 @@ class StepTrace:
 
     def to_row(self) -> tuple:
         """Positional tuple matching INSERT column order."""
-        passed = (
-            None if self.build_passed is None else (1 if self.build_passed else 0)
-        )
+        passed = None if self.build_passed is None else (1 if self.build_passed else 0)
         return (
             self.build_id,
             int(self.step_index),
@@ -244,9 +242,7 @@ class TraceCollector:
             with self._dropped_lock:
                 self._dropped += 1
             if self._dropped == 1 or self._dropped % 100 == 0:
-                logger.warning(
-                    "trace queue full; %d step(s) dropped so far", self._dropped
-                )
+                logger.warning("trace queue full; %d step(s) dropped so far", self._dropped)
             return False
 
     def flush(self) -> None:
@@ -285,8 +281,7 @@ class TraceCollector:
         try:
             c.execute("BEGIN IMMEDIATE;")
             cur = c.execute(
-                "UPDATE traces SET build_passed = ? "
-                "WHERE build_id = ? AND build_passed IS NULL;",
+                "UPDATE traces SET build_passed = ? WHERE build_id = ? AND build_passed IS NULL;",
                 (1 if passed else 0, build_id),
             )
             count = cur.rowcount
@@ -311,8 +306,7 @@ class TraceCollector:
         c = self._connect()
         try:
             row = c.execute(
-                "SELECT COUNT(DISTINCT build_id) AS n FROM traces "
-                "WHERE build_passed IS NOT NULL;"
+                "SELECT COUNT(DISTINCT build_id) AS n FROM traces WHERE build_passed IS NOT NULL;"
             ).fetchone()
             return int(row["n"]) if row else 0
         finally:
@@ -361,8 +355,14 @@ class TraceCollector:
             # Still write an empty file with just the header so downstream
             # tools don't error on "missing file."
             headers = [
-                "build_id", "step_index", "agent_name", "output_summary",
-                "edge_decision", "cost_so_far", "iteration", "build_passed",
+                "build_id",
+                "step_index",
+                "agent_name",
+                "output_summary",
+                "edge_decision",
+                "cost_so_far",
+                "iteration",
+                "build_passed",
                 "timestamp",
             ]
             with path.open("w", newline="", encoding="utf-8") as f:
@@ -468,7 +468,10 @@ def record_step_from_state(
 def is_tracing_enabled() -> bool:
     """Honor BELIEF_ENABLE_TRACE env var. Default OFF (no-op in tests)."""
     return os.environ.get("BELIEF_ENABLE_TRACE", "").strip().lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }
 
 

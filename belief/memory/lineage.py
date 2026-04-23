@@ -270,8 +270,7 @@ def _promote_antipatterns_to_covenants(soil) -> list[Nutrient]:
         if stored:
             promoted.append(stored)
             logger.info(
-                f"Lineage: promoted {len(cluster)} antipatterns → COVENANT: "
-                f"{stored.content[:80]}"
+                f"Lineage: promoted {len(cluster)} antipatterns → COVENANT: {stored.content[:80]}"
             )
 
     return promoted
@@ -284,7 +283,6 @@ def run_maintenance(soil) -> dict[str, Any]:
 
     Returns summary dict with maintenance results.
     """
-    from typing import Any
 
     summary: dict[str, Any] = {}
 
@@ -296,8 +294,7 @@ def run_maintenance(soil) -> dict[str, Any]:
     promoted = correlate_and_promote(soil)
     summary["promoted"] = len(promoted)
     summary["promoted_details"] = [
-        {"id": n.nutrient_id, "type": n.nutrient_type.value, "tier": n.tier.value}
-        for n in promoted
+        {"id": n.nutrient_id, "type": n.nutrient_type.value, "tier": n.tier.value} for n in promoted
     ]
 
     # Phase 3: Stats

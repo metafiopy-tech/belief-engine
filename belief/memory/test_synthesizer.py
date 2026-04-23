@@ -69,9 +69,7 @@ Produce between 1 and {n_tests} test inputs. Return strict JSON array.
 
 
 class _LLMClient(Protocol):
-    def generate_text(
-        self, *, system: str, prompt: str, max_tokens: int
-    ) -> str: ...  # noqa: E704
+    def generate_text(self, *, system: str, prompt: str, max_tokens: int) -> str: ...  # noqa: E704
 
 
 @dataclass
@@ -115,9 +113,7 @@ def synthesize_tests(
     )
 
     try:
-        raw = client.generate_text(
-            system=SYSTEM_PROMPT, prompt=prompt, max_tokens=max_tokens
-        )
+        raw = client.generate_text(system=SYSTEM_PROMPT, prompt=prompt, max_tokens=max_tokens)
     except Exception as exc:
         logger.warning("synthesize_tests client call failed: %s", exc)
         return SynthesisResult(tests=[], raw="", dropped=0)
@@ -165,9 +161,7 @@ def _parse_tests_array(raw: str) -> Optional[list[Any]]:
     return data
 
 
-def _validate_entries(
-    data: list[Any], *, limit: int
-) -> tuple[list[dict[str, Any]], int]:
+def _validate_entries(data: list[Any], *, limit: int) -> tuple[list[dict[str, Any]], int]:
     valid: list[dict[str, Any]] = []
     dropped = 0
     for row in data:

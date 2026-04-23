@@ -19,8 +19,11 @@ from pathlib import Path
 from belief.agents.base import BaseAgent
 from belief.config.models import ModelRole
 from belief.models.artifacts import (
-    TestCase, TestTier, TIER_WEIGHTS,
-    ValidationResult, ValidationVerdict,
+    TestCase,
+    TestTier,
+    TIER_WEIGHTS,
+    ValidationResult,
+    ValidationVerdict,
 )
 from belief.models.state import Phase, UnifiedState
 
@@ -35,36 +38,47 @@ class ValidatorAgent(BaseAgent):
         state.phase = Phase.VALIDATION
         if not state.code_files:
             state.validation_result = ValidationResult(
-                verdict=ValidationVerdict.FAIL_FIXABLE, summary="No code files",
+                verdict=ValidationVerdict.FAIL_FIXABLE,
+                summary="No code files",
                 issues=["No code files produced"],
             )
             state.phase = Phase.COMPLETE
             return state
 
         # ── Step 1: Run real tests ──
-        tests, issues = _run_real_validation(
-            state.code_files, state.test_files
-        )
+        tests, issues = _run_real_validation(state.code_files, state.test_files)
 
         # ── Step 2: Check if executor passed ──
         exec_ok = False
         exec_result = state.execution_result
         if exec_result:
-            exec_ok = exec_result.get("success") if isinstance(exec_result, dict) else getattr(exec_result, "success", False)
+            exec_ok = (
+                exec_result.get("success")
+                if isinstance(exec_result, dict)
+                else getattr(exec_result, "success", False)
+            )
 
         if exec_ok:
-            tests.insert(0, TestCase(
-                name="executor_verification",
-                description="Code executes and entry points verify",
-                passed=True, tier=TestTier.SMOKE,
-            ))
+            tests.insert(
+                0,
+                TestCase(
+                    name="executor_verification",
+                    description="Code executes and entry points verify",
+                    passed=True,
+                    tier=TestTier.SMOKE,
+                ),
+            )
         else:
-            tests.insert(0, TestCase(
-                name="executor_verification",
-                description="Code executes and entry points verify",
-                passed=False, tier=TestTier.SMOKE,
-                error="Executor failed",
-            ))
+            tests.insert(
+                0,
+                TestCase(
+                    name="executor_verification",
+                    description="Code executes and entry points verify",
+                    passed=False,
+                    tier=TestTier.SMOKE,
+                    error="Executor failed",
+                ),
+            )
             issues.append("Code failed executor verification")
 
         # ── Step 3: Compute weighted score from REAL results ──
@@ -89,6 +103,7 @@ class ValidatorAgent(BaseAgent):
 
 
 # ── Real test execution ──────────────────────────────────────────────────────
+
 
 def _run_real_validation(
     code_files: dict[str, str],
@@ -124,19 +139,25 @@ def _run_real_validation(
             continue
         try:
             ast.parse(content)
-            tests.append(TestCase(
-                name=f"syntax_{fname.replace('/', '_').replace('.py', '')}",
-                description=f"{fname} has valid Python syntax",
-                passed=True, tier=TestTier.SMOKE,
-            ))
+            tests.append(
+                TestCase(
+                    name=f"syntax_{fname.replace('/', '_').replace('.py', '')}",
+                    description=f"{fname} has valid Python syntax",
+                    passed=True,
+                    tier=TestTier.SMOKE,
+                )
+            )
         except SyntaxError as e:
             syntax_ok = False
-            tests.append(TestCase(
-                name=f"syntax_{fname.replace('/', '_').replace('.py', '')}",
-                description=f"{fname} has valid Python syntax",
-                passed=False, tier=TestTier.SMOKE,
-                error=f"Line {e.lineno}: {e.msg}",
-            ))
+            tests.append(
+                TestCase(
+                    name=f"syntax_{fname.replace('/', '_').replace('.py', '')}",
+                    description=f"{fname} has valid Python syntax",
+                    passed=False,
+                    tier=TestTier.SMOKE,
+                    error=f"Line {e.lineno}: {e.msg}",
+                )
+            )
             issues.append(f"Syntax error in {fname} line {e.lineno}: {e.msg}")
 
     if not syntax_ok:
@@ -191,9 +212,19 @@ def _execute_pytest(
         if req_path.exists():
             try:
                 subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "-q",
-                     "--break-system-packages", "-r", str(req_path)],
-                    capture_output=True, text=True, timeout=60,
+                    [
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "-q",
+                        "--break-system-packages",
+                        "-r",
+                        str(req_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                 )
             except Exception as e:
                 logger.warning(f"pip install from requirements.txt failed: {e}")
@@ -202,8 +233,10 @@ def _execute_pytest(
         try:
             proc = subprocess.run(
                 [sys.executable, "-m", "pytest", "-v", "--tb=short", "--no-header"],
-                capture_output=True, text=True,
-                timeout=60, cwd=str(tmp_path),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(tmp_path),
                 env={**os.environ, "PYTHONPATH": str(tmp_path)},
             )
             output = proc.stdout + "\n" + proc.stderr
@@ -215,7 +248,7 @@ def _execute_pytest(
 
                 # Match: path::test_name PASSED/FAILED/ERROR
                 match = re.match(
-                    r'(.+?)::(\w+)\s+(PASSED|FAILED|ERROR|SKIPPED)',
+                    r"(.+?)::(\w+)\s+(PASSED|FAILED|ERROR|SKIPPED)",
                     line,
                 )
                 if match:
@@ -231,37 +264,48 @@ def _execute_pytest(
                         # Look for the error in the short traceback
                         error = _extract_test_error(output, test_name)
 
-                    tests.append(TestCase(
-                        name=test_name,
-                        description=f"{file_path}::{test_name}",
-                        passed=passed,
-                        error=error[:200] if error else "",
-                    ))
+                    tests.append(
+                        TestCase(
+                            name=test_name,
+                            description=f"{file_path}::{test_name}",
+                            passed=passed,
+                            error=error[:200] if error else "",
+                        )
+                    )
 
             # If no individual tests parsed, try summary line
             if not tests:
-                summary_match = re.search(r'(\d+) passed', output)
-                failed_match = re.search(r'(\d+) failed', output)
-                error_match = re.search(r'(\d+) error', output)
+                summary_match = re.search(r"(\d+) passed", output)
+                failed_match = re.search(r"(\d+) failed", output)
+                error_match = re.search(r"(\d+) error", output)
 
                 passed_count = int(summary_match.group(1)) if summary_match else 0
                 failed_count = int(failed_match.group(1)) if failed_match else 0
                 error_count = int(error_match.group(1)) if error_match else 0
 
                 for i in range(passed_count):
-                    tests.append(TestCase(
-                        name=f"test_passed_{i+1}", passed=True,
-                    ))
+                    tests.append(
+                        TestCase(
+                            name=f"test_passed_{i + 1}",
+                            passed=True,
+                        )
+                    )
                 for i in range(failed_count):
-                    tests.append(TestCase(
-                        name=f"test_failed_{i+1}", passed=False,
-                        error="Test failed (see pytest output)",
-                    ))
+                    tests.append(
+                        TestCase(
+                            name=f"test_failed_{i + 1}",
+                            passed=False,
+                            error="Test failed (see pytest output)",
+                        )
+                    )
                 for i in range(error_count):
-                    tests.append(TestCase(
-                        name=f"test_error_{i+1}", passed=False,
-                        error="Collection error (import/syntax)",
-                    ))
+                    tests.append(
+                        TestCase(
+                            name=f"test_error_{i + 1}",
+                            passed=False,
+                            error="Collection error (import/syntax)",
+                        )
+                    )
 
             if proc.returncode != 0 and not tests:
                 issues.append(f"pytest exited with code {proc.returncode}")
@@ -303,17 +347,25 @@ def _validate_typescript(
         name_safe = fname.replace("/", "_").replace(".", "_")
 
         if brace_diff > 1 or paren_diff > 1:
-            tests.append(TestCase(
-                name=f"syntax_{name_safe}", passed=False, tier=TestTier.SMOKE,
-                description=f"{fname} has valid syntax",
-                error=f"Unmatched braces ({brace_diff}) or parens ({paren_diff})",
-            ))
+            tests.append(
+                TestCase(
+                    name=f"syntax_{name_safe}",
+                    passed=False,
+                    tier=TestTier.SMOKE,
+                    description=f"{fname} has valid syntax",
+                    error=f"Unmatched braces ({brace_diff}) or parens ({paren_diff})",
+                )
+            )
             issues.append(f"Syntax error in {fname}: unmatched delimiters")
         else:
-            tests.append(TestCase(
-                name=f"syntax_{name_safe}", passed=True, tier=TestTier.SMOKE,
-                description=f"{fname} has valid syntax",
-            ))
+            tests.append(
+                TestCase(
+                    name=f"syntax_{name_safe}",
+                    passed=True,
+                    tier=TestTier.SMOKE,
+                    description=f"{fname} has valid syntax",
+                )
+            )
 
     # Check if npm/node available
     npm = shutil.which("npm")
@@ -338,20 +390,30 @@ def _validate_typescript(
             try:
                 proc = subprocess.run(
                     [npm, "install", "--no-audit", "--no-fund"],
-                    capture_output=True, text=True,
-                    timeout=120, cwd=str(tmp_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    cwd=str(tmp_path),
                 )
                 if proc.returncode == 0:
-                    tests.append(TestCase(
-                        name="npm_install", passed=True, tier=TestTier.SMOKE,
-                        description="npm install succeeded",
-                    ))
+                    tests.append(
+                        TestCase(
+                            name="npm_install",
+                            passed=True,
+                            tier=TestTier.SMOKE,
+                            description="npm install succeeded",
+                        )
+                    )
                 else:
-                    tests.append(TestCase(
-                        name="npm_install", passed=False, tier=TestTier.SMOKE,
-                        description="npm install succeeded",
-                        error=proc.stderr[-200:],
-                    ))
+                    tests.append(
+                        TestCase(
+                            name="npm_install",
+                            passed=False,
+                            tier=TestTier.SMOKE,
+                            description="npm install succeeded",
+                            error=proc.stderr[-200:],
+                        )
+                    )
                     issues.append(f"npm install failed: {proc.stderr[-200:]}")
                     return tests, issues
             except subprocess.TimeoutExpired:
@@ -363,44 +425,64 @@ def _validate_typescript(
             try:
                 proc = subprocess.run(
                     [npx, "tsc", "--noEmit"],
-                    capture_output=True, text=True,
-                    timeout=60, cwd=str(tmp_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=str(tmp_path),
                 )
                 tsc_output = proc.stdout or proc.stderr
                 error_count = tsc_output.count("error TS")
 
                 if proc.returncode == 0 or error_count == 0:
-                    tests.append(TestCase(
-                        name="tsc_typecheck", passed=True, tier=TestTier.SMOKE,
-                        description="TypeScript type checking passed",
-                    ))
+                    tests.append(
+                        TestCase(
+                            name="tsc_typecheck",
+                            passed=True,
+                            tier=TestTier.SMOKE,
+                            description="TypeScript type checking passed",
+                        )
+                    )
                 elif error_count <= 3:
                     # Minor type errors — pass with warning
-                    tests.append(TestCase(
-                        name="tsc_typecheck", passed=True, tier=TestTier.SMOKE,
-                        description=f"TypeScript: {error_count} minor type errors",
-                    ))
+                    tests.append(
+                        TestCase(
+                            name="tsc_typecheck",
+                            passed=True,
+                            tier=TestTier.SMOKE,
+                            description=f"TypeScript: {error_count} minor type errors",
+                        )
+                    )
                 else:
-                    tests.append(TestCase(
-                        name="tsc_typecheck", passed=False, tier=TestTier.SMOKE,
-                        description="TypeScript type checking passed",
-                        error=f"{error_count} type errors: {tsc_output[-300:]}",
-                    ))
+                    tests.append(
+                        TestCase(
+                            name="tsc_typecheck",
+                            passed=False,
+                            tier=TestTier.SMOKE,
+                            description="TypeScript type checking passed",
+                            error=f"{error_count} type errors: {tsc_output[-300:]}",
+                        )
+                    )
             except subprocess.TimeoutExpired:
                 issues.append("tsc timed out")
             except Exception as e:
                 logger.debug(f"tsc not available or failed: {e}")
 
         # Step 4: Run vitest if test files exist
-        ts_test_files = [f for f in list(code_files) + list(test_files)
-                         if f.endswith((".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx",
-                                        ".test.js", ".spec.js"))]
+        ts_test_files = [
+            f
+            for f in list(code_files) + list(test_files)
+            if f.endswith(
+                (".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx", ".test.js", ".spec.js")
+            )
+        ]
         if ts_test_files and npx:
             try:
                 proc = subprocess.run(
                     [npx, "vitest", "run", "--reporter=verbose"],
-                    capture_output=True, text=True,
-                    timeout=60, cwd=str(tmp_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=str(tmp_path),
                     env={**os.environ, "CI": "true"},  # CI mode prevents interactive
                 )
                 output = proc.stdout + "\n" + proc.stderr
@@ -411,37 +493,50 @@ def _validate_typescript(
                     line = line.strip()
                     # Match: ✓ test description or ✗ test description
                     if line.startswith("✓") or line.startswith("√") or "pass" in line.lower():
-                        match = re.match(r'[✓√✔]\s+(.+?)(?:\s+\(\d+\s*m?s\))?$', line)
+                        match = re.match(r"[✓√✔]\s+(.+?)(?:\s+\(\d+\s*m?s\))?$", line)
                         if match:
-                            tests.append(TestCase(
-                                name=match.group(1).strip()[:80],
-                                passed=True, tier=TestTier.FUNCTIONAL,
-                            ))
+                            tests.append(
+                                TestCase(
+                                    name=match.group(1).strip()[:80],
+                                    passed=True,
+                                    tier=TestTier.FUNCTIONAL,
+                                )
+                            )
                     elif line.startswith("✗") or line.startswith("×"):
-                        match = re.match(r'[✗×✘]\s+(.+?)(?:\s+\(\d+\s*m?s\))?$', line)
+                        match = re.match(r"[✗×✘]\s+(.+?)(?:\s+\(\d+\s*m?s\))?$", line)
                         if match:
-                            tests.append(TestCase(
-                                name=match.group(1).strip()[:80],
-                                passed=False, tier=TestTier.FUNCTIONAL,
-                                error="Test failed",
-                            ))
+                            tests.append(
+                                TestCase(
+                                    name=match.group(1).strip()[:80],
+                                    passed=False,
+                                    tier=TestTier.FUNCTIONAL,
+                                    error="Test failed",
+                                )
+                            )
 
                 # Fallback: parse summary line
                 if not any(t.tier == TestTier.FUNCTIONAL for t in tests):
-                    pass_match = re.search(r'(\d+)\s+passed', output)
-                    fail_match = re.search(r'(\d+)\s+failed', output)
+                    pass_match = re.search(r"(\d+)\s+passed", output)
+                    fail_match = re.search(r"(\d+)\s+failed", output)
                     if pass_match:
                         for i in range(int(pass_match.group(1))):
-                            tests.append(TestCase(
-                                name=f"vitest_passed_{i+1}", passed=True,
-                                tier=TestTier.FUNCTIONAL,
-                            ))
+                            tests.append(
+                                TestCase(
+                                    name=f"vitest_passed_{i + 1}",
+                                    passed=True,
+                                    tier=TestTier.FUNCTIONAL,
+                                )
+                            )
                     if fail_match:
                         for i in range(int(fail_match.group(1))):
-                            tests.append(TestCase(
-                                name=f"vitest_failed_{i+1}", passed=False,
-                                tier=TestTier.FUNCTIONAL, error="Test failed",
-                            ))
+                            tests.append(
+                                TestCase(
+                                    name=f"vitest_failed_{i + 1}",
+                                    passed=False,
+                                    tier=TestTier.FUNCTIONAL,
+                                    error="Test failed",
+                                )
+                            )
 
             except subprocess.TimeoutExpired:
                 issues.append("vitest timed out after 60s")
@@ -454,7 +549,7 @@ def _validate_typescript(
 def _extract_test_error(output: str, test_name: str) -> str:
     """Extract the error message for a specific failed test from pytest output."""
     # Look for FAILED or ERROR section for this test
-    pattern = rf'(?:FAILED|ERROR).*{re.escape(test_name)}.*?(?:\n.*?(?:Error|Exception|assert).*?)(?:\n|$)'
+    pattern = rf"(?:FAILED|ERROR).*{re.escape(test_name)}.*?(?:\n.*?(?:Error|Exception|assert).*?)(?:\n|$)"
     match = re.search(pattern, output, re.DOTALL)
     if match:
         return match.group(0).strip()[:200]
@@ -468,6 +563,7 @@ def _extract_test_error(output: str, test_name: str) -> str:
 
 
 # ── Deterministic quality checks ─────────────────────────────────────────────
+
 
 def _lint_score(code_files: dict[str, str]) -> float:
     """Run basic lint checks and return a score 0.0-1.0."""
@@ -492,7 +588,7 @@ def _lint_score(code_files: dict[str, str]) -> float:
                 issues += 2
             if line.strip() == "pass" and i > 0:
                 # pass in a class/function is ok, standalone pass is suspicious
-                prev = lines[i-1].strip() if i > 0 else ""
+                prev = lines[i - 1].strip() if i > 0 else ""
                 if not prev.endswith(":"):
                     issues += 1
 
@@ -508,9 +604,12 @@ def _security_score(code_files: dict[str, str]) -> float:
     clean_files = 0
 
     dangerous_patterns = [
-        r'\beval\s*\(', r'\bexec\s*\(', r'os\.system\s*\(',
-        r'subprocess\.call\s*\(.*shell\s*=\s*True',
-        r'pickle\.loads?\s*\(', r'__import__\s*\(',
+        r"\beval\s*\(",
+        r"\bexec\s*\(",
+        r"os\.system\s*\(",
+        r"subprocess\.call\s*\(.*shell\s*=\s*True",
+        r"pickle\.loads?\s*\(",
+        r"__import__\s*\(",
     ]
 
     for fname, content in code_files.items():
@@ -530,15 +629,16 @@ def _security_score(code_files: dict[str, str]) -> float:
 
 # ── Weighted scoring (unchanged) ─────────────────────────────────────────────
 
+
 def _classify_and_score(result: ValidationResult) -> None:
     """Classify tests into tiers and compute weighted verdict score.
-    
+
     Classification priority:
     1. Already-classified tests (executor, syntax) — keep their tier
     2. Error-type classification (import errors → ENVIRONMENT)
     3. P0/P1/P2 comment markers in test descriptions (from tester prompt)
     4. Structural heuristics based on test name patterns
-    
+
     The heuristics prioritize SMOKE classification for basic CRUD operations
     (create, read, list, get, health) since these test core functionality,
     not edge cases. Only tests with explicit error/invalid/boundary terms
@@ -569,15 +669,41 @@ def _classify_and_score(result: ValidationResult) -> None:
         # Priority 3: Structural heuristics
         # SMOKE: basic operations that test core functionality works at all
         smoke_patterns = (
-            "import", "instantiat", "exist", "smoke", "health", "startup",
-            "create", "read", "list", "get_", "get_all", "root", "index",
-            "home", "status", "ping", "version",
+            "import",
+            "instantiat",
+            "exist",
+            "smoke",
+            "health",
+            "startup",
+            "create",
+            "read",
+            "list",
+            "get_",
+            "get_all",
+            "root",
+            "index",
+            "home",
+            "status",
+            "ping",
+            "version",
         )
         # EDGE_CASE: explicit error handling and boundary tests
         edge_patterns = (
-            "invalid", "error", "empty", "boundary", "negative", "zero",
-            "nonexistent", "not_found", "duplicate", "missing", "null",
-            "unauthorized", "forbidden", "malformed", "overflow",
+            "invalid",
+            "error",
+            "empty",
+            "boundary",
+            "negative",
+            "zero",
+            "nonexistent",
+            "not_found",
+            "duplicate",
+            "missing",
+            "null",
+            "unauthorized",
+            "forbidden",
+            "malformed",
+            "overflow",
         )
 
         if any(k in name_lower for k in edge_patterns):

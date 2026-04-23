@@ -18,6 +18,7 @@ from __future__ import annotations
 
 try:
     import dspy
+
     _DSPY_AVAILABLE = True
 except ImportError:
     _DSPY_AVAILABLE = False
@@ -36,9 +37,7 @@ class BeliefPlanner:
 
     def __init__(self):
         _require_dspy()
-        self.plan = dspy.ChainOfThought(
-            "goal, research_context, tier -> plan_json"
-        )
+        self.plan = dspy.ChainOfThought("goal, research_context, tier -> plan_json")
 
     def forward(self, goal: str, research_context: str = "", tier: str = "3"):
         return self.plan(goal=goal, research_context=research_context, tier=str(tier))
@@ -52,9 +51,7 @@ class BeliefArchitect:
 
     def __init__(self):
         _require_dspy()
-        self.design = dspy.ChainOfThought(
-            "goal, plan, principles, covenants -> architecture_json"
-        )
+        self.design = dspy.ChainOfThought("goal, plan, principles, covenants -> architecture_json")
 
     def forward(self, goal: str, plan: str, principles: str = "", covenants: str = ""):
         return self.design(goal=goal, plan=plan, principles=principles, covenants=covenants)
@@ -74,8 +71,10 @@ class BeliefBuilder:
 
     def forward(self, goal: str, architecture: str, skeleton: str = "", principles: str = ""):
         return self.build(
-            goal=goal, architecture=architecture,
-            skeleton=skeleton, principles=principles,
+            goal=goal,
+            architecture=architecture,
+            skeleton=skeleton,
+            principles=principles,
         )
 
     def named_predictors(self):
@@ -87,13 +86,12 @@ class BeliefTester:
 
     def __init__(self):
         _require_dspy()
-        self.test = dspy.ChainOfThought(
-            "goal, code_files_summary, architecture -> test_files_json"
-        )
+        self.test = dspy.ChainOfThought("goal, code_files_summary, architecture -> test_files_json")
 
     def forward(self, goal: str, code_files_summary: str, architecture: str):
         return self.test(
-            goal=goal, code_files_summary=code_files_summary,
+            goal=goal,
+            code_files_summary=code_files_summary,
             architecture=architecture,
         )
 
@@ -112,7 +110,8 @@ class BeliefDebugger:
 
     def forward(self, error_summary: str, code_context: str, previous_attempts: str = ""):
         return self.debug(
-            error_summary=error_summary, code_context=code_context,
+            error_summary=error_summary,
+            code_context=code_context,
             previous_attempts=previous_attempts,
         )
 

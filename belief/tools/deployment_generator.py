@@ -26,6 +26,7 @@ from belief.models.project_manifest import (
 # Dockerfile
 # ---------------------------------------------------------------------------
 
+
 def generate_dockerfile(manifest: ProjectManifest) -> str:
     """Generate an optimized multi-stage Dockerfile."""
     lines = [
@@ -42,19 +43,21 @@ def generate_dockerfile(manifest: ProjectManifest) -> str:
     for pkg in manifest.system_packages:
         lines.append(f"    {pkg} \\")
 
-    lines.extend([
-        "    && rm -rf /var/lib/apt/lists/*",
-        "",
-        f"WORKDIR {manifest.docker_workdir}",
-        "",
-        "# Install Python dependencies first (cache layer)",
-        "COPY requirements.txt .",
-        "RUN pip install --no-cache-dir -r requirements.txt",
-        "",
-        "# Copy application code",
-        "COPY . .",
-        "",
-    ])
+    lines.extend(
+        [
+            "    && rm -rf /var/lib/apt/lists/*",
+            "",
+            f"WORKDIR {manifest.docker_workdir}",
+            "",
+            "# Install Python dependencies first (cache layer)",
+            "COPY requirements.txt .",
+            "RUN pip install --no-cache-dir -r requirements.txt",
+            "",
+            "# Copy application code",
+            "COPY . .",
+            "",
+        ]
+    )
 
     # Expose ports
     for port in manifest.docker_expose:
@@ -67,16 +70,20 @@ def generate_dockerfile(manifest: ProjectManifest) -> str:
     if manifest.health_check and manifest.service_type == ServiceType.API:
         hc = manifest.health_check
         port = manifest.docker_expose[0] if manifest.docker_expose else 8000
-        lines.extend([
-            f"HEALTHCHECK --interval={hc.interval_seconds}s --timeout={hc.timeout_seconds}s --retries={hc.retries} \\",
-            f'    CMD python -c "import urllib.request; urllib.request.urlopen(\'http://localhost:{port}{hc.path}\')" || exit 1',
-            "",
-        ])
+        lines.extend(
+            [
+                f"HEALTHCHECK --interval={hc.interval_seconds}s --timeout={hc.timeout_seconds}s --retries={hc.retries} \\",
+                f"    CMD python -c \"import urllib.request; urllib.request.urlopen('http://localhost:{port}{hc.path}')\" || exit 1",
+                "",
+            ]
+        )
 
     # Entry point
-    lines.append(f'CMD ["{manifest.entry_command.split()[0]}", '
-                 + ", ".join(f'"{arg}"' for arg in manifest.entry_command.split()[1:])
-                 + "]")
+    lines.append(
+        f'CMD ["{manifest.entry_command.split()[0]}", '
+        + ", ".join(f'"{arg}"' for arg in manifest.entry_command.split()[1:])
+        + "]"
+    )
 
     return "\n".join(lines) + "\n"
 
@@ -84,6 +91,7 @@ def generate_dockerfile(manifest: ProjectManifest) -> str:
 # ---------------------------------------------------------------------------
 # docker-compose.yml
 # ---------------------------------------------------------------------------
+
 
 def generate_docker_compose(manifest: ProjectManifest) -> str:
     """Generate docker-compose.yml with dependent services."""
@@ -123,58 +131,66 @@ def generate_docker_compose(manifest: ProjectManifest) -> str:
     if manifest.health_check and manifest.service_type == ServiceType.API:
         hc = manifest.health_check
         port = manifest.ports[0].container_port if manifest.ports else 8000
-        lines.extend([
-            "    healthcheck:",
-            f'      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(\'http://localhost:{port}{hc.path}\')"]',
-            f"      interval: {hc.interval_seconds}s",
-            f"      timeout: {hc.timeout_seconds}s",
-            f"      retries: {hc.retries}",
-        ])
+        lines.extend(
+            [
+                "    healthcheck:",
+                f'      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(\'http://localhost:{port}{hc.path}\')"]',
+                f"      interval: {hc.interval_seconds}s",
+                f"      timeout: {hc.timeout_seconds}s",
+                f"      retries: {hc.retries}",
+            ]
+        )
 
     lines.append("    restart: unless-stopped")
 
     # Dependent services
     if "postgres" in manifest.depends_on:
-        lines.extend([
-            "",
-            "  postgres:",
-            "    image: postgres:16-alpine",
-            "    environment:",
-            "      POSTGRES_USER: ${POSTGRES_USER:-postgres}",
-            "      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}",
-            f"      POSTGRES_DB: ${{POSTGRES_DB:-{manifest.project_name}}}",
-            "    ports:",
-            '      - "5432:5432"',
-            "    volumes:",
-            "      - pgdata:/var/lib/postgresql/data",
-            "    healthcheck:",
-            '      test: ["CMD-SHELL", "pg_isready -U postgres"]',
-            "      interval: 5s",
-            "      timeout: 5s",
-            "      retries: 5",
-        ])
+        lines.extend(
+            [
+                "",
+                "  postgres:",
+                "    image: postgres:16-alpine",
+                "    environment:",
+                "      POSTGRES_USER: ${POSTGRES_USER:-postgres}",
+                "      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}",
+                f"      POSTGRES_DB: ${{POSTGRES_DB:-{manifest.project_name}}}",
+                "    ports:",
+                '      - "5432:5432"',
+                "    volumes:",
+                "      - pgdata:/var/lib/postgresql/data",
+                "    healthcheck:",
+                '      test: ["CMD-SHELL", "pg_isready -U postgres"]',
+                "      interval: 5s",
+                "      timeout: 5s",
+                "      retries: 5",
+            ]
+        )
 
     if "redis" in manifest.depends_on:
-        lines.extend([
-            "",
-            "  redis:",
-            "    image: redis:7-alpine",
-            "    ports:",
-            '      - "6379:6379"',
-            "    healthcheck:",
-            '      test: ["CMD", "redis-cli", "ping"]',
-            "      interval: 5s",
-            "      timeout: 5s",
-            "      retries: 5",
-        ])
+        lines.extend(
+            [
+                "",
+                "  redis:",
+                "    image: redis:7-alpine",
+                "    ports:",
+                '      - "6379:6379"',
+                "    healthcheck:",
+                '      test: ["CMD", "redis-cli", "ping"]',
+                "      interval: 5s",
+                "      timeout: 5s",
+                "      retries: 5",
+            ]
+        )
 
     # Volumes section
     volume_services = [s for s in manifest.depends_on if s in ("postgres",)]
     if volume_services:
-        lines.extend([
-            "",
-            "volumes:",
-        ])
+        lines.extend(
+            [
+                "",
+                "volumes:",
+            ]
+        )
         if "postgres" in manifest.depends_on:
             lines.append("  pgdata:")
 
@@ -184,6 +200,7 @@ def generate_docker_compose(manifest: ProjectManifest) -> str:
 # ---------------------------------------------------------------------------
 # .env.example
 # ---------------------------------------------------------------------------
+
 
 def generate_env_example(manifest: ProjectManifest) -> str:
     """Generate .env.example with all required environment variables."""
@@ -224,21 +241,25 @@ def generate_env_example(manifest: ProjectManifest) -> str:
 
     # Add dependent service vars
     if "postgres" in manifest.depends_on:
-        lines.extend([
-            "# === Database ===",
-            "POSTGRES_USER=postgres",
-            "POSTGRES_PASSWORD=postgres",
-            f"POSTGRES_DB={manifest.project_name}",
-            f"DATABASE_URL=postgresql://postgres:postgres@postgres:5432/{manifest.project_name}",
-            "",
-        ])
+        lines.extend(
+            [
+                "# === Database ===",
+                "POSTGRES_USER=postgres",
+                "POSTGRES_PASSWORD=postgres",
+                f"POSTGRES_DB={manifest.project_name}",
+                f"DATABASE_URL=postgresql://postgres:postgres@postgres:5432/{manifest.project_name}",
+                "",
+            ]
+        )
 
     if "redis" in manifest.depends_on:
-        lines.extend([
-            "# === Redis ===",
-            "REDIS_URL=redis://redis:6379/0",
-            "",
-        ])
+        lines.extend(
+            [
+                "# === Redis ===",
+                "REDIS_URL=redis://redis:6379/0",
+                "",
+            ]
+        )
 
     return "\n".join(lines)
 
@@ -246,6 +267,7 @@ def generate_env_example(manifest: ProjectManifest) -> str:
 # ---------------------------------------------------------------------------
 # requirements.txt
 # ---------------------------------------------------------------------------
+
 
 def generate_requirements_txt(manifest: ProjectManifest) -> str:
     """Generate requirements.txt from manifest."""
@@ -263,6 +285,7 @@ def generate_requirements_txt(manifest: ProjectManifest) -> str:
 # ---------------------------------------------------------------------------
 # GitHub Actions CI/CD
 # ---------------------------------------------------------------------------
+
 
 def generate_github_actions(manifest: ProjectManifest) -> str:
     """Generate .github/workflows/ci.yml."""
@@ -313,7 +336,7 @@ jobs:
         run: |
           docker run -d --name test-container -p {port}:{port} {manifest.project_name}:${{{{ github.sha }}}}
           sleep 5
-          curl -f http://localhost:{port}{manifest.health_check.path if manifest.health_check else '/health'} || exit 1
+          curl -f http://localhost:{port}{manifest.health_check.path if manifest.health_check else "/health"} || exit 1
           docker stop test-container
 """
     return workflow
@@ -322,6 +345,7 @@ jobs:
 # ---------------------------------------------------------------------------
 # Railway config
 # ---------------------------------------------------------------------------
+
 
 def generate_railway_toml(manifest: ProjectManifest) -> str:
     """Generate railway.toml for Railway deployment."""
@@ -352,6 +376,7 @@ internalPort = {port}
 # .dockerignore
 # ---------------------------------------------------------------------------
 
+
 def generate_dockerignore() -> str:
     """Generate .dockerignore."""
     return """# .dockerignore
@@ -374,6 +399,7 @@ venv/
 # ---------------------------------------------------------------------------
 # All artifacts at once
 # ---------------------------------------------------------------------------
+
 
 def generate_all_deployment_artifacts(
     manifest: ProjectManifest,

@@ -27,15 +27,17 @@ logger = logging.getLogger(__name__)
 # Error types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PyrightError:
     """A single error from pyright."""
-    file: str                    # Relative file path
-    line: int                    # Line number (1-indexed)
-    column: int                  # Column number (0-indexed)
-    message: str                 # Error message
-    severity: str                # "error", "warning", "information"
-    rule: Optional[str] = None   # Pyright rule name (e.g. "reportMissingImports")
+
+    file: str  # Relative file path
+    line: int  # Line number (1-indexed)
+    column: int  # Column number (0-indexed)
+    message: str  # Error message
+    severity: str  # "error", "warning", "information"
+    rule: Optional[str] = None  # Pyright rule name (e.g. "reportMissingImports")
 
     @property
     def is_import_error(self) -> bool:
@@ -68,6 +70,7 @@ class PyrightError:
 @dataclass
 class PyrightResult:
     """Results from a pyright run."""
+
     errors: list[PyrightError] = field(default_factory=list)
     success: bool = False
     skipped: bool = False
@@ -97,6 +100,7 @@ class PyrightResult:
 # Pyright runner
 # ---------------------------------------------------------------------------
 
+
 def run_pyright(
     project_dir: str | Path,
     files: Optional[list[str]] = None,
@@ -119,7 +123,8 @@ def run_pyright(
     cmd = [
         "basedpyright",
         "--outputjson",
-        "--pythonversion", python_version,
+        "--pythonversion",
+        python_version,
     ]
 
     if files:
@@ -204,6 +209,7 @@ def _parse_pyright_output(raw_json: str, project_path: Path) -> PyrightResult:
 # Project scaffolding for pyright
 # ---------------------------------------------------------------------------
 
+
 def write_project_for_pyright(
     files: dict[str, str],
     output_dir: str | Path,
@@ -277,6 +283,7 @@ def write_project_for_pyright(
 # ---------------------------------------------------------------------------
 # Error grouping helpers
 # ---------------------------------------------------------------------------
+
 
 def group_errors_by_file(result: PyrightResult) -> dict[str, list[PyrightError]]:
     """Group errors by file path for the self-correction loop."""

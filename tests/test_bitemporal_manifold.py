@@ -14,6 +14,7 @@ Covers:
   - manifold.format_report + to_json produce valid output
   - manifold excludes invalidated nutrients from active view
 """
+
 from __future__ import annotations
 
 import json
@@ -44,7 +45,8 @@ class TestNutrientBiTemporalFields:
     def test_is_valid_at_before_creation_is_false(self):
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
-            content="x", embedding_text="x",
+            content="x",
+            embedding_text="x",
         )
         assert not n.is_valid_at(n.valid_from - 1)
 
@@ -52,8 +54,10 @@ class TestNutrientBiTemporalFields:
         past = _now_ts() - 1000
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
-            content="x", embedding_text="x",
-            valid_from=past, valid_until=past + 500,
+            content="x",
+            embedding_text="x",
+            valid_from=past,
+            valid_until=past + 500,
         )
         # Inside the valid window
         assert n.is_valid_at(past + 100)
@@ -68,8 +72,10 @@ class TestNutrientBiTemporalFields:
         past = _now_ts() - 1000
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
-            content="bad pattern", embedding_text="bad pattern",
-            valid_from=past, valid_until=past + 500,
+            content="bad pattern",
+            embedding_text="bad pattern",
+            valid_from=past,
+            valid_until=past + 500,
             invalidation_reason="superseded by pattern-v2",
         )
         meta = n.to_chromadb_metadata()
@@ -109,7 +115,8 @@ class TestNutrientBiTemporalFields:
         """ChromaDB round-trips sometimes produce ISO strings for timestamps."""
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
-            content="iso", embedding_text="iso",
+            content="iso",
+            embedding_text="iso",
             valid_from="2025-01-01T00:00:00+00:00",
             valid_until="2025-06-01T00:00:00+00:00",
         )
@@ -121,7 +128,7 @@ class TestNutrientBiTemporalFields:
 # ── Manifold classification (no Soil needed) ──────────────────────────────
 
 
-from belief.memory.manifold import (
+from belief.memory.manifold import (  # noqa: E402 — grouped with the tests that use it
     build_manifold,
     format_report,
     nutrient_domains,
@@ -133,10 +140,15 @@ class _FakeNutrient:
     """Duck-type match for Nutrient — only fields the manifold touches."""
 
     def __init__(
-        self, nid: str = "n-0", content: str = "",
-        framework: Optional[str] = None, tags=None,
-        reinforcement_count: int = 0, lapse_count: int = 0,
-        stability: float = 1.0, valid_from: float = 100.0,
+        self,
+        nid: str = "n-0",
+        content: str = "",
+        framework: Optional[str] = None,
+        tags=None,
+        reinforcement_count: int = 0,
+        lapse_count: int = 0,
+        stability: float = 1.0,
+        valid_from: float = 100.0,
         valid_until: float = 0.0,
     ):
         self.nutrient_id = nid
@@ -161,8 +173,7 @@ class _FakeSoil:
     def __init__(self, nutrients):
         self._ns = list(nutrients)
 
-    def iter_all_nutrients(self, include_invalidated: bool = True,
-                           as_of: Optional[float] = None):
+    def iter_all_nutrients(self, include_invalidated: bool = True, as_of: Optional[float] = None):
         ts = as_of if as_of is not None else _now_ts()
         for n in self._ns:
             if not include_invalidated:
@@ -191,8 +202,7 @@ class TestDomainClassification:
         assert primary_domain(n) == "mcp"
 
     def test_general_when_nothing_matches(self):
-        n = _FakeNutrient(framework=None, content="totally generic utility",
-                          tags=["helper"])
+        n = _FakeNutrient(framework=None, content="totally generic utility", tags=["helper"])
         assert primary_domain(n) == "general"
 
     def test_nutrient_domains_returns_union(self):
@@ -209,23 +219,31 @@ class TestDomainClassification:
 
 class TestManifoldBuild:
     def _make_soil(self):
-        return _FakeSoil([
-            _FakeNutrient("f1", "FastAPI users endpoint",
-                          framework="fastapi", reinforcement_count=5),
-            _FakeNutrient("f2", "FastAPI auth middleware",
-                          framework="fastapi", reinforcement_count=3),
-            _FakeNutrient("f3", "FastAPI async websocket pipe",
-                          framework="fastapi", tags=["async"],
-                          reinforcement_count=7),
-            _FakeNutrient("c1", "Click CLI entry point", tags=["cli"]),
-            _FakeNutrient("c2", "CLI argument parsing", tags=["cli"]),
-            _FakeNutrient("m1", "MCP tool server scaffold",
-                          framework="mcp"),
-            _FakeNutrient("x1", "Random generic utility", tags=["helper"]),
-            # Invalidated — should not appear in active clusters.
-            _FakeNutrient("inv", "Invalidated FastAPI thing",
-                          framework="fastapi", valid_until=100.0),
-        ])
+        return _FakeSoil(
+            [
+                _FakeNutrient(
+                    "f1", "FastAPI users endpoint", framework="fastapi", reinforcement_count=5
+                ),
+                _FakeNutrient(
+                    "f2", "FastAPI auth middleware", framework="fastapi", reinforcement_count=3
+                ),
+                _FakeNutrient(
+                    "f3",
+                    "FastAPI async websocket pipe",
+                    framework="fastapi",
+                    tags=["async"],
+                    reinforcement_count=7,
+                ),
+                _FakeNutrient("c1", "Click CLI entry point", tags=["cli"]),
+                _FakeNutrient("c2", "CLI argument parsing", tags=["cli"]),
+                _FakeNutrient("m1", "MCP tool server scaffold", framework="mcp"),
+                _FakeNutrient("x1", "Random generic utility", tags=["helper"]),
+                # Invalidated — should not appear in active clusters.
+                _FakeNutrient(
+                    "inv", "Invalidated FastAPI thing", framework="fastapi", valid_until=100.0
+                ),
+            ]
+        )
 
     def test_clusters_exclude_invalidated(self):
         report = build_manifold(self._make_soil(), gap_threshold=3)
@@ -257,8 +275,7 @@ class TestManifoldBuild:
         assert report.total_active == 0
         assert report.total_invalidated == 0
         # Every domain is a gap when there are zero nutrients.
-        for dom in ["fastapi", "cli", "mcp", "data", "async",
-                    "library", "script", "general"]:
+        for dom in ["fastapi", "cli", "mcp", "data", "async", "library", "script", "general"]:
             assert dom in report.coverage_gaps
 
     def test_format_report_is_nonempty_string(self):
@@ -278,8 +295,7 @@ class TestManifoldBuild:
         assert "coverage_gaps" in payload
         # Cluster shape
         first = payload["clusters"][0]
-        for k in ("domain", "size", "mean_stability", "lapse_rate",
-                  "sample_content"):
+        for k in ("domain", "size", "mean_stability", "lapse_rate", "sample_content"):
             assert k in first
 
 
@@ -299,7 +315,8 @@ class TestSoilInvalidation:
     def test_invalidate_soft_deletes(self, soil):
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
-            content="wrong pattern", embedding_text="wrong pattern",
+            content="wrong pattern",
+            embedding_text="wrong pattern",
         )
         soil.deposit(n)
         ok = soil.invalidate_nutrient(n.nutrient_id, "superseded")
@@ -317,7 +334,8 @@ class TestSoilInvalidation:
     def test_invalidate_idempotent(self, soil):
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
-            content="once", embedding_text="once",
+            content="once",
+            embedding_text="once",
         )
         soil.deposit(n)
         assert soil.invalidate_nutrient(n.nutrient_id, "first") is True
@@ -368,7 +386,8 @@ class TestSoilInvalidation:
     def test_iter_all_nutrients_filter(self, soil):
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
-            content="pattern", embedding_text="pattern A",
+            content="pattern",
+            embedding_text="pattern A",
         )
         soil.deposit(n)
         soil.invalidate_nutrient(n.nutrient_id, "x")
@@ -382,7 +401,8 @@ class TestSoilInvalidation:
     def test_count_helpers(self, soil):
         n = Nutrient(
             nutrient_type=NutrientType.PATTERN,
-            content="x", embedding_text="unique-for-count-test",
+            content="x",
+            embedding_text="unique-for-count-test",
         )
         soil.deposit(n)
         assert soil.count_active() == 1
@@ -399,24 +419,30 @@ class TestManifoldAgainstRealSoil:
         and verify the manifold reflects the live view."""
         # Use fastapi framework, unique contents to avoid 0.92-sim
         # dedup collapsing them.
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.PATTERN,
-            content="fastapi crud endpoint scaffold",
-            embedding_text="unique-fastapi-pattern-alpha-scaffold",
-            framework="fastapi",
-        ))
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.PATTERN,
-            content="fastapi auth dependency injection",
-            embedding_text="unique-fastapi-pattern-beta-authx",
-            framework="fastapi",
-        ))
-        soil.deposit(Nutrient(
-            nutrient_type=NutrientType.PATTERN,
-            content="click CLI entry",
-            embedding_text="unique-cli-pattern-gamma-entry",
-            tags=["cli"],
-        ))
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.PATTERN,
+                content="fastapi crud endpoint scaffold",
+                embedding_text="unique-fastapi-pattern-alpha-scaffold",
+                framework="fastapi",
+            )
+        )
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.PATTERN,
+                content="fastapi auth dependency injection",
+                embedding_text="unique-fastapi-pattern-beta-authx",
+                framework="fastapi",
+            )
+        )
+        soil.deposit(
+            Nutrient(
+                nutrient_type=NutrientType.PATTERN,
+                content="click CLI entry",
+                embedding_text="unique-cli-pattern-gamma-entry",
+                tags=["cli"],
+            )
+        )
         # Invalidated — should NOT appear in clusters.
         ghost = Nutrient(
             nutrient_type=NutrientType.PATTERN,

@@ -29,11 +29,15 @@ def send_telegram(text: str, parse_mode: str = "Markdown") -> bool:
 
     try:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        status = post_form_sync(url, {
-            "chat_id": chat_id,
-            "text": text[:4000],
-            "parse_mode": parse_mode,
-        }, timeout=10.0)
+        status = post_form_sync(
+            url,
+            {
+                "chat_id": chat_id,
+                "text": text[:4000],
+                "parse_mode": parse_mode,
+            },
+            timeout=10.0,
+        )
         return status == 200
     except Exception as e:
         logger.debug(f"Telegram send failed: {e}")
@@ -41,8 +45,12 @@ def send_telegram(text: str, parse_mode: str = "Markdown") -> bool:
 
 
 def notify_build_complete(
-    run_id: str, goal: str, verdict: str, cost: float,
-    elapsed: float, file_count: int,
+    run_id: str,
+    goal: str,
+    verdict: str,
+    cost: float,
+    elapsed: float,
+    file_count: int,
 ) -> None:
     """Notify about a completed build."""
     emoji = "✅" if verdict == "pass" else "⚠️"
@@ -72,8 +80,5 @@ def notify_seed_proposal(title: str, target: str, confidence: str) -> None:
 
 def notify_health_issue(issues: list[str]) -> None:
     """Notify about health issues."""
-    msg = (
-        "⚠️ *Health Issues*\n\n" +
-        "\n".join(f"• {i}" for i in issues)
-    )
+    msg = "⚠️ *Health Issues*\n\n" + "\n".join(f"• {i}" for i in issues)
     send_telegram(msg)

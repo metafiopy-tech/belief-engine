@@ -97,12 +97,7 @@ def update_stability_on_success(
         New stability (always >= *s*).
     """
     w = max(0.0, float(productivity_weight))
-    growth = (
-        math.exp(0.1)
-        * (11.0 - d)
-        * (s ** (-0.2))
-        * (math.exp((1.0 - r) * 0.9) - 1.0)
-    )
+    growth = math.exp(0.1) * (11.0 - d) * (s ** (-0.2)) * (math.exp((1.0 - r) * 0.9) - 1.0)
     return s * (1.0 + growth * w)
 
 
@@ -123,12 +118,7 @@ def update_stability_on_failure(s: float, d: float, r: float) -> float:
     Returns:
         New stability (>= 0.1).
     """
-    new_s = (
-        s
-        * (d ** (-0.15))
-        * ((s + 1.0) ** 0.15 - 1.0)
-        * math.exp((1.0 - r) * 0.35)
-    )
+    new_s = s * (d ** (-0.15)) * ((s + 1.0) ** 0.15 - 1.0) * math.exp((1.0 - r) * 0.35)
     return max(0.1, new_s)
 
 
@@ -354,9 +344,7 @@ def _descendant_parent_ids(descendant: Any) -> Iterable[str]:
     return parents
 
 
-def _collect_descendants(
-    root_id: str, soil: Any, _seen: Optional[set] = None
-) -> list[Any]:
+def _collect_descendants(root_id: str, soil: Any, _seen: Optional[set] = None) -> list[Any]:
     """Return all descendants of ``root_id`` (transitive, deduped).
 
     Walks the lineage DAG breadth-first.  ``soil`` must expose

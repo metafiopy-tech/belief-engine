@@ -143,7 +143,9 @@ class _FakeClient:
         self.post_calls.append((url, kwargs))
         if self._post_handler is not None:
             return self._post_handler(url, kwargs)
-        return _FakeResponse(status_code=200, text='{"message":{"role":"assistant","content":"ok"}}')
+        return _FakeResponse(
+            status_code=200, text='{"message":{"role":"assistant","content":"ok"}}'
+        )
 
     async def get(self, url: str, **kwargs: Any) -> _FakeResponse:
         self.get_calls.append(url)
@@ -203,13 +205,12 @@ class TestClassifyOllamaError:
 
 class TestInactivityWatchdog:
     @pytest.mark.asyncio
-    async def test_watchdog_fires_when_stream_stalls(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_watchdog_fires_when_stream_stalls(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A stream that emits no chunks for inactivity_s seconds must
         raise OllamaStreamStall (a transient subtype).  We patch
         inactivity_s to 0.1s and have the fake stream stall forever.
         """
+
         # Fake stream never yields a line.
         def stream_factory() -> _FakeResponse:
             return _FakeResponse(status_code=200, stall_forever=True)
@@ -238,7 +239,11 @@ class TestInactivityWatchdog:
 
         with pytest.raises(OllamaStreamStall):
             await ollama.generate(
-                system="sys", user="hi", max_tokens=50, temperature=0.0, role="default",
+                system="sys",
+                user="hi",
+                max_tokens=50,
+                temperature=0.0,
+                role="default",
             )
 
         # Watchdog fired for EVERY retry attempt — verify the unload POST
@@ -261,9 +266,7 @@ class TestInactivityWatchdog:
 
 class TestContextExceededNoRetry:
     @pytest.mark.asyncio
-    async def test_context_exceeded_does_not_retry(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_context_exceeded_does_not_retry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A 4xx with "context length" in the body must raise
         OllamaContextExceeded on the FIRST attempt and not retry — the
         overnight failure mode this whole session was written to fix.
@@ -289,7 +292,11 @@ class TestContextExceededNoRetry:
 
         with pytest.raises(OllamaContextExceeded):
             await ollama.generate(
-                system="sys", user="huge", max_tokens=50, temperature=0.0, role="default",
+                system="sys",
+                user="huge",
+                max_tokens=50,
+                temperature=0.0,
+                role="default",
             )
 
         assert call_count["n"] == 1, (
@@ -336,12 +343,14 @@ class TestTransientRetry:
 
         with pytest.raises(OllamaTransientError):
             await ollama.generate(
-                system="sys", user="hi", max_tokens=50, temperature=0.0, role="default",
+                system="sys",
+                user="hi",
+                max_tokens=50,
+                temperature=0.0,
+                role="default",
             )
 
-        assert call_count["n"] == 3, (
-            f"Expected exactly 3 attempts, got {call_count['n']}"
-        )
+        assert call_count["n"] == 3, f"Expected exactly 3 attempts, got {call_count['n']}"
 
         await ollama.close()
 
@@ -353,9 +362,7 @@ class TestTransientRetry:
 
 class TestCircuitBreaker:
     @pytest.mark.asyncio
-    async def test_breaker_opens_after_five_failures(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_breaker_opens_after_five_failures(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Drive five transient-error calls through the same model;
         the next call must short-circuit with breaker-open instead of
         hitting the wire again.
@@ -384,7 +391,11 @@ class TestCircuitBreaker:
         for _ in range(2):
             with pytest.raises(OllamaTransientError):
                 await ollama.generate(
-                    system="s", user="u", max_tokens=10, temperature=0.0, role="default",
+                    system="s",
+                    user="u",
+                    max_tokens=10,
+                    temperature=0.0,
+                    role="default",
                 )
 
         calls_before_open = call_count["n"]
@@ -392,7 +403,11 @@ class TestCircuitBreaker:
         # Next call must short-circuit — the breaker is open.
         with pytest.raises(OllamaTransientError, match="circuit breaker"):
             await ollama.generate(
-                system="s", user="u", max_tokens=10, temperature=0.0, role="default",
+                system="s",
+                user="u",
+                max_tokens=10,
+                temperature=0.0,
+                role="default",
             )
 
         # No new wire calls on the short-circuit path.
@@ -410,15 +425,14 @@ class TestCircuitBreaker:
 
 class TestRoleBudget:
     @pytest.mark.asyncio
-    async def test_executor_short_budget_enforced(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_executor_short_budget_enforced(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Patch ROLE_BUDGETS so 'executor' gets 0.2s, and make every
         stream stall until the budget fires.  We expect
         OllamaTransientError with a "budget" message, NOT an
         OllamaStreamStall — because asyncio.wait_for (the budget) wraps
         the retry loop and fires first.
         """
+
         def stream_factory() -> _FakeResponse:
             return _FakeResponse(status_code=200, stall_forever=True)
 
@@ -439,7 +453,11 @@ class TestRoleBudget:
 
         with pytest.raises(OllamaTransientError, match="budget"):
             await ollama.generate(
-                system="s", user="u", max_tokens=10, temperature=0.0, role="executor",
+                system="s",
+                user="u",
+                max_tokens=10,
+                temperature=0.0,
+                role="executor",
             )
 
         await ollama.close()
@@ -482,9 +500,7 @@ class TestHealthOk:
 
 
 class TestThermalGate:
-    def test_thermal_gate_unknown_is_noop_off_macos(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_thermal_gate_unknown_is_noop_off_macos(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """On Linux (CI / sandbox), read_thermal_pressure returns
         UNKNOWN and thermal_gate sleeps 0 seconds.
         """

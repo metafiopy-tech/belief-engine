@@ -20,6 +20,7 @@ logger = logging.getLogger("belief.daemons")
 
 # ── Health Daemon ─────────────────────────────────────────────────────────────
 
+
 class HealthDaemon:
     """Zero-LLM system health monitoring.
 
@@ -56,6 +57,7 @@ class HealthDaemon:
     def check_now(self) -> dict:
         """Run all health checks immediately. Returns status dict."""
         import os
+
         issues = []
         checks = {}
 
@@ -92,7 +94,8 @@ class HealthDaemon:
 
         # Check 4: ChromaDB available (optional)
         try:
-            import chromadb
+            import chromadb  # noqa: F401 — presence check, not used here
+
             checks["chromadb"] = True
         except ImportError:
             checks["chromadb"] = False
@@ -100,8 +103,9 @@ class HealthDaemon:
 
         # Check 5: Disk space
         import shutil
+
         usage = shutil.disk_usage(str(self.project_root))
-        free_gb = usage.free / (1024 ** 3)
+        free_gb = usage.free / (1024**3)
         checks["disk_free_gb"] = round(free_gb, 1)
         if free_gb < 1.0:
             issues.append(f"Low disk space: {free_gb:.1f}GB free")
@@ -135,6 +139,7 @@ class HealthDaemon:
 
 
 # ── Autonomous Loop ───────────────────────────────────────────────────────────
+
 
 class AutonomousLoop:
     """Background scheduler for periodic tasks.

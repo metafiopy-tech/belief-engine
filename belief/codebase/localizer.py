@@ -29,6 +29,7 @@ logger = logging.getLogger("belief.codebase.localizer")
 @dataclass
 class EditLocation:
     """A specific location in the codebase to edit."""
+
     file_path: str
     function_name: str = ""
     class_name: str = ""
@@ -71,10 +72,7 @@ class HierarchicalLocalizer:
         candidates = await self._phase2_symbols(codebase, ranked_files[:5], issue, llm)
         if not candidates:
             # Fallback: return file-level locations
-            return [
-                EditLocation(file_path=f, confidence=0.5)
-                for f in ranked_files[:max_locations]
-            ]
+            return [EditLocation(file_path=f, confidence=0.5) for f in ranked_files[:max_locations]]
 
         logger.info(f"Localizer Phase 2: {len(candidates)} candidate symbols")
 
@@ -84,12 +82,11 @@ class HierarchicalLocalizer:
         logger.info(f"Localizer Phase 3: {len(locations)} edit locations identified")
         return locations[:max_locations]
 
-    async def _phase1_files(
-        self, codebase, issue: str, llm=None
-    ) -> list[str]:
+    async def _phase1_files(self, codebase, issue: str, llm=None) -> list[str]:
         """Phase 1: Rank files by relevance using BM25 + PageRank hybrid."""
         try:
             from belief.codebase.repo_graph import RepoGraph
+
             graph = RepoGraph.from_codebase(codebase)
             ranked = graph.localize(issue, max_files=20)
             file_paths = [r.path for r in ranked]
@@ -102,7 +99,7 @@ class HierarchicalLocalizer:
 
         # LLM re-ranking: show file list + repo map, ask which files to examine
         repo_map = codebase.generate_repo_map(max_tokens=1500)
-        file_list = "\n".join(f"  {i+1}. {f}" for i, f in enumerate(file_paths[:20]))
+        file_list = "\n".join(f"  {i + 1}. {f}" for i, f in enumerate(file_paths[:20]))
 
         prompt = f"""Given this issue:
 {issue}
@@ -154,18 +151,22 @@ Return ONLY the file paths, one per line, most relevant first."""
 
             if symbols:
                 for sym in symbols:
-                    candidates.append(EditLocation(
-                        file_path=fpath,
-                        function_name=sym.name if sym.kind == "function" else "",
-                        class_name=sym.name if sym.kind == "class" else "",
-                        confidence=0.6,
-                    ))
+                    candidates.append(
+                        EditLocation(
+                            file_path=fpath,
+                            function_name=sym.name if sym.kind == "function" else "",
+                            class_name=sym.name if sym.kind == "class" else "",
+                            confidence=0.6,
+                        )
+                    )
             else:
                 # No symbol match — include file-level
-                candidates.append(EditLocation(
-                    file_path=fpath,
-                    confidence=0.4,
-                ))
+                candidates.append(
+                    EditLocation(
+                        file_path=fpath,
+                        confidence=0.4,
+                    )
+                )
 
         if not llm or not candidates:
             return candidates
@@ -212,11 +213,13 @@ file_path::function_or_class_name"""
                     symbol = parts[1].strip()
                     # Validate file exists
                     if fpath in {c.file_path for c in candidates}:
-                        refined.append(EditLocation(
-                            file_path=fpath,
-                            function_name=symbol,
-                            confidence=0.7,
-                        ))
+                        refined.append(
+                            EditLocation(
+                                file_path=fpath,
+                                function_name=symbol,
+                                confidence=0.7,
+                            )
+                        )
 
             return refined if refined else candidates
 
@@ -270,8 +273,9 @@ WHAT_TO_CHANGE: <brief description>"""
                 )
 
                 import re
-                start_match = re.search(r'START_LINE:\s*(\d+)', response)
-                end_match = re.search(r'END_LINE:\s*(\d+)', response)
+
+                start_match = re.search(r"START_LINE:\s*(\d+)", response)
+                end_match = re.search(r"END_LINE:\s*(\d+)", response)
 
                 if start_match and end_match:
                     loc.start_line = int(start_match.group(1))
@@ -291,6 +295,7 @@ WHAT_TO_CHANGE: <brief description>"""
 def _extract_function_body(code: str, func_name: str) -> str | None:
     """Extract a function's full source code by name."""
     import ast
+
     try:
         tree = ast.parse(code)
         lines = code.split("\n")
@@ -308,6 +313,7 @@ def _extract_function_body(code: str, func_name: str) -> str | None:
 def _extract_class_body(code: str, class_name: str) -> str | None:
     """Extract a class's full source code by name."""
     import ast
+
     try:
         tree = ast.parse(code)
         lines = code.split("\n")

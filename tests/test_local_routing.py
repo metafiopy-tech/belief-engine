@@ -66,7 +66,7 @@ class TestLocalCostTracker:
 
         def worker(n: int) -> None:
             for i in range(n):
-                t.record_call("qwen2.5-coder:14b", 10, 5, role=f"t{i%3}")
+                t.record_call("qwen2.5-coder:14b", 10, 5, role=f"t{i % 3}")
 
         threads = [threading.Thread(target=worker, args=(50,)) for _ in range(4)]
         for th in threads:
@@ -94,9 +94,7 @@ class TestModelRouterMode:
         r = ModelRouter()
         assert r.mode is RouteMode.HYBRID
 
-    def test_env_var_invalid_falls_back_to_cloud(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_var_invalid_falls_back_to_cloud(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("BELIEF_MODEL_MODE", "quantum")
         r = ModelRouter()
         assert r.mode is RouteMode.CLOUD
@@ -106,9 +104,7 @@ class TestModelRouterMode:
         r = ModelRouter()
         assert r.local_model == "llama3:8b"
 
-    def test_set_mode_resets_fallback_counter(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_set_mode_resets_fallback_counter(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("BELIEF_MODEL_MODE", raising=False)
         r = ModelRouter()
         r.record_fallback()
@@ -147,9 +143,7 @@ class TestBackendForRole:
 
 
 class TestRoutingTable:
-    def test_every_role_represented(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_every_role_represented(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("BELIEF_MODEL_MODE", raising=False)
         r = ModelRouter()
         rows = r.routing_table()
@@ -157,9 +151,7 @@ class TestRoutingTable:
         expected = {role.value for role in ModelRole}
         assert roles == expected
 
-    def test_cloud_mode_shows_cloud_model(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_cloud_mode_shows_cloud_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("BELIEF_MODEL_MODE", raising=False)
         r = ModelRouter()
         rows = r.routing_table()
@@ -227,14 +219,10 @@ class TestAsyncOllamaClient:
 
             async def aclose(self) -> None: ...
 
-        monkeypatch.setattr(
-            "belief.llm.httpx.AsyncClient", lambda *a, **k: FakeClient()
-        )
+        monkeypatch.setattr("belief.llm.httpx.AsyncClient", lambda *a, **k: FakeClient())
         # Force the cached client to be re-created against the patched factory
         ollama._client = None
-        resp = await ollama.generate(
-            system="sys", user="hi", max_tokens=50, temperature=0.0
-        )
+        resp = await ollama.generate(system="sys", user="hi", max_tokens=50, temperature=0.0)
         assert resp["content"][0]["text"] == "hello world"
         assert resp["usage"]["input_tokens"] == 10
         assert resp["usage"]["output_tokens"] == 2
@@ -303,9 +291,7 @@ class TestLLMClientFallback:
         await client.close()
 
     @pytest.mark.asyncio
-    async def test_cloud_mode_never_consults_ollama(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_cloud_mode_never_consults_ollama(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from belief.llm import LLMClient
 
         monkeypatch.setenv("BELIEF_MODEL_MODE", "cloud")
@@ -316,8 +302,10 @@ class TestLLMClientFallback:
             return {
                 "content": [{"type": "text", "text": "ok"}],
                 "usage": {
-                    "input_tokens": 1, "output_tokens": 1,
-                    "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
                 },
             }
 
@@ -328,7 +316,9 @@ class TestLLMClientFallback:
             ModelRole.INTAKE,
             "sys",
             [{"role": "user", "content": "hi"}],
-            max_tokens=50, temperature=0.0, complexity=1,
+            max_tokens=50,
+            temperature=0.0,
+            complexity=1,
         )
         assert backend == "cloud"
         assert client._ollama is None  # never built

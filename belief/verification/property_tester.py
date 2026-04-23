@@ -36,6 +36,7 @@ logger = logging.getLogger("belief.verification.property_tester")
 @dataclass
 class PropertyTestResult:
     """Result of a property-based test run."""
+
     tool: str  # "schemathesis" or "hypothesis"
     total_tests: int = 0
     passed: int = 0
@@ -46,6 +47,7 @@ class PropertyTestResult:
 
 
 # ── Schemathesis: OpenAPI → Property Tests ───────────────────────────────────
+
 
 async def run_schemathesis_tests(
     openapi_url: str = "",
@@ -93,6 +95,7 @@ async def run_schemathesis_tests(
                 schema = schemathesis.openapi.from_url(openapi_url)
             elif openapi_spec:
                 import yaml
+
                 spec_dict = yaml.safe_load(openapi_spec)
                 schema = schemathesis.openapi.from_dict(spec_dict, base_url=base_url)
             else:
@@ -143,6 +146,7 @@ async def run_schemathesis_tests(
 
 # ── Hypothesis: Pydantic Model → Property Tests ─────────────────────────────
 
+
 def run_model_property_tests(
     model_class: type,
     max_examples: int = 100,
@@ -163,6 +167,7 @@ def run_model_property_tests(
         PropertyTestResult with pass/fail counts
     """
     import time
+
     result = PropertyTestResult(tool="hypothesis")
     t0 = time.time()
 
@@ -211,13 +216,13 @@ def run_model_property_tests(
     result.success = result.failed == 0 and result.passed > 0
 
     logger.info(
-        f"Hypothesis: {result.passed}/{result.total_tests} passed "
-        f"in {result.duration_seconds:.1f}s"
+        f"Hypothesis: {result.passed}/{result.total_tests} passed in {result.duration_seconds:.1f}s"
     )
     return result
 
 
 # ── Generate property test file from OpenAPI spec ────────────────────────────
+
 
 def generate_property_test_file(openapi_spec: str, base_url: str = "http://localhost:8000") -> str:
     """Generate a pytest file that runs Schemathesis tests from an OpenAPI spec.
@@ -251,6 +256,7 @@ if HAS_SCHEMATHESIS:
 
 # ── Tiered Verification Pipeline ─────────────────────────────────────────────
 
+
 async def run_tiered_verification(
     code_files: dict[str, str],
     test_files: dict[str, str] | None = None,
@@ -266,6 +272,7 @@ async def run_tiered_verification(
     Each tier gates the next — failures at Tier 1 skip Tier 2+.
     """
     import ast
+
     results: dict[str, Any] = {"tiers_run": 0, "all_passed": True}
 
     # Tier 1: Syntax

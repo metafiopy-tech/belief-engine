@@ -31,6 +31,7 @@ logger = logging.getLogger("belief.evolution.jitterbug")
 
 # ── State ───────────────────────────────────────────────────────────────────
 
+
 class JitterbugState(dict):
     """State for the jitterbug cycle graph.
 
@@ -59,10 +60,12 @@ class JitterbugState(dict):
         stage_after:           Stage at end
         dry_run:               If True, skip reconstruction and integration
     """
+
     pass
 
 
 # ── Default state ───────────────────────────────────────────────────────────
+
 
 def _default_state() -> dict:
     return {
@@ -201,6 +204,7 @@ def generate_expansion_goals(n: int = 5) -> list[str]:
 
 # ── Phase 1: Expansion ──────────────────────────────────────────────────────
 
+
 async def expansion_node(state: dict) -> dict:
     """Run diverse builds to collect traces.
 
@@ -224,7 +228,7 @@ async def expansion_node(state: dict) -> dict:
             logger.info(f"Expansion: budget exhausted after {i} builds")
             break
 
-        logger.info(f"Expansion [{i+1}/{len(goals)}]: {goal[:80]}")
+        logger.info(f"Expansion [{i + 1}/{len(goals)}]: {goal[:80]}")
         trace = await _run_expansion_build(goal, max_cost=min(max_cost_per_build, budget_remaining))
         traces.append(trace)
 
@@ -236,6 +240,7 @@ async def expansion_node(state: dict) -> dict:
     try:
         from belief.memory.episode_recorder import record_episode
         from belief.memory.soil import Soil
+
         soil = Soil()
         for trace in traces:
             record_episode(soil, trace)
@@ -267,17 +272,21 @@ async def _run_expansion_build(goal: str, max_cost: float = 2.0) -> dict:
 
     try:
         from belief.graph import build_pipeline
+
         graph = build_pipeline()
         compiled = graph.compile()
-        result = await compiled.ainvoke({
-            "user_goal": goal,
-            "max_iterations": 2,
-            "max_cost_usd": max_cost,
-        })
+        result = await compiled.ainvoke(
+            {
+                "user_goal": goal,
+                "max_iterations": 2,
+                "max_cost_usd": max_cost,
+            }
+        )
 
         trace["passed"] = result.get("phase", "") == "complete" or bool(
             result.get("validation_result", {}).get("verdict") == "pass"
-            if isinstance(result.get("validation_result"), dict) else False
+            if isinstance(result.get("validation_result"), dict)
+            else False
         )
         trace["code_files"] = result.get("code_files", {})
         trace["cost_usd"] = result.get("total_cost_usd", 0.0)
@@ -293,6 +302,7 @@ async def _run_expansion_build(goal: str, max_cost: float = 2.0) -> dict:
 
 
 # ── Phase 2: Compression ────────────────────────────────────────────────────
+
 
 async def compression_node(state: dict) -> dict:
     """Analyze traces, extract principles, cluster failures."""
@@ -313,13 +323,13 @@ async def compression_node(state: dict) -> dict:
     normalized = []
     for t in failure_traces:
         for err in t.get("errors", ["unknown error"]):
-            normalized.append({
-                "content": str(err),
-                "trace_id": t.get("trace_id", ""),
-                "code_sample": "\n".join(
-                    list(t.get("code_files", {}).values())[:1]
-                )[:2000],
-            })
+            normalized.append(
+                {
+                    "content": str(err),
+                    "trace_id": t.get("trace_id", ""),
+                    "code_sample": "\n".join(list(t.get("code_files", {}).values())[:1])[:2000],
+                }
+            )
 
     clusters = cluster_failures(normalized) if normalized else []
 
@@ -327,17 +337,20 @@ async def compression_node(state: dict) -> dict:
     principles: list[dict] = []
     for t in success_traces:
         files = t.get("code_files", {})
-        principles.append({
-            "goal": t.get("user_goal", ""),
-            "file_count": len(files),
-            "pattern": "success",
-        })
+        principles.append(
+            {
+                "goal": t.get("user_goal", ""),
+                "file_count": len(files),
+                "pattern": "success",
+            }
+        )
 
     # Check for redundant tools
     redundant_pairs: list[tuple] = []
     try:
         from belief.memory.tool_registry import ToolRegistry
         from belief.memory.soil import Soil
+
         soil = Soil()
         registry = ToolRegistry(soil)
         active_tools = registry.get_active_tools()
@@ -347,16 +360,18 @@ async def compression_node(state: dict) -> dict:
             col = soil._collections.get("belief_tools")
             if col and col.count() >= 2:
                 for i, t1 in enumerate(active_tools):
-                    for t2 in active_tools[i+1:]:
+                    for t2 in active_tools[i + 1 :]:
                         try:
                             result_q = col.query(
                                 query_texts=[f"tool: {t1.name} — {t1.description}"],
                                 n_results=2,
                                 include=["distances"],
                             )
-                            if (result_q["distances"] and
-                                len(result_q["distances"][0]) >= 2 and
-                                result_q["distances"][0][1] < 0.15):
+                            if (
+                                result_q["distances"]
+                                and len(result_q["distances"][0]) >= 2
+                                and result_q["distances"][0][1] < 0.15
+                            ):
                                 redundant_pairs.append((t1.id, t2.id))
                         except Exception as e:
                             logger.debug(f"Redundancy query skipped: {e}")
@@ -393,6 +408,7 @@ async def compression_node(state: dict) -> dict:
 
 # ── Phase 3: Reconstruction ─────────────────────────────────────────────────
 
+
 async def reconstruction_node(state: dict) -> dict:
     """Build new tools, crystallize invariants."""
     result = dict(state)
@@ -421,11 +437,13 @@ async def reconstruction_node(state: dict) -> dict:
             patch_result = await execute_new_tool_proposal(soil)
 
             if patch_result.success:
-                new_tools.append({
-                    "name": cluster_info.get("suggested_tool_name", ""),
-                    "tool_id": patch_result.backup_path,  # tool_id stored here
-                    "error_type": cluster_info.get("error_type", ""),
-                })
+                new_tools.append(
+                    {
+                        "name": cluster_info.get("suggested_tool_name", ""),
+                        "tool_id": patch_result.backup_path,  # tool_id stored here
+                        "error_type": cluster_info.get("error_type", ""),
+                    }
+                )
                 reconstruction_cost += 2.0  # Approximate cost
         except Exception as e:
             logger.warning(f"Tool building failed for {cluster_info.get('error_type')}: {e}")
@@ -450,13 +468,13 @@ async def reconstruction_node(state: dict) -> dict:
     result["total_cost"] = state.get("total_cost", 0.0) + reconstruction_cost
 
     logger.info(
-        f"Reconstruction: {len(new_tools)} tools built, "
-        f"{len(new_covenants)} covenants crystallized"
+        f"Reconstruction: {len(new_tools)} tools built, {len(new_covenants)} covenants crystallized"
     )
     return result
 
 
 # ── Phase 4: Validation ─────────────────────────────────────────────────────
+
 
 async def validation_node(state: dict) -> dict:
     """Benchmark to check for regressions."""
@@ -474,8 +492,13 @@ async def validation_node(state: dict) -> dict:
 
         # Smoke test: 5 challenges from tiers 1-3
         challenge_results = await run_benchmark(
-            challenge_ids=["t1-fizzbuzz", "t2-todo-cli", "t2-health-api",
-                          "t3-url-shortener", "t3-bookmark-api"]
+            challenge_ids=[
+                "t1-fizzbuzz",
+                "t2-todo-cli",
+                "t2-health-api",
+                "t3-url-shortener",
+                "t3-bookmark-api",
+            ]
         )
 
         passed = sum(1 for r in challenge_results if r.verdict == "pass")
@@ -498,7 +521,8 @@ async def validation_node(state: dict) -> dict:
         if not result["validation_passed"]:
             result["regressions"] = [
                 {"challenge": r.challenge_id, "verdict": r.verdict}
-                for r in challenge_results if r.verdict != "pass"
+                for r in challenge_results
+                if r.verdict != "pass"
             ]
 
         logger.info(
@@ -516,6 +540,7 @@ async def validation_node(state: dict) -> dict:
 
 
 # ── Phase 5: Integration ────────────────────────────────────────────────────
+
 
 async def integration_node(state: dict) -> dict:
     """Accept improvements, update soil, prune."""
@@ -540,6 +565,7 @@ async def integration_node(state: dict) -> dict:
     # Prune bottom 5% by quality score among lapsed records
     try:
         from belief.memory.soil import Soil
+
         soil = Soil()
 
         for col_name, col in soil._collections.items():
@@ -595,6 +621,7 @@ async def integration_node(state: dict) -> dict:
 
 # ── Routing ─────────────────────────────────────────────────────────────────
 
+
 def route_after_validation(state: dict) -> str:
     """Route to integration if validation passed, otherwise END."""
     if state.get("validation_passed", False):
@@ -612,6 +639,7 @@ def route_after_compression(state: dict) -> str:
 
 
 # ── Graph builder ───────────────────────────────────────────────────────────
+
 
 def build_jitterbug_graph() -> StateGraph:
     """Build the jitterbug cycle as a LangGraph StateGraph.
@@ -645,6 +673,7 @@ def build_jitterbug_graph() -> StateGraph:
 
 
 # ── Runner ──────────────────────────────────────────────────────────────────
+
 
 async def run_jitterbug_cycle(
     n_goals: int = 5,

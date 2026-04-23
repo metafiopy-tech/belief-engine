@@ -126,7 +126,7 @@ class BuilderAgent(BaseAgent):
         if not nutrient_ctx and hasattr(state, "__dict__"):
             # State might be a dict-like
             nutrient_ctx = ""
-        
+
         # Extract covenants from the nutrient context block
         covenant_lines = []
         if nutrient_ctx:
@@ -136,13 +136,16 @@ class BuilderAgent(BaseAgent):
                     continue
                 line_upper = line_stripped.upper()
                 # Match: "COVENANT:", "- COVENANT:", "## COVENANTS", or lines containing "IMMUTABLE"
-                if ("COVENANT" in line_upper and (
-                    line_stripped.startswith("-") or 
-                    line_stripped.startswith("COVENANT") or
-                    ":" in line_stripped
-                )) or "IMMUTABLE" in line_upper:
+                if (
+                    "COVENANT" in line_upper
+                    and (
+                        line_stripped.startswith("-")
+                        or line_stripped.startswith("COVENANT")
+                        or ":" in line_stripped
+                    )
+                ) or "IMMUTABLE" in line_upper:
                     covenant_lines.append(line_stripped)
-        
+
         if covenant_lines:
             covenant_block = "\n".join(covenant_lines)
             builder_system = (
@@ -152,7 +155,7 @@ class BuilderAgent(BaseAgent):
                 f"These rules are NON-NEGOTIABLE. Violating them causes build failures."
             )
             logger.info(f"Builder: injected {len(covenant_lines)} covenants into system prompt")
-        
+
         # Store for _generate_one_file to use
         self._builder_system = builder_system
 
@@ -174,6 +177,7 @@ class BuilderAgent(BaseAgent):
         # ── M1: Build dependency DAG for correct ordering ──
         try:
             from belief.agents.parallel_planner import build_plan_from_manifest
+
             build_plan = build_plan_from_manifest(manifest)
             logger.info(
                 f"Builder: DAG ordering — {len(build_plan.levels)} levels, "
@@ -182,6 +186,7 @@ class BuilderAgent(BaseAgent):
         except Exception as e:
             logger.debug(f"Builder: DAG ordering failed ({e}), using manifest order")
             from belief.agents.parallel_planner import build_plan_from_files
+
             build_plan = build_plan_from_files([f.filename for f in manifest.files])
 
         file_spec_map = {f.filename: f for f in manifest.files}
@@ -189,8 +194,10 @@ class BuilderAgent(BaseAgent):
         # ── M2: Generate files level by level, parallel within each level ──
         # Token bucket rate limiter prevents 429 errors during parallel generation
         import asyncio
+
         try:
             from belief.hardening import AsyncTokenBucket
+
             rate_limiter = AsyncTokenBucket(rate=0.8, burst=5)  # ~48 RPM with burst of 5
         except ImportError:
             rate_limiter = None
@@ -217,8 +224,13 @@ class BuilderAgent(BaseAgent):
                     # Single file — no parallelism overhead
                     file_spec = files_to_build[0]
                     code = await self._generate_one_file(
-                        llm, file_spec, state, manifest, code_files,
-                        has_skeleton, gap_context,
+                        llm,
+                        file_spec,
+                        state,
+                        manifest,
+                        code_files,
+                        has_skeleton,
+                        gap_context,
                     )
                     if code:
                         code_files[file_spec.filename] = code
@@ -235,8 +247,13 @@ class BuilderAgent(BaseAgent):
                             if rate_limiter:
                                 await rate_limiter.acquire()
                             return fs.filename, await self._generate_one_file(
-                                llm, fs, state, manifest, code_files,
-                                has_skeleton, gap_context,
+                                llm,
+                                fs,
+                                state,
+                                manifest,
+                                code_files,
+                                has_skeleton,
+                                gap_context,
                             )
 
                     results = await asyncio.gather(
@@ -267,8 +284,14 @@ class BuilderAgent(BaseAgent):
         return state
 
     async def _generate_one_file(
-        self, llm, file_spec, state, manifest, code_files,
-        has_skeleton: bool, gap_context: str,
+        self,
+        llm,
+        file_spec,
+        state,
+        manifest,
+        code_files,
+        has_skeleton: bool,
+        gap_context: str,
     ) -> str | None:
         """Generate a single file. Used by both serial and parallel paths."""
         # ── M3: Build repo map from completed files for context ──
@@ -276,6 +299,7 @@ class BuilderAgent(BaseAgent):
         if len(code_files) > 3:
             try:
                 from belief.agents.repo_map import RepoMap
+
                 repo_map = RepoMap.from_code_files(code_files)
                 repo_map_context = repo_map.format_for_file(
                     target_file=file_spec.filename,
@@ -290,34 +314,46 @@ class BuilderAgent(BaseAgent):
         skeleton = state.skeleton_artifact
         if skeleton:
             from belief.models.skeleton import SkeletonArtifact as SA
+
             if isinstance(skeleton, dict):
                 try:
                     skeleton = SA.model_validate(skeleton)
                 except Exception:
                     skeleton = None
-            if skeleton and hasattr(skeleton, 'format_contract'):
+            if skeleton and hasattr(skeleton, "format_contract"):
                 contract = skeleton.format_contract()
                 if contract:
                     contract_context = f"\n{contract}\n"
-                    repo_map_context = repo_map_context + contract_context if repo_map_context else contract_context
+                    repo_map_context = (
+                        repo_map_context + contract_context
+                        if repo_map_context
+                        else contract_context
+                    )
 
         # Choose prompt based on skeleton mode
         if has_skeleton:
             prompt = self._build_skeleton_prompt(
-                file_spec, state, code_files, gap_context,
+                file_spec,
+                state,
+                code_files,
+                gap_context,
                 repo_map_context=repo_map_context,
             )
         else:
             prompt = self._build_legacy_prompt(
-                file_spec, manifest, state, gap_context,
+                file_spec,
+                manifest,
+                state,
+                gap_context,
                 repo_map_context=repo_map_context,
             )
 
         try:
             # Add language-specific system prompt additions
-            system = getattr(self, '_builder_system', BUILDER_SYSTEM)
+            system = getattr(self, "_builder_system", BUILDER_SYSTEM)
             try:
                 from belief.languages import detect_language, get_adapter
+
                 lang = detect_language(file_spec.filename)
                 adapter = get_adapter(lang)
                 lang_additions = adapter.get_system_prompt_additions()
@@ -334,6 +370,7 @@ class BuilderAgent(BaseAgent):
                 from belief.prompts.cheatsheets import (
                     pydantic_v2_cheatsheet_for_file_spec,
                 )
+
                 cheatsheet = pydantic_v2_cheatsheet_for_file_spec(
                     file_spec,
                     user_goal=state.user_goal if state.user_goal else None,
@@ -355,6 +392,7 @@ class BuilderAgent(BaseAgent):
             if file_spec.filename.endswith((".ts", ".tsx")):
                 try:
                     from belief.prompts.protocol_skeletons import get_skeleton
+
                     goal_lower = state.user_goal.lower() if state.user_goal else ""
                     protocol_map = {
                         "x402": ["x402", "payment", "micropayment", "paywall"],
@@ -365,6 +403,7 @@ class BuilderAgent(BaseAgent):
 
                     # Stage 1: Inject current API documentation (v0-style)
                     from belief.validators.typescript_fixup import get_api_docs_for_goal
+
                     api_docs = get_api_docs_for_goal(goal_lower)
                     if api_docs:
                         prompt = f"CURRENT API DOCUMENTATION (use these exact patterns):\n{api_docs}\n\n{prompt}"
@@ -381,19 +420,25 @@ class BuilderAgent(BaseAgent):
                                     break
                             break
                 except Exception as e:
-                    logger.debug(f"Protocol skeleton injection failed for {file_spec.filename}: {e}")
+                    logger.debug(
+                        f"Protocol skeleton injection failed for {file_spec.filename}: {e}"
+                    )
 
             raw = await llm.generate_text(
-                role=self.role, system=system, prompt=prompt,
-                temperature=0.2, complexity=state.complexity_score,
+                role=self.role,
+                system=system,
+                prompt=prompt,
+                temperature=0.2,
+                complexity=state.complexity_score,
             )
             return _strip_fences(raw)
         except Exception as e:
             logger.warning(f"Builder: failed to generate {file_spec.filename}: {e}")
             return None
 
-    def _build_skeleton_prompt(self, file_spec, state, code_files, gap_context,
-                               repo_map_context: str = ""):
+    def _build_skeleton_prompt(
+        self, file_spec, state, code_files, gap_context, repo_map_context: str = ""
+    ):
         """Build prompt using compressed symbol context (M1+M3 path).
 
         Uses per-file budget-aware context compression when available,
@@ -402,7 +447,7 @@ class BuilderAgent(BaseAgent):
         # Find skeleton code for this file's dependencies
         skeleton_code = "# No skeleton file for this implementation"
         if state.skeleton_files:
-            for dep in (file_spec.depends_on or []):
+            for dep in file_spec.depends_on or []:
                 if dep in state.skeleton_files:
                     skeleton_code = state.skeleton_files[dep]
                     break
@@ -456,19 +501,23 @@ class BuilderAgent(BaseAgent):
             is_entry_point=file_spec.is_entry_point,
             symbol_context=symbol_context,
             skeleton_code=skeleton_code,
-            architecture_notes=state.file_manifest.architecture_notes if state.file_manifest else "",
+            architecture_notes=state.file_manifest.architecture_notes
+            if state.file_manifest
+            else "",
             gap_context=gap_context,
         )
 
-    def _build_legacy_prompt(self, file_spec, manifest, state, gap_context,
-                             repo_map_context: str = ""):
+    def _build_legacy_prompt(
+        self, file_spec, manifest, state, gap_context, repo_map_context: str = ""
+    ):
         """Build prompt using old file summaries (fallback path)."""
         if repo_map_context:
             other_files = repo_map_context
         else:
             other_files = "\n".join(
                 f"  - {f.filename}: {f.purpose} (exports: {f.public_interface})"
-                for f in manifest.files if f.filename != file_spec.filename
+                for f in manifest.files
+                if f.filename != file_spec.filename
             )
         return BUILDER_PROMPT_LEGACY.format(
             goal=state.requirement_spec.goal if state.requirement_spec else state.user_goal,
@@ -494,41 +543,154 @@ def _strip_fences(raw: str) -> str:
 # Requirements extraction (unchanged from original)
 # ---------------------------------------------------------------------------
 
-_STDLIB = frozenset({
-    "__future__", "abc", "argparse", "ast", "asyncio", "base64", "collections",
-    "configparser", "contextlib", "copy", "csv", "dataclasses", "datetime",
-    "decimal", "enum", "email", "ftplib", "functools", "getpass", "glob",
-    "hashlib", "hmac", "html", "http", "importlib", "inspect", "io",
-    "itertools", "json", "locale", "logging", "math", "mimetypes",
-    "multiprocessing", "numbers", "operator", "os", "pathlib", "pickle",
-    "platform", "pprint", "queue", "random", "re", "secrets", "shutil",
-    "signal", "site", "socket", "sqlite3", "string", "struct", "subprocess",
-    "sys", "tempfile", "textwrap", "threading", "time", "traceback", "typing",
-    "typing_extensions", "unicodedata", "unittest", "urllib", "uuid", "venv",
-    "warnings", "weakref", "xml", "zipfile", "zlib",
-    # Test and project-local modules — never real pip packages
-    "pytest", "pytest_asyncio", "conftest", "test", "tests", "setup",
-    "server", "app", "main", "config", "utils", "helpers", "models", "run",
-    "tools", "client", "handler", "worker", "task", "core", "api", "pipeline",
-    "schemas", "crud", "database", "exceptions", "routes", "seed", "src",
-})
+_STDLIB = frozenset(
+    {
+        "__future__",
+        "abc",
+        "argparse",
+        "ast",
+        "asyncio",
+        "base64",
+        "collections",
+        "configparser",
+        "contextlib",
+        "copy",
+        "csv",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "enum",
+        "email",
+        "ftplib",
+        "functools",
+        "getpass",
+        "glob",
+        "hashlib",
+        "hmac",
+        "html",
+        "http",
+        "importlib",
+        "inspect",
+        "io",
+        "itertools",
+        "json",
+        "locale",
+        "logging",
+        "math",
+        "mimetypes",
+        "multiprocessing",
+        "numbers",
+        "operator",
+        "os",
+        "pathlib",
+        "pickle",
+        "platform",
+        "pprint",
+        "queue",
+        "random",
+        "re",
+        "secrets",
+        "shutil",
+        "signal",
+        "site",
+        "socket",
+        "sqlite3",
+        "string",
+        "struct",
+        "subprocess",
+        "sys",
+        "tempfile",
+        "textwrap",
+        "threading",
+        "time",
+        "traceback",
+        "typing",
+        "typing_extensions",
+        "unicodedata",
+        "unittest",
+        "urllib",
+        "uuid",
+        "venv",
+        "warnings",
+        "weakref",
+        "xml",
+        "zipfile",
+        "zlib",
+        # Test and project-local modules — never real pip packages
+        "pytest",
+        "pytest_asyncio",
+        "conftest",
+        "test",
+        "tests",
+        "setup",
+        "server",
+        "app",
+        "main",
+        "config",
+        "utils",
+        "helpers",
+        "models",
+        "run",
+        "tools",
+        "client",
+        "handler",
+        "worker",
+        "task",
+        "core",
+        "api",
+        "pipeline",
+        "schemas",
+        "crud",
+        "database",
+        "exceptions",
+        "routes",
+        "seed",
+        "src",
+    }
+)
 
 _IMPORT_TO_PIP = {
-    "fastmcp": "fastmcp", "httpx": "httpx", "requests": "requests",
-    "flask": "flask", "fastapi": "fastapi", "uvicorn": "uvicorn",
-    "pydantic": "pydantic", "dotenv": "python-dotenv", "bs4": "beautifulsoup4",
-    "PIL": "Pillow", "cv2": "opencv-python", "sklearn": "scikit-learn",
-    "yaml": "pyyaml", "aiohttp": "aiohttp", "selenium": "selenium",
-    "playwright": "playwright", "chromadb": "chromadb", "ollama": "ollama",
-    "anthropic": "anthropic", "openai": "openai", "rich": "rich",
-    "click": "click", "typer": "typer",
-    "numpy": "numpy", "pandas": "pandas", "googlemaps": "googlemaps",
-    "dns": "dnspython", "tenacity": "tenacity", "cachetools": "cachetools",
+    "fastmcp": "fastmcp",
+    "httpx": "httpx",
+    "requests": "requests",
+    "flask": "flask",
+    "fastapi": "fastapi",
+    "uvicorn": "uvicorn",
+    "pydantic": "pydantic",
+    "dotenv": "python-dotenv",
+    "bs4": "beautifulsoup4",
+    "PIL": "Pillow",
+    "cv2": "opencv-python",
+    "sklearn": "scikit-learn",
+    "yaml": "pyyaml",
+    "aiohttp": "aiohttp",
+    "selenium": "selenium",
+    "playwright": "playwright",
+    "chromadb": "chromadb",
+    "ollama": "ollama",
+    "anthropic": "anthropic",
+    "openai": "openai",
+    "rich": "rich",
+    "click": "click",
+    "typer": "typer",
+    "numpy": "numpy",
+    "pandas": "pandas",
+    "googlemaps": "googlemaps",
+    "dns": "dnspython",
+    "tenacity": "tenacity",
+    "cachetools": "cachetools",
     "pydantic_settings": "pydantic-settings",
-    "sqlalchemy": "sqlalchemy", "alembic": "alembic",
-    "jinja2": "jinja2", "markdown": "markdown", "starlette": "starlette",
-    "celery": "celery", "redis": "redis", "motor": "motor",
-    "watchdog": "watchdog", "GitPython": "gitpython", "gitpython": "gitpython",
+    "sqlalchemy": "sqlalchemy",
+    "alembic": "alembic",
+    "jinja2": "jinja2",
+    "markdown": "markdown",
+    "starlette": "starlette",
+    "celery": "celery",
+    "redis": "redis",
+    "motor": "motor",
+    "watchdog": "watchdog",
+    "GitPython": "gitpython",
+    "gitpython": "gitpython",
     # Common mismatches where import name ≠ pip name
     "github": "PyGithub",
     "dateutil": "python-dateutil",

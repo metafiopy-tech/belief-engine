@@ -40,6 +40,7 @@ logger = logging.getLogger("belief.graph_multi")
 
 # ── Custom reducer for merging dicts from parallel branches ──────────────────
 
+
 def _merge_dicts(left: dict | None, right: dict | None) -> dict:
     """Merge two dicts — used by Annotated reducer for fan-in.
 
@@ -67,12 +68,14 @@ def _last_value(left: Any, right: Any) -> Any:
 # LangGraph requires Annotated reducers on any key that parallel
 # Send() branches write to simultaneously.
 
+
 class MultiServiceState(TypedDict, total=False):
     """State schema for the multi-service pipeline.
 
     Keys with Annotated reducers can receive writes from parallel branches.
     Keys without reducers use last-write-wins semantics.
     """
+
     # ── Merged keys (parallel branches write to these) ──
     code_files: Annotated[dict, _merge_dicts]
     test_files: Annotated[dict, _merge_dicts]
@@ -130,6 +133,7 @@ class MultiServiceState(TypedDict, total=False):
 
 # ── Service build sub-pipeline ───────────────────────────────────────────────
 
+
 async def _build_one_service(state: dict[str, Any]) -> dict[str, Any]:
     """Build a single service using the existing Tier 5 pipeline.
 
@@ -154,6 +158,7 @@ async def _build_one_service(state: dict[str, Any]) -> dict[str, Any]:
     # Hydrate
     if isinstance(service_spec, dict):
         from belief.models.service_architecture import ServiceSpec
+
         service_spec = ServiceSpec.model_validate(service_spec)
 
     router = ModelRouter()
@@ -172,14 +177,17 @@ async def _build_one_service(state: dict[str, Any]) -> dict[str, Any]:
     try:
         # Create a mini-state for the single-service pipeline
         from belief.graph import build_pipeline
+
         pipeline = build_pipeline(router)
 
         # Run the full pipeline for this one service
-        result = await pipeline.ainvoke({
-            "user_goal": service_goal,
-            "max_iterations": 2,  # Fewer iterations per service to save cost
-            "complexity_score": min(6, len(service_spec.routes) + 2),
-        })
+        result = await pipeline.ainvoke(
+            {
+                "user_goal": service_goal,
+                "max_iterations": 2,  # Fewer iterations per service to save cost
+                "complexity_score": min(6, len(service_spec.routes) + 2),
+            }
+        )
 
         # Prefix all file paths with the package directory
         code_files = {}
@@ -215,14 +223,18 @@ async def _build_one_service(state: dict[str, Any]) -> dict[str, Any]:
         return {
             "code_files": code_files,
             "test_files": test_files,
-            "service_results": [{
-                "name": service_spec.name,
-                "verdict": result.get("validation_result", {}).get("verdict", "unknown")
+            "service_results": [
+                {
+                    "name": service_spec.name,
+                    "verdict": result.get("validation_result", {}).get("verdict", "unknown")
                     if isinstance(result.get("validation_result"), dict)
                     else getattr(result.get("validation_result"), "verdict", "unknown"),
-                "files": len(code_files),
-                "executor_passed": bool(sub_exec and sub_exec.get("success")) if sub_exec else False,
-            }],
+                    "files": len(code_files),
+                    "executor_passed": bool(sub_exec and sub_exec.get("success"))
+                    if sub_exec
+                    else False,
+                }
+            ],
             "service_execution_results": [sub_exec] if sub_exec else [],
         }
 
@@ -237,6 +249,7 @@ async def _build_one_service(state: dict[str, Any]) -> dict[str, Any]:
 
 # ── Fan-out routing ──────────────────────────────────────────────────────────
 
+
 def _fan_out_services(state: dict[str, Any]) -> list[Send]:
     """Route to parallel service builds via Send().
 
@@ -249,25 +262,33 @@ def _fan_out_services(state: dict[str, Any]) -> list[Send]:
 
     if isinstance(architecture, dict):
         from belief.models.service_architecture import ServiceArchitecture
+
         architecture = ServiceArchitecture.model_validate(architecture)
 
     openapi_specs = state.get("openapi_specs", {})
 
     sends = []
     for svc in architecture.services:
-        sends.append(Send("build_service", {
-            "service_spec": svc.model_dump() if hasattr(svc, "model_dump") else svc,
-            "shared_models": [m.model_dump() for m in architecture.shared_models]
-                if architecture.shared_models else [],
-            "openapi_spec": openapi_specs.get(svc.name, ""),
-            "user_goal": state.get("user_goal", ""),
-        }))
+        sends.append(
+            Send(
+                "build_service",
+                {
+                    "service_spec": svc.model_dump() if hasattr(svc, "model_dump") else svc,
+                    "shared_models": [m.model_dump() for m in architecture.shared_models]
+                    if architecture.shared_models
+                    else [],
+                    "openapi_spec": openapi_specs.get(svc.name, ""),
+                    "user_goal": state.get("user_goal", ""),
+                },
+            )
+        )
 
     logger.info(f"Fan-out: dispatching {len(sends)} service builds in parallel")
     return sends
 
 
 # ── Multi-service detection ──────────────────────────────────────────────────
+
 
 def _route_after_architect(state: dict[str, Any]) -> Literal["contract_agent", "skeleton_pass1"]:
     """Route based on whether the architect produced a multi-service architecture."""
@@ -278,6 +299,7 @@ def _route_after_architect(state: dict[str, Any]) -> Literal["contract_agent", "
 
 
 # ── Collect results after fan-in ─────────────────────────────────────────────
+
 
 async def _collect_service_results(state: dict[str, Any]) -> dict[str, Any]:
     """Aggregate results from parallel service builds."""
@@ -317,10 +339,9 @@ async def _collect_service_results(state: dict[str, Any]) -> dict[str, Any]:
             f"all {len(sub_execs)} services executed"
             if all_ok
             else f"{len(failed)}/{len(sub_execs)} services failed: "
-                 + "; ".join(
-                     f"{e.get('service', '?')}={e.get('error_summary', '')[:80]}"
-                     for e in failed[:3]
-                 )
+            + "; ".join(
+                f"{e.get('service', '?')}={e.get('error_summary', '')[:80]}" for e in failed[:3]
+            )
         )
         result["execution_result"] = {
             "success": all_ok,
@@ -339,6 +360,7 @@ async def _collect_service_results(state: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── Build the multi-service graph ────────────────────────────────────────────
+
 
 def build_multi_pipeline(router: ModelRouter | None = None) -> Any:
     """Construct and compile the Tier 6 multi-service pipeline.
@@ -399,10 +421,14 @@ def build_multi_pipeline(router: ModelRouter | None = None) -> Any:
     graph.add_edge("planner", "architect")
 
     # Branch point: multi-service or single-service
-    graph.add_conditional_edges("architect", _route_after_architect, {
-        "contract_agent": "contract_agent",
-        "skeleton_pass1": "skeleton_pass1",
-    })
+    graph.add_conditional_edges(
+        "architect",
+        _route_after_architect,
+        {
+            "contract_agent": "contract_agent",
+            "skeleton_pass1": "skeleton_pass1",
+        },
+    )
 
     # Multi-service path: contract → fan-out → fan-in → integration → decomposer
     graph.add_conditional_edges("contract_agent", _fan_out_services, ["build_service"])

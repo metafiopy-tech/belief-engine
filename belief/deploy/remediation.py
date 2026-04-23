@@ -26,10 +26,11 @@ logger = logging.getLogger("belief.deploy.remediation")
 
 class AutonomyLevel(int, Enum):
     """How much independence the remediation has."""
-    AUTO = 1           # Restarts, retries — no approval needed
-    AUTO_NOTIFY = 2    # Config changes — auto with notification
-    HUMAN_REVIEW = 3   # Code patches — requires human approval
-    HUMAN_REQUIRED = 4 # Data migrations — always human
+
+    AUTO = 1  # Restarts, retries — no approval needed
+    AUTO_NOTIFY = 2  # Config changes — auto with notification
+    HUMAN_REVIEW = 3  # Code patches — requires human approval
+    HUMAN_REQUIRED = 4  # Data migrations — always human
 
 
 class RemediationAction(str, Enum):
@@ -44,6 +45,7 @@ class RemediationAction(str, Enum):
 @dataclass
 class RemediationPlan:
     """A plan for fixing a production issue."""
+
     diagnosis: str
     action: RemediationAction
     autonomy_level: AutonomyLevel
@@ -58,6 +60,7 @@ class RemediationPlan:
 @dataclass
 class RemediationConfig:
     """Configuration for auto-remediation."""
+
     max_autonomy: AutonomyLevel = AutonomyLevel.AUTO_NOTIFY
     max_remediations_per_hour: int = 3
     cooldown_seconds: int = 300  # 5 min between remediations
@@ -129,9 +132,7 @@ class AutoRemediation:
             autonomy_level=AutonomyLevel.HUMAN_REQUIRED,
         )
 
-    async def _generate_code_fix(
-        self, error: str, monitor_state
-    ) -> RemediationPlan | None:
+    async def _generate_code_fix(self, error: str, monitor_state) -> RemediationPlan | None:
         """Use the refinement fixer to generate a code patch."""
         try:
             from belief.refinement.analyzer import analyze_failures
@@ -152,9 +153,7 @@ class AutoRemediation:
                 return None
 
             # Generate fix
-            fix = await generate_fix(
-                state, analysis["diagnosis"], analysis["target_file"], None
-            )
+            fix = await generate_fix(state, analysis["diagnosis"], analysis["target_file"], None)
 
             if not fix.get("success"):
                 return None
@@ -198,8 +197,7 @@ class AutoRemediation:
 
         # Check hourly limit
         recent_count = sum(
-            1 for p in self._history
-            if p.executed and (now - self._last_remediation) < 3600
+            1 for p in self._history if p.executed and (now - self._last_remediation) < 3600
         )
         if recent_count >= self.config.max_remediations_per_hour:
             logger.warning("Remediation: hourly limit reached")

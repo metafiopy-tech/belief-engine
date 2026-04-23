@@ -99,15 +99,12 @@ class BoundedPriorityHeap:
 
         with self.state.conn() as c:
             c.execute("BEGIN IMMEDIATE;")
-            count_row = c.execute(
-                "SELECT COUNT(*) AS n FROM synthesis_heap;"
-            ).fetchone()
+            count_row = c.execute("SELECT COUNT(*) AS n FROM synthesis_heap;").fetchone()
             count = int(count_row["n"]) if count_row else 0
 
             if count < self.capacity:
                 c.execute(
-                    "INSERT INTO synthesis_heap(seed_json, value, added_at) "
-                    "VALUES(?, ?, ?);",
+                    "INSERT INTO synthesis_heap(seed_json, value, added_at) VALUES(?, ?, ?);",
                     (blob, float(value), now),
                 )
                 c.execute("COMMIT;")
@@ -115,8 +112,7 @@ class BoundedPriorityHeap:
 
             # Heap full — check the current min
             min_row = c.execute(
-                "SELECT id, value FROM synthesis_heap "
-                "ORDER BY value ASC, id ASC LIMIT 1;"
+                "SELECT id, value FROM synthesis_heap ORDER BY value ASC, id ASC LIMIT 1;"
             ).fetchone()
             if min_row is None:
                 # Shouldn't happen given count >= capacity > 0
@@ -126,12 +122,9 @@ class BoundedPriorityHeap:
                 c.execute("ROLLBACK;")
                 return False
 
+            c.execute("DELETE FROM synthesis_heap WHERE id = ?;", (int(min_row["id"]),))
             c.execute(
-                "DELETE FROM synthesis_heap WHERE id = ?;", (int(min_row["id"]),)
-            )
-            c.execute(
-                "INSERT INTO synthesis_heap(seed_json, value, added_at) "
-                "VALUES(?, ?, ?);",
+                "INSERT INTO synthesis_heap(seed_json, value, added_at) VALUES(?, ?, ?);",
                 (blob, float(value), now),
             )
             c.execute("COMMIT;")
@@ -159,8 +152,7 @@ class BoundedPriorityHeap:
         with self.state.conn() as c:
             c.execute("BEGIN IMMEDIATE;")
             agg = c.execute(
-                "SELECT MIN(value) AS mn, AVG(value) AS mu "
-                "FROM synthesis_heap;"
+                "SELECT MIN(value) AS mn, AVG(value) AS mu FROM synthesis_heap;"
             ).fetchone()
             mn = float(agg["mn"]) if agg and agg["mn"] is not None else None
             mu = float(agg["mu"]) if agg and agg["mu"] is not None else None
@@ -177,8 +169,7 @@ class BoundedPriorityHeap:
         """True iff the last N cycles meet the saturation criterion."""
         with self.state.conn() as c:
             rows = c.execute(
-                "SELECT saturation FROM synthesis_cycle_log "
-                "ORDER BY id DESC LIMIT ?;",
+                "SELECT saturation FROM synthesis_cycle_log ORDER BY id DESC LIMIT ?;",
                 (SATURATION_CYCLES_REQUIRED,),
             ).fetchall()
         if len(rows) < SATURATION_CYCLES_REQUIRED:

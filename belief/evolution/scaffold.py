@@ -31,74 +31,69 @@ logger = logging.getLogger("belief.evolution.scaffold")
 
 
 # Files that form the FIXED SCAFFOLD — never auto-modified
-FIXED_SCAFFOLD = frozenset({
-    # Core pipeline
-    "belief/graph.py",
-    "belief/graph_multi.py",
-    "belief/llm.py",
-    "belief/cli.py",
-    "belief/benchmark.py",
-    "belief/benchmark_generator.py",
-
-    # Security and safety
-    "belief/hardening.py",
-    "belief/validators/__init__.py",
-
-    # Models (structural contracts)
-    "belief/models/state.py",
-    "belief/models/artifacts.py",
-    "belief/models/skeleton.py",
-    "belief/models/service_architecture.py",
-    "belief/models/dependency_dag.py",
-    "belief/models/symbol_registry.py",
-    "belief/models/project_manifest.py",
-    "belief/models/patch.py",
-    "belief/models/openapi.py",
-
-    # Agent base class
-    "belief/agents/base.py",
-
-    # Package inits
-    "belief/__init__.py",
-    "belief/config/__init__.py",
-    "belief/models/__init__.py",
-    "belief/memory/__init__.py",
-
-    # Evolution infrastructure (the system that does the evolving)
-    "belief/evolution/__init__.py",
-    "belief/evolution/self_improvement.py",
-    "belief/evolution/scaffold.py",
-    "belief/evolution/evolutionary_search.py",
-})
+FIXED_SCAFFOLD = frozenset(
+    {
+        # Core pipeline
+        "belief/graph.py",
+        "belief/graph_multi.py",
+        "belief/llm.py",
+        "belief/cli.py",
+        "belief/benchmark.py",
+        "belief/benchmark_generator.py",
+        # Security and safety
+        "belief/hardening.py",
+        "belief/validators/__init__.py",
+        # Models (structural contracts)
+        "belief/models/state.py",
+        "belief/models/artifacts.py",
+        "belief/models/skeleton.py",
+        "belief/models/service_architecture.py",
+        "belief/models/dependency_dag.py",
+        "belief/models/symbol_registry.py",
+        "belief/models/project_manifest.py",
+        "belief/models/patch.py",
+        "belief/models/openapi.py",
+        # Agent base class
+        "belief/agents/base.py",
+        # Package inits
+        "belief/__init__.py",
+        "belief/config/__init__.py",
+        "belief/models/__init__.py",
+        "belief/memory/__init__.py",
+        # Evolution infrastructure (the system that does the evolving)
+        "belief/evolution/__init__.py",
+        "belief/evolution/self_improvement.py",
+        "belief/evolution/scaffold.py",
+        "belief/evolution/evolutionary_search.py",
+    }
+)
 
 
 # Files that are EVOLVABLE PRIORITY FUNCTIONS — safe for SEED to modify
-EVOLVABLE_PRIORITY = frozenset({
-    # Agent prompts (highest-value target for optimization)
-    "belief/prompts/__init__.py",
-    "belief/prompts/skeleton_prompts.py",
-
-    # Model routing (which model handles which task)
-    "belief/config/models.py",
-    "belief/config/settings.py",
-
-    # Validator scoring thresholds and test classification
-    "belief/agents/validator.py",
-
-    # Tester configuration (test counts, fixture patterns)
-    "belief/agents/tester.py",
-
-    # Refinement analyzer (failure classification rules)
-    "belief/refinement/analyzer.py",
-
-    # Memory retrieval parameters
-    "belief/memory/recomposer.py",
-})
+EVOLVABLE_PRIORITY = frozenset(
+    {
+        # Agent prompts (highest-value target for optimization)
+        "belief/prompts/__init__.py",
+        "belief/prompts/skeleton_prompts.py",
+        # Model routing (which model handles which task)
+        "belief/config/models.py",
+        "belief/config/settings.py",
+        # Validator scoring thresholds and test classification
+        "belief/agents/validator.py",
+        # Tester configuration (test counts, fixture patterns)
+        "belief/agents/tester.py",
+        # Refinement analyzer (failure classification rules)
+        "belief/refinement/analyzer.py",
+        # Memory retrieval parameters
+        "belief/memory/recomposer.py",
+    }
+)
 
 
 @dataclass
 class EvolvableFunction:
     """A specific evolvable parameter within a file."""
+
     file_path: str
     name: str
     description: str
@@ -109,6 +104,7 @@ class EvolvableFunction:
 @dataclass
 class ScaffoldDecomposition:
     """Maps the codebase into fixed scaffold and evolvable priority functions."""
+
     project_root: Path
     fixed_files: set[str] = field(default_factory=lambda: set(FIXED_SCAFFOLD))
     evolvable_files: set[str] = field(default_factory=lambda: set(EVOLVABLE_PRIORITY))

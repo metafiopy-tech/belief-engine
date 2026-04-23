@@ -319,9 +319,7 @@ class TestCascadeGates:
                 error_summary="Script failed to run",
             )
 
-            accepted, results, reason = await cascaded_evaluate(
-                version, mock_graph
-            )
+            accepted, results, reason = await cascaded_evaluate(version, mock_graph)
 
             assert accepted is False
             assert reason == "canary_failed"
@@ -353,9 +351,7 @@ class TestCascadeGates:
                 for i in range(5)
             ]
 
-            accepted, results, reason = await cascaded_evaluate(
-                version, mock_graph
-            )
+            accepted, results, reason = await cascaded_evaluate(version, mock_graph)
 
             assert accepted is False
             assert reason == "smoke_failed"
@@ -382,17 +378,13 @@ class TestCascadeGates:
                 time_seconds=2.0,
             )
             mock_smoke.return_value = [
-                _make_result(version.id, f"smoke-{i}", passed=True)
-                for i in range(5)
+                _make_result(version.id, f"smoke-{i}", passed=True) for i in range(5)
             ]
             mock_full.return_value = [
-                _make_result(version.id, f"full-{i}", passed=True)
-                for i in range(10)
+                _make_result(version.id, f"full-{i}", passed=True) for i in range(10)
             ]
 
-            accepted, results, reason = await cascaded_evaluate(
-                version, mock_graph
-            )
+            accepted, results, reason = await cascaded_evaluate(version, mock_graph)
 
             assert accepted is True
             assert reason == ""
@@ -440,9 +432,7 @@ class TestCascadeGates:
             # Should still be accepted (DGM: regressions may be stepping stones)
             assert accepted is True
             # But regression should be flagged in results
-            regression_results = [
-                r for r in results if r.challenge_id.startswith("regression:")
-            ]
+            regression_results = [r for r in results if r.challenge_id.startswith("regression:")]
             assert len(regression_results) == 1
             assert "t2-todo-cli" in regression_results[0].challenge_id
 

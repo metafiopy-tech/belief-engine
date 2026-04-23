@@ -75,9 +75,7 @@ async def harvest(
     return new_seeds
 
 
-async def _fetch_via_http(
-    client: "BreakerAsyncClient", cat_query: str, since: int
-) -> list[dict]:
+async def _fetch_via_http(client: "BreakerAsyncClient", cat_query: str, since: int) -> list[dict]:
     """HTTP query against ``export.arxiv.org/api/query`` (Atom feed)."""
     params = {
         "search_query": cat_query,

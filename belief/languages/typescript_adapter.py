@@ -90,8 +90,16 @@ class TypeScriptAdapter(LanguageAdapter):
 
     @property
     def test_file_patterns(self) -> list[str]:
-        return ["*.test.ts", "*.test.tsx", "*.spec.ts", "*.spec.tsx",
-                "*.test.js", "*.test.jsx", "*.spec.js", "*.spec.jsx"]
+        return [
+            "*.test.ts",
+            "*.test.tsx",
+            "*.spec.ts",
+            "*.spec.tsx",
+            "*.test.js",
+            "*.test.jsx",
+            "*.spec.js",
+            "*.spec.jsx",
+        ]
 
     def scaffold_project(
         self,
@@ -116,7 +124,7 @@ class TypeScriptAdapter(LanguageAdapter):
         }
 
         # Add protocol-specific deps
-        for proto in (protocols or []):
+        for proto in protocols or []:
             proto_deps = PROTOCOL_DEPS.get(proto, {})
             deps.update(proto_deps.get("dependencies", {}))
             dev_deps.update(proto_deps.get("devDependencies", {}))
@@ -201,21 +209,25 @@ class TypeScriptAdapter(LanguageAdapter):
         env_lines = []
         if protocols:
             if "x402" in protocols:
-                env_lines.extend([
-                    "# x402 Payment Configuration",
-                    "PAY_TO_ADDRESS=0xYourWalletAddress",
-                    "CDP_API_KEY_ID=",
-                    "CDP_API_KEY_SECRET=",
-                    "X402_NETWORK=eip155:84532  # Base Sepolia testnet",
-                    "X402_FACILITATOR=https://x402.org/facilitator",
-                ])
+                env_lines.extend(
+                    [
+                        "# x402 Payment Configuration",
+                        "PAY_TO_ADDRESS=0xYourWalletAddress",
+                        "CDP_API_KEY_ID=",
+                        "CDP_API_KEY_SECRET=",
+                        "X402_NETWORK=eip155:84532  # Base Sepolia testnet",
+                        "X402_FACILITATOR=https://x402.org/facilitator",
+                    ]
+                )
             if "erc8004" in protocols:
-                env_lines.extend([
-                    "# ERC-8004 Identity",
-                    "PRIVATE_KEY=0x...",
-                    "PINATA_JWT=",
-                    "CHAIN_ID=84532  # Base Sepolia",
-                ])
+                env_lines.extend(
+                    [
+                        "# ERC-8004 Identity",
+                        "PRIVATE_KEY=0x...",
+                        "PINATA_JWT=",
+                        "CHAIN_ID=84532  # Base Sepolia",
+                    ]
+                )
         if env_lines:
             files[".env.example"] = "\n".join(env_lines) + "\n"
 
@@ -245,10 +257,16 @@ class TypeScriptAdapter(LanguageAdapter):
 
             # Covenant 1: No __dirname in ESM
             if "__dirname" in stripped and "import.meta" not in stripped:
-                errors.append(f"{filename}:{i}: __dirname is undefined in ESM — use import.meta.dirname")
+                errors.append(
+                    f"{filename}:{i}: __dirname is undefined in ESM — use import.meta.dirname"
+                )
 
             # Covenant 3: No require() in ESM
-            if "require(" in stripped and not stripped.startswith("//") and "createRequire" not in code:
+            if (
+                "require(" in stripped
+                and not stripped.startswith("//")
+                and "createRequire" not in code
+            ):
                 errors.append(f"{filename}:{i}: require() is not available in ESM — use import()")
 
             # Covenant 2: Missing .js extension in relative imports
@@ -258,7 +276,9 @@ class TypeScriptAdapter(LanguageAdapter):
                     path = match.group(1)
                     if not path.endswith((".js", ".json", ".mjs", ".cjs")):
                         # Relative import without extension
-                        errors.append(f"{filename}:{i}: ESM requires file extensions — use '{path}.js'")
+                        errors.append(
+                            f"{filename}:{i}: ESM requires file extensions — use '{path}.js'"
+                        )
 
             # Check for common TypeScript anti-patterns
             if ": any" in stripped and not stripped.startswith("//"):
@@ -279,31 +299,39 @@ class TypeScriptAdapter(LanguageAdapter):
         exports = []
 
         patterns = [
-            (r'export\s+interface\s+(\w+)', "interface"),
-            (r'export\s+class\s+(\w+)', "class"),
-            (r'export\s+(?:async\s+)?function\s+(\w+)', "function"),
-            (r'export\s+(?:const|let|var)\s+(\w+)', "variable"),
-            (r'export\s+type\s+(\w+)', "type"),
-            (r'export\s+enum\s+(\w+)', "enum"),
-            (r'export\s+default\s+(?:class|function)\s+(\w+)', "default"),
+            (r"export\s+interface\s+(\w+)", "interface"),
+            (r"export\s+class\s+(\w+)", "class"),
+            (r"export\s+(?:async\s+)?function\s+(\w+)", "function"),
+            (r"export\s+(?:const|let|var)\s+(\w+)", "variable"),
+            (r"export\s+type\s+(\w+)", "type"),
+            (r"export\s+enum\s+(\w+)", "enum"),
+            (r"export\s+default\s+(?:class|function)\s+(\w+)", "default"),
         ]
 
         for pattern, kind in patterns:
             for m in re.finditer(pattern, code):
-                exports.append(ExportedSymbol(
-                    name=m.group(1), kind=kind, file_path=filename,
-                    signature=f"{kind} {m.group(1)}",
-                ))
+                exports.append(
+                    ExportedSymbol(
+                        name=m.group(1),
+                        kind=kind,
+                        file_path=filename,
+                        signature=f"{kind} {m.group(1)}",
+                    )
+                )
 
         # export { A, B, C }
-        for m in re.finditer(r'export\s*\{([^}]+)\}', code):
-            names = [n.strip().split(' as ')[0].strip() for n in m.group(1).split(',')]
+        for m in re.finditer(r"export\s*\{([^}]+)\}", code):
+            names = [n.strip().split(" as ")[0].strip() for n in m.group(1).split(",")]
             for name in names:
-                if name and not name.startswith('_'):
-                    exports.append(ExportedSymbol(
-                        name=name, kind="variable", file_path=filename,
-                        signature=f"export {{ {name} }}",
-                    ))
+                if name and not name.startswith("_"):
+                    exports.append(
+                        ExportedSymbol(
+                            name=name,
+                            kind="variable",
+                            file_path=filename,
+                            signature=f"export {{ {name} }}",
+                        )
+                    )
 
         return exports
 

@@ -22,12 +22,14 @@ from typing import Optional
 # Symbol types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FunctionSymbol:
     """An exported function or method."""
+
     name: str
-    params: str           # Full parameter string with annotations
-    return_type: str       # Return annotation as string, or "None"
+    params: str  # Full parameter string with annotations
+    return_type: str  # Return annotation as string, or "None"
     is_async: bool = False
     decorators: list[str] = field(default_factory=list)
     docstring: Optional[str] = None
@@ -40,6 +42,7 @@ class FunctionSymbol:
 @dataclass
 class ClassSymbol:
     """An exported class with its methods and attributes."""
+
     name: str
     bases: list[str] = field(default_factory=list)
     methods: list[FunctionSymbol] = field(default_factory=list)
@@ -65,6 +68,7 @@ class ClassSymbol:
 @dataclass
 class ConstantSymbol:
     """A module-level constant or type alias."""
+
     name: str
     type_annotation: Optional[str] = None
     value_repr: Optional[str] = None  # Short repr of the value if simple
@@ -81,11 +85,13 @@ class ConstantSymbol:
 # File entry in the registry
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FileSymbols:
     """All exported symbols from a single file."""
+
     file_path: str
-    module_path: str          # Python import path, e.g. "models.lead"
+    module_path: str  # Python import path, e.g. "models.lead"
     classes: list[ClassSymbol] = field(default_factory=list)
     functions: list[FunctionSymbol] = field(default_factory=list)
     constants: list[ConstantSymbol] = field(default_factory=list)
@@ -115,6 +121,7 @@ class FileSymbols:
 # ---------------------------------------------------------------------------
 # AST Extraction
 # ---------------------------------------------------------------------------
+
 
 def _annotation_to_str(node: Optional[ast.expr]) -> str:
     """Convert an AST annotation node to a string representation."""
@@ -195,19 +202,18 @@ def _extract_class(node: ast.ClassDef) -> ClassSymbol:
             # Skip private/dunder methods except __init__
             if item.name.startswith("_") and item.name != "__init__":
                 continue
-            methods.append(FunctionSymbol(
-                name=item.name,
-                params=_extract_params(item.args),
-                return_type=_annotation_to_str(item.returns),
-                is_async=isinstance(item, ast.AsyncFunctionDef),
-                decorators=_get_decorators(item),
-                docstring=_get_docstring(item),
-            ))
+            methods.append(
+                FunctionSymbol(
+                    name=item.name,
+                    params=_extract_params(item.args),
+                    return_type=_annotation_to_str(item.returns),
+                    is_async=isinstance(item, ast.AsyncFunctionDef),
+                    decorators=_get_decorators(item),
+                    docstring=_get_docstring(item),
+                )
+            )
         elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
-            class_attrs.append((
-                item.target.id,
-                ast.unparse(item.annotation)
-            ))
+            class_attrs.append((item.target.id, ast.unparse(item.annotation)))
 
     return ClassSymbol(
         name=node.name,
@@ -274,6 +280,7 @@ def _extract_imports(tree: ast.Module) -> list[str]:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def parse_file(source_code: str, file_path: str, project_root: str = "") -> FileSymbols:
     """
     Parse a Python source file and extract all exported symbols.
@@ -335,6 +342,7 @@ def parse_file_from_path(path: Path, project_root: Path | None = None) -> FileSy
 # ---------------------------------------------------------------------------
 # Symbol Registry — accumulates symbols across files
 # ---------------------------------------------------------------------------
+
 
 class SymbolRegistry:
     """
@@ -399,7 +407,9 @@ class SymbolRegistry:
         if not sections:
             return "# No dependencies registered yet."
 
-        header = f"# Symbol context for {file_path}\n# Dependencies: {', '.join(dependency_paths)}\n"
+        header = (
+            f"# Symbol context for {file_path}\n# Dependencies: {', '.join(dependency_paths)}\n"
+        )
         return header + "\n\n".join(sections)
 
     def full_registry_context(self) -> str:

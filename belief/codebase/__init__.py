@@ -23,24 +23,44 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from belief.languages import (
-    Language, detect_language, get_adapter, ExportedSymbol,
+    Language,
+    detect_language,
+    get_adapter,
+    ExportedSymbol,
 )
 
 logger = logging.getLogger("belief.codebase")
 
 # Files/directories to always skip
 _SKIP_DIRS = {
-    "__pycache__", ".git", ".venv", "venv", "node_modules", "dist", "build",
-    ".mypy_cache", ".pytest_cache", ".tox", ".eggs", "*.egg-info",
-    ".next", ".nuxt", "coverage", "htmlcov",
+    "__pycache__",
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".tox",
+    ".eggs",
+    "*.egg-info",
+    ".next",
+    ".nuxt",
+    "coverage",
+    "htmlcov",
 }
 
 _SKIP_FILES = {
-    ".DS_Store", "Thumbs.db", "package-lock.json", "yarn.lock",
-    "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock",
+    ".DS_Store",
+    "Thumbs.db",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "Pipfile.lock",
 }
 
 _MAX_FILE_SIZE = 100_000  # Skip files over 100KB
@@ -49,6 +69,7 @@ _MAX_FILE_SIZE = 100_000  # Skip files over 100KB
 @dataclass
 class FileInfo:
     """Metadata about a single file in the codebase."""
+
     path: str
     language: Language
     size: int
@@ -62,6 +83,7 @@ class FileInfo:
 @dataclass
 class ImportEdge:
     """A dependency: source_file imports from target_file."""
+
     source: str
     target: str
     symbols: list[str] = field(default_factory=list)
@@ -70,6 +92,7 @@ class ImportEdge:
 @dataclass
 class Codebase:
     """Structured representation of an existing codebase."""
+
     root: str
     files: dict[str, FileInfo] = field(default_factory=dict)
     edges: list[ImportEdge] = field(default_factory=list)
@@ -90,7 +113,7 @@ class Codebase:
         cb._discover_tests()
         logger.info(
             f"Codebase: {len(cb.files)} files, {len(cb.edges)} dependencies, "
-            f"{len(cb.test_files)} tests, languages={[l.value for l in cb.languages]}"
+            f"{len(cb.test_files)} tests, languages={[lang.value for lang in cb.languages]}"
         )
         return cb
 
@@ -98,10 +121,7 @@ class Codebase:
         """Walk the directory tree and index all source files."""
         for dirpath, dirnames, filenames in os.walk(root):
             # Skip excluded directories
-            dirnames[:] = [
-                d for d in dirnames
-                if d not in _SKIP_DIRS and not d.startswith(".")
-            ]
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
 
             rel_dir = os.path.relpath(dirpath, root)
             if rel_dir == ".":
@@ -195,18 +215,25 @@ class Codebase:
                             break
 
                 if target and target != fpath:
-                    self.edges.append(ImportEdge(
-                        source=fpath, target=target,
-                        symbols=[],  # Could extract specific symbols
-                    ))
+                    self.edges.append(
+                        ImportEdge(
+                            source=fpath,
+                            target=target,
+                            symbols=[],  # Could extract specific symbols
+                        )
+                    )
 
     def _discover_tests(self) -> None:
         """Discover test files and test runners."""
         # Already collected during _scan_files
         # Also look for CI config
         ci_patterns = [
-            ".github/workflows", "Makefile", "tox.ini",
-            "pytest.ini", "setup.cfg", "pyproject.toml",
+            ".github/workflows",
+            "Makefile",
+            "tox.ini",
+            "pytest.ini",
+            "setup.cfg",
+            "pyproject.toml",
         ]
         for fpath in self.files:
             for pat in ci_patterns:
@@ -224,7 +251,7 @@ class Codebase:
         """
         scores: dict[str, float] = {}
         query_lower = query.lower()
-        query_words = set(re.findall(r'\w+', query_lower))
+        query_words = set(re.findall(r"\w+", query_lower))
 
         for fpath, info in self.files.items():
             if info.is_test or info.is_config:
@@ -233,13 +260,13 @@ class Codebase:
             score = 0.0
 
             # 1. Filename match
-            fname_words = set(re.findall(r'\w+', fpath.lower()))
+            fname_words = set(re.findall(r"\w+", fpath.lower()))
             overlap = query_words & fname_words
             score += len(overlap) * 5.0
 
             # 2. Export name match
             for exp in info.exports:
-                exp_words = set(re.findall(r'\w+', exp.name.lower()))
+                exp_words = set(re.findall(r"\w+", exp.name.lower()))
                 overlap = query_words & exp_words
                 score += len(overlap) * 3.0
 
@@ -263,12 +290,12 @@ class Codebase:
             return []
 
         query_lower = query.lower()
-        query_words = set(re.findall(r'\w+', query_lower))
+        query_words = set(re.findall(r"\w+", query_lower))
 
         scored = []
         for exp in info.exports:
-            exp_words = set(re.findall(r'\w+', exp.name.lower()))
-            sig_words = set(re.findall(r'\w+', exp.signature.lower()))
+            exp_words = set(re.findall(r"\w+", exp.name.lower()))
+            sig_words = set(re.findall(r"\w+", exp.signature.lower()))
             score = len(query_words & exp_words) * 3.0 + len(query_words & sig_words) * 1.0
             if score > 0:
                 scored.append((score, exp))
@@ -303,7 +330,10 @@ class Codebase:
 
         # Tests that import from this file
         for edge in self.edges:
-            if edge.target == file_path and self.files.get(edge.source, FileInfo("", Language.PYTHON, 0, 0)).is_test:
+            if (
+                edge.target == file_path
+                and self.files.get(edge.source, FileInfo("", Language.PYTHON, 0, 0)).is_test
+            ):
                 affected.add(edge.source)
 
         return list(affected)
@@ -362,11 +392,12 @@ class Codebase:
         return (
             f"{len(self.files)} files, {total_lines:,} lines, "
             f"{len(self.edges)} dependencies, {len(self.test_files)} tests, "
-            f"languages: {', '.join(l.value for l in sorted(self.languages, key=lambda l: l.value))}"
+            f"languages: {', '.join(lang.value for lang in sorted(self.languages, key=lambda x: x.value))}"
         )
 
 
 # ── Import extraction ────────────────────────────────────────────────────────
+
 
 def _extract_imports(code: str, language: Language) -> list[str]:
     """Extract imported module names from source code."""
@@ -374,10 +405,10 @@ def _extract_imports(code: str, language: Language) -> list[str]:
 
     if language == Language.PYTHON:
         # from X import Y → X
-        for m in re.finditer(r'^\s*from\s+([\w.]+)\s+import', code, re.MULTILINE):
+        for m in re.finditer(r"^\s*from\s+([\w.]+)\s+import", code, re.MULTILINE):
             imports.append(m.group(1))
         # import X → X
-        for m in re.finditer(r'^\s*import\s+([\w.]+)', code, re.MULTILINE):
+        for m in re.finditer(r"^\s*import\s+([\w.]+)", code, re.MULTILINE):
             imports.append(m.group(1))
 
     elif language == Language.TYPESCRIPT:
@@ -401,7 +432,12 @@ def _is_test_file(path: str, language: Language) -> bool:
     """Check if a file is a test file."""
     base = path.split("/")[-1]
     if language == Language.PYTHON:
-        return base.startswith("test_") or base.endswith("_test.py") or "/tests/" in path or path.startswith("tests/")
+        return (
+            base.startswith("test_")
+            or base.endswith("_test.py")
+            or "/tests/" in path
+            or path.startswith("tests/")
+        )
     if language == Language.TYPESCRIPT:
         return ".test." in base or ".spec." in base or "/tests/" in path or "/__tests__/" in path
     if language == Language.GO:
@@ -412,10 +448,26 @@ def _is_test_file(path: str, language: Language) -> bool:
 def _is_config_file(path: str) -> bool:
     """Check if a file is a config/build file."""
     config_names = {
-        "pyproject.toml", "setup.py", "setup.cfg", "Makefile", "Dockerfile",
-        "docker-compose.yml", "docker-compose.yaml", ".env", ".env.example",
-        "package.json", "tsconfig.json", "go.mod", "go.sum",
-        "requirements.txt", "Pipfile", "tox.ini", "pytest.ini",
-        ".gitignore", ".dockerignore", "README.md", "LICENSE",
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "Makefile",
+        "Dockerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        ".env",
+        ".env.example",
+        "package.json",
+        "tsconfig.json",
+        "go.mod",
+        "go.sum",
+        "requirements.txt",
+        "Pipfile",
+        "tox.ini",
+        "pytest.ini",
+        ".gitignore",
+        ".dockerignore",
+        "README.md",
+        "LICENSE",
     }
     return path.split("/")[-1] in config_names

@@ -38,7 +38,7 @@ def get_all_protocol_names() -> list[str]:
 def _x402_skeleton() -> dict[str, str]:
     """x402 V2 Express server — payment-gated API endpoints."""
     return {
-        "src/app.ts": '''import express from "express";
+        "src/app.ts": """import express from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
@@ -76,8 +76,8 @@ app.get("/health", (_req, res) => {
 app.get("/api/data", (_req, res) => {
   res.json({ data: "This is paid content", timestamp: new Date().toISOString() });
 });
-''',
-        "src/index.ts": '''import { app } from "./app.js";
+""",
+        "src/index.ts": """import { app } from "./app.js";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 app.listen(PORT, () => {
@@ -85,8 +85,8 @@ app.listen(PORT, () => {
   console.log(`Health: http://localhost:${PORT}/health`);
   console.log(`Paid:   http://localhost:${PORT}/api/data (requires x402 payment)`);
 });
-''',
-        "src/app.test.ts": '''import { describe, it, expect } from "vitest";
+""",
+        "src/app.test.ts": """import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app } from "./app.js";
 
@@ -103,14 +103,14 @@ describe("x402 server", () => {
     expect(res.status).toBe(402);
   });
 });
-''',
+""",
     }
 
 
 def _mcp_skeleton() -> dict[str, str]:
     """MCP server with Streamable HTTP transport — payment-ready."""
     return {
-        "src/index.ts": '''import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+        "src/index.ts": """import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import { z } from "zod";
@@ -166,14 +166,14 @@ app.listen(PORT, () => {
   console.log(`MCP server running on http://localhost:${PORT}`);
   console.log(`MCP endpoint: POST http://localhost:${PORT}/mcp`);
 });
-''',
+""",
     }
 
 
 def _a2a_skeleton() -> dict[str, str]:
     """A2A server with Agent Card and JSON-RPC handler."""
     return {
-        "src/index.ts": '''import express from "express";
+        "src/index.ts": """import express from "express";
 import crypto from "node:crypto";
 
 const app = express();
@@ -248,14 +248,14 @@ app.listen(PORT, () => {
   console.log(`A2A server running on http://localhost:${PORT}`);
   console.log(`Agent Card: http://localhost:${PORT}/.well-known/agent-card.json`);
 });
-''',
+""",
     }
 
 
 def _erc8004_skeleton() -> dict[str, str]:
     """ERC-8004 agent registration CLI tool — ethers v6 compliant."""
     return {
-        "src/index.ts": '''import { JsonRpcProvider, Wallet, Contract, Log, LogDescription } from "ethers";
+        "src/index.ts": """import { JsonRpcProvider, Wallet, Contract, Log, LogDescription } from "ethers";
 
 // ERC-8004 Identity Registry on Base Sepolia
 const IDENTITY_REGISTRY = "0x8004A818dC0b21ef9e8f9B2aaE2a12443F092cFC";
@@ -311,5 +311,5 @@ registerAgent(uri).catch((err: Error) => {
   console.error("Registration failed:", err.message);
   process.exit(1);
 });
-''',
+""",
     }

@@ -23,6 +23,7 @@ logger = logging.getLogger("belief.memory")
 
 # ── Session State ─────────────────────────────────────────────────────────────
 
+
 class SessionState:
     """Flat JSON session state for the current run.
 
@@ -54,10 +55,12 @@ class SessionState:
         return self._state.get("facts", {}).get(key, default)
 
     def add_remainder(self, remainder: str) -> None:
-        self._state.setdefault("remainders", []).append({
-            "t": datetime.now().isoformat(),
-            "r": remainder,
-        })
+        self._state.setdefault("remainders", []).append(
+            {
+                "t": datetime.now().isoformat(),
+                "r": remainder,
+            }
+        )
         # Keep last 100
         if len(self._state["remainders"]) > 100:
             self._state["remainders"] = self._state["remainders"][-100:]
@@ -69,8 +72,10 @@ class SessionState:
 
 # ── Build Record ──────────────────────────────────────────────────────────────
 
+
 class BuildRecord(BaseModel):
     """A completed build stored in the build memory."""
+
     run_id: str
     goal: str
     goal_refined: str = ""
@@ -85,6 +90,7 @@ class BuildRecord(BaseModel):
 
 
 # ── Build Store with Similarity Search ────────────────────────────────────────
+
 
 class BuildStore:
     """SQLite-backed build history with TF-IDF similarity search.
@@ -130,10 +136,19 @@ class BuildStore:
                (run_id, goal, goal_refined, file_summaries, quality_scores,
                 output_path, cost_usd, duration_seconds, verdict, tags, completed_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (record.run_id, record.goal, record.goal_refined,
-             json.dumps(record.file_summaries), json.dumps(record.quality_scores),
-             record.output_path, record.cost_usd, record.duration_seconds,
-             record.verdict, json.dumps(record.tags), record.completed_at),
+            (
+                record.run_id,
+                record.goal,
+                record.goal_refined,
+                json.dumps(record.file_summaries),
+                json.dumps(record.quality_scores),
+                record.output_path,
+                record.cost_usd,
+                record.duration_seconds,
+                record.verdict,
+                json.dumps(record.tags),
+                record.completed_at,
+            ),
         )
         self._conn.commit()
         self._idf_cache.clear()  # Invalidate cache
@@ -164,7 +179,8 @@ class BuildStore:
             sim = _cosine_similarity(query_vec, doc_vec)
             if sim > 0.1:  # Minimum relevance threshold
                 record = BuildRecord(
-                    run_id=row["run_id"], goal=row["goal"],
+                    run_id=row["run_id"],
+                    goal=row["goal"],
                     goal_refined=row["goal_refined"],
                     file_summaries=json.loads(row["file_summaries"]),
                     quality_scores=json.loads(row["quality_scores"]),
@@ -190,20 +206,53 @@ class BuildStore:
 
 # ── TF-IDF Helpers (stdlib only, no sklearn needed) ───────────────────────────
 
-_STOP_WORDS = frozenset({
-    "a", "an", "the", "is", "in", "it", "to", "of", "and", "or", "for",
-    "with", "on", "at", "by", "this", "that", "from", "was", "be", "are",
-    "as", "has", "have", "been", "its", "but", "not", "we", "our", "my",
-    "build", "create", "make", "write", "python", "script", "using",
-})
+_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "in",
+        "it",
+        "to",
+        "of",
+        "and",
+        "or",
+        "for",
+        "with",
+        "on",
+        "at",
+        "by",
+        "this",
+        "that",
+        "from",
+        "was",
+        "be",
+        "are",
+        "as",
+        "has",
+        "have",
+        "been",
+        "its",
+        "but",
+        "not",
+        "we",
+        "our",
+        "my",
+        "build",
+        "create",
+        "make",
+        "write",
+        "python",
+        "script",
+        "using",
+    }
+)
 
 
 def _tokenize(text: str) -> list[str]:
     """Tokenize and clean text for TF-IDF."""
-    return [
-        w for w in text.lower().split()
-        if len(w) > 2 and w not in _STOP_WORDS and w.isalpha()
-    ]
+    return [w for w in text.lower().split() if len(w) > 2 and w not in _STOP_WORDS and w.isalpha()]
 
 
 def _compute_idf(docs: list[list[str]]) -> dict[str, float]:
@@ -231,8 +280,8 @@ def _cosine_similarity(a: dict[str, float], b: dict[str, float]) -> float:
     if not keys:
         return 0.0
     dot = sum(a.get(k, 0) * b.get(k, 0) for k in keys)
-    mag_a = math.sqrt(sum(v ** 2 for v in a.values()))
-    mag_b = math.sqrt(sum(v ** 2 for v in b.values()))
+    mag_a = math.sqrt(sum(v**2 for v in a.values()))
+    mag_b = math.sqrt(sum(v**2 for v in b.values()))
     if mag_a == 0 or mag_b == 0:
         return 0.0
     return dot / (mag_a * mag_b)

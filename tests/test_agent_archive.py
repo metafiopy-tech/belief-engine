@@ -8,7 +8,6 @@ self-contained.  Run with::
 
 from __future__ import annotations
 
-import json
 import random
 
 import pytest
@@ -95,7 +94,8 @@ def _outcome(
         run_id=run_id,
         goal=goal,
         verdict=verdict,
-        tests_passed=3, tests_total=3,
+        tests_passed=3,
+        tests_total=3,
         weighted_score=score,
         wallclock_s=wall,
         estimated_cost_usd=cost,
@@ -144,8 +144,7 @@ class TestUtility:
         assert u > 0.9
 
     def test_failed_slow_expensive_scores_low(self) -> None:
-        o = _outcome("u-2", "bad", verdict="fail_hard", score=0.0,
-                     wall=600.0, cost=10.0)
+        o = _outcome("u-2", "bad", verdict="fail_hard", score=0.0, wall=600.0, cost=10.0)
         u = utility(o, expected_covenants=7)
         # Even a zero-quality, max-cost, max-time build retains some
         # utility from the covenant_rate fallback (no violations → 1.0
@@ -199,8 +198,7 @@ class TestParentSample:
     def test_returns_up_to_k_results(self, archive: AgentArchive) -> None:
         for i in range(5):
             archive.persist(_outcome(f"r-{i}", f"Build feature {i}"))
-        hits = parent_sample("Build feature X", archive=archive, k=3,
-                             rng=random.Random(0))
+        hits = parent_sample("Build feature X", archive=archive, k=3, rng=random.Random(0))
         assert len(hits) <= 3
 
     def test_boltzmann_is_not_purely_greedy(self, archive: AgentArchive) -> None:
@@ -209,8 +207,8 @@ class TestParentSample:
         Boltzmann sampling over argmax."""
         # Three priors with slightly-different scores.
         archive.persist(_outcome("r-high", "Build a FizzBuzz script", score=0.95))
-        archive.persist(_outcome("r-mid",  "Build a FizzBuzz script", score=0.90))
-        archive.persist(_outcome("r-low",  "Build a FizzBuzz script", score=0.85))
+        archive.persist(_outcome("r-mid", "Build a FizzBuzz script", score=0.90))
+        archive.persist(_outcome("r-low", "Build a FizzBuzz script", score=0.85))
 
         seen_tops: set[str] = set()
         for seed in range(0, 50):
@@ -218,7 +216,9 @@ class TestParentSample:
             picks = parent_sample(
                 "Build a FizzBuzz variant",
                 archive=archive,
-                k=1, temperature=0.5, rng=rng,
+                k=1,
+                temperature=0.5,
+                rng=rng,
             )
             if picks:
                 seen_tops.add(picks[0]["id"])
@@ -241,12 +241,12 @@ class TestParentSample:
 class TestPriorsBlock:
     def test_format_priors_block_empty_archive(self, archive: AgentArchive) -> None:
         from belief.archive.priors import format_priors_block
+
         assert format_priors_block("anything", archive=archive) == ""
 
-    def test_format_priors_block_includes_prior_entries(
-        self, archive: AgentArchive
-    ) -> None:
+    def test_format_priors_block_includes_prior_entries(self, archive: AgentArchive) -> None:
         from belief.archive.priors import format_priors_block
+
         archive.persist(_outcome("r-fizz", "Build a FizzBuzz Python script"))
         archive.persist(_outcome("r-other", "Build a URL shortener"))
         block = format_priors_block("Build a FizzBuzz clone", archive=archive, k=2)
@@ -280,9 +280,8 @@ class TestPersistFromState:
         assert len(hits) == 1
         assert hits[0]["id"] == "belief-test-1"
 
-    def test_persist_silently_skips_on_missing_run_id(
-        self, archive: AgentArchive
-    ) -> None:
+    def test_persist_silently_skips_on_missing_run_id(self, archive: AgentArchive) -> None:
         from belief.archive.persist import persist_build_outcome
+
         persist_build_outcome({"user_goal": "no run_id"}, archive=archive)
         assert archive.size() == 0

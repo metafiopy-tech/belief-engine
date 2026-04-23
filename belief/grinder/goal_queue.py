@@ -51,8 +51,16 @@ FALLBACK_GOAL_TEMPLATES: tuple[str, ...] = (
 
 TEMPLATE_FILLS: dict[str, tuple[str, ...]] = {
     "resource": (
-        "books", "recipes", "tasks", "users", "products", "events",
-        "invoices", "projects", "tickets", "comments",
+        "books",
+        "recipes",
+        "tasks",
+        "users",
+        "products",
+        "events",
+        "invoices",
+        "projects",
+        "tickets",
+        "comments",
     ),
     "action": (
         "converts CSV to JSON",
@@ -69,12 +77,17 @@ TEMPLATE_FILLS: dict[str, tuple[str, ...]] = {
         "implements a rate limiter",
     ),
     "api": (
-        "a weather API", "a dictionary API", "a random quote API",
-        "a GitHub user lookup", "a currency converter",
+        "a weather API",
+        "a dictionary API",
+        "a random quote API",
+        "a GitHub user lookup",
+        "a currency converter",
     ),
     "app_type": (
-        "chat server with rooms", "live dashboard",
-        "notification system", "collaborative editor",
+        "chat server with rooms",
+        "live dashboard",
+        "notification system",
+        "collaborative editor",
     ),
     "pipeline_action": (
         "reads JSON logs and computes error rates",
@@ -214,9 +227,7 @@ def _load_envelope(json_path: Path) -> Optional[GoalEnvelope]:
         return None
 
     goal_id = str(raw.get("goal_id") or json_path.stem)
-    goal_text = str(
-        raw.get("title") or raw.get("one_paragraph_description") or goal_id
-    )
+    goal_text = str(raw.get("title") or raw.get("one_paragraph_description") or goal_id)
     priority = _derive_priority(raw)
 
     md_path = json_path.with_suffix(".md")
@@ -245,9 +256,7 @@ def _derive_priority(sidecar: dict[str, Any]) -> float:
 
     build_time = sidecar.get("estimated_build_time_min")
     difficulty = sidecar.get("estimated_difficulty")
-    if isinstance(build_time, (int, float)) and isinstance(
-        difficulty, (int, float)
-    ):
+    if isinstance(build_time, (int, float)) and isinstance(difficulty, (int, float)):
         # Map 5..240 minutes -> 1.0..0.0; 1..5 difficulty -> 1.0..0.0.
         t = 1.0 - max(0.0, min(1.0, (float(build_time) - 5.0) / 235.0))
         d = 1.0 - max(0.0, min(1.0, (float(difficulty) - 1.0) / 4.0))

@@ -10,11 +10,9 @@ Source: seed.py, mentor.py, self_patch.py, pipeline.py
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import logging
 import shutil
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -26,13 +24,15 @@ logger = logging.getLogger("belief.evolution")
 
 # ── Proposal Model ────────────────────────────────────────────────────────────
 
+
 class ImprovementProposal(BaseModel):
     """A structured self-improvement proposal from SEED."""
+
     title: str
     what: str  # What the change does
-    why: str   # Why it's needed (linked to remainders)
+    why: str  # Why it's needed (linked to remainders)
     target_file: str  # Which file to modify
-    code: str = ""    # The actual code change
+    code: str = ""  # The actual code change
     confidence: str = "MEDIUM"  # HIGH / MEDIUM / LOW
     proposed_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     status: str = "pending"  # pending / approved / rejected / applied / rolled_back
@@ -40,6 +40,7 @@ class ImprovementProposal(BaseModel):
 
 
 # ── SEED — Self-Evolving Enhancement Driver ───────────────────────────────────
+
 
 class SEED:
     """Reviews accumulated remainders and proposes targeted improvements.
@@ -96,16 +97,21 @@ class SEED:
         try:
             from belief.memory.soil import Soil
             from belief.memory.nutrients import NutrientType
+
             soil = Soil(Path("~/.belief-engine/soil").expanduser())
 
             # Get all covenants — these are immutable rules to enforce
-            covenants = soil.retrieve("", nutrient_type=NutrientType.COVENANT, min_retrievability=0.0)
+            covenants = soil.retrieve(
+                "", nutrient_type=NutrientType.COVENANT, min_retrievability=0.0
+            )
             if covenants:
                 covenant_text = "\n".join(f"  COVENANT: {c.content}" for c in covenants)
                 soil_context += f"\nACTIVE COVENANTS (must be enforced):\n{covenant_text}\n"
 
             # Get recent antipatterns — these are recurring failures to fix
-            antipatterns = soil.retrieve("build failure error", nutrient_type=NutrientType.ANTIPATTERN, n=5)
+            antipatterns = soil.retrieve(
+                "build failure error", nutrient_type=NutrientType.ANTIPATTERN, n=5
+            )
             if antipatterns:
                 anti_text = "\n".join(f"  ANTIPATTERN: {a.content}" for a in antipatterns)
                 soil_context += f"\nRECURRING FAILURES (prioritize fixing these):\n{anti_text}\n"
@@ -147,7 +153,8 @@ class SEED:
             )
             # Parse JSON — with repair fallback for truncated/malformed output
             import re
-            match = re.search(r'\{.*\}', raw, re.DOTALL)
+
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
             data = None
             if match:
                 try:
@@ -158,6 +165,7 @@ class SEED:
             # Fallback: repair truncated JSON (same strategy as architect)
             if data is None:
                 from belief.llm import _repair_json
+
                 brace = raw.find("{")
                 if brace >= 0:
                     repaired = _repair_json(raw[brace:])
@@ -200,6 +208,7 @@ class SEED:
 
 # ── Mentor — The Immune System ────────────────────────────────────────────────
 
+
 class Mentor:
     """Evaluates proposals for safety before application.
 
@@ -216,8 +225,7 @@ class Mentor:
         self.project_root = project_root
         self._history_file = project_root / ".belief-engine" / "patch_history.json"
 
-    async def evaluate(self, proposal: ImprovementProposal,
-                       llm=None) -> tuple[bool, str]:
+    async def evaluate(self, proposal: ImprovementProposal, llm=None) -> tuple[bool, str]:
         """Evaluate a proposal. Returns (approved: bool, reason: str)."""
 
         # Check 1: Does it have code?
@@ -240,7 +248,10 @@ class Mentor:
         history = self._load_history()
         for entry in history:
             if entry.get("status") == "rolled_back" and entry.get("title") == proposal.title:
-                return False, f"Similar patch was previously rolled back: {entry.get('reason', 'unknown')}"
+                return (
+                    False,
+                    f"Similar patch was previously rolled back: {entry.get('reason', 'unknown')}",
+                )
 
         # Check 5: LLM safety review (if available)
         if llm:
@@ -289,6 +300,7 @@ class Mentor:
 
 # ── SelfPatch — Apply Changes ────────────────────────────────────────────────
 
+
 class SelfPatch:
     """Apply approved patches with snapshot and rollback.
 
@@ -328,8 +340,10 @@ class SelfPatch:
             # Determine if this is a full file replacement or an append
             code = proposal.code.strip()
             is_full_file = (
-                code.startswith('"""') or code.startswith("import ")
-                or code.startswith("from ") or code.startswith("#!")
+                code.startswith('"""')
+                or code.startswith("import ")
+                or code.startswith("from ")
+                or code.startswith("#!")
             ) and len(code) > 500
 
             if is_full_file:

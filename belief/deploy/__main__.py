@@ -34,10 +34,12 @@ from belief.config.settings import settings
 
 def _configure_logging():
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(
-        "\033[90m%(asctime)s\033[0m \033[36m%(levelname)-8s\033[0m \033[90m%(name)-28s\033[0m %(message)s",
-        datefmt="%H:%M:%S",
-    ))
+    handler.setFormatter(
+        logging.Formatter(
+            "\033[90m%(asctime)s\033[0m \033[36m%(levelname)-8s\033[0m \033[90m%(name)-28s\033[0m %(message)s",
+            datefmt="%H:%M:%S",
+        )
+    )
     root = logging.getLogger("belief")
     root.setLevel(logging.INFO)
     root.handlers.clear()
@@ -56,19 +58,25 @@ def _find_builds(output_dir: Path) -> list[dict]:
 
         # Count files and total size
         files = list(d.rglob("*"))
-        source_files = [f for f in files if f.is_file() and f.suffix in (".py", ".ts", ".go", ".html", ".css", ".js")]
+        source_files = [
+            f
+            for f in files
+            if f.is_file() and f.suffix in (".py", ".ts", ".go", ".html", ".css", ".js")
+        ]
         all_files = [f for f in files if f.is_file()]
 
         # Get modification time
         mtime = max((f.stat().st_mtime for f in all_files), default=0)
 
-        builds.append({
-            "id": d.name,
-            "path": str(d),
-            "files": len(all_files),
-            "source_files": len(source_files),
-            "mtime": mtime,
-        })
+        builds.append(
+            {
+                "id": d.name,
+                "path": str(d),
+                "files": len(all_files),
+                "source_files": len(source_files),
+                "mtime": mtime,
+            }
+        )
 
     builds.sort(key=lambda b: b["mtime"], reverse=True)
     return builds
@@ -100,7 +108,7 @@ async def _deploy(args):
             return
 
         print(f"\n  {'Build ID':<25} {'Files':>5}  {'Source':>6}  Path")
-        print(f"  {'-'*25} {'-'*5}  {'-'*6}  {'-'*30}")
+        print(f"  {'-' * 25} {'-' * 5}  {'-' * 6}  {'-' * 30}")
         for b in builds[:15]:
             marker = " ←" if b == builds[0] else ""
             print(f"  {b['id']:<25} {b['files']:>5}  {b['source_files']:>6}  {b['path']}{marker}")
@@ -110,6 +118,7 @@ async def _deploy(args):
     # ── Health check ──
     if args.health:
         from belief.deploy.monitor import HealthMonitor
+
         monitor = HealthMonitor(url=args.health, check_interval=5)
         print(f"\n  Checking health of {args.health}...\n")
 
@@ -117,7 +126,9 @@ async def _deploy(args):
             check = await monitor.check_once()
             status_icon = "✓" if check.status.value == "healthy" else "✗"
             color = "\033[32m" if check.status.value == "healthy" else "\033[31m"
-            print(f"  {color}{status_icon}\033[0m {check.status.value:<12} {check.response_time_ms:>6.0f}ms  {check.diagnosis or 'OK'}")
+            print(
+                f"  {color}{status_icon}\033[0m {check.status.value:<12} {check.response_time_ms:>6.0f}ms  {check.diagnosis or 'OK'}"
+            )
 
         print(f"\n{monitor.summary()}\n")
         return
@@ -135,7 +146,7 @@ async def _deploy(args):
         builds = _find_builds(output_dir)
         if not builds:
             print("No builds found. Run a build first:")
-            print("  python3 -m belief.cli --goal \"your goal\"")
+            print('  python3 -m belief.cli --goal "your goal"')
             sys.exit(1)
         build_id = builds[0]["id"]
         build_path = Path(builds[0]["path"])
@@ -177,6 +188,7 @@ async def _deploy(args):
         if args.monitor:
             print(f"\n  Starting health monitoring ({args.monitor_duration}s)...")
             from belief.deploy.monitor import HealthMonitor
+
             monitor = HealthMonitor(url=result.url, check_interval=10)
 
             async def _on_check(check):
@@ -212,13 +224,21 @@ Examples:
     )
     parser.add_argument("--build", help="Build ID to deploy (default: latest)")
     parser.add_argument("--name", help="Project name for deployment")
-    parser.add_argument("--target", default="railway", choices=["railway", "docker_local"],
-                        help="Deploy target (default: railway)")
+    parser.add_argument(
+        "--target",
+        default="railway",
+        choices=["railway", "docker_local"],
+        help="Deploy target (default: railway)",
+    )
     parser.add_argument("--list", action="store_true", help="List available builds")
     parser.add_argument("--health", metavar="URL", help="Check health of a deployed service")
-    parser.add_argument("--checks", type=int, default=3, help="Number of health checks (default: 3)")
+    parser.add_argument(
+        "--checks", type=int, default=3, help="Number of health checks (default: 3)"
+    )
     parser.add_argument("--monitor", action="store_true", help="Monitor after deploy")
-    parser.add_argument("--monitor-duration", type=int, default=60, help="Monitor duration in seconds")
+    parser.add_argument(
+        "--monitor-duration", type=int, default=60, help="Monitor duration in seconds"
+    )
 
     args = parser.parse_args()
     asyncio.run(_deploy(args))

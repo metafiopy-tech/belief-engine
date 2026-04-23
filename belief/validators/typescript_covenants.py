@@ -42,6 +42,7 @@ logger = logging.getLogger("belief.validators.ts_covenants")
 @dataclass
 class TSViolation:
     """A TypeScript covenant violation found in generated code."""
+
     covenant: str
     file: str
     line: int
@@ -54,6 +55,7 @@ class TSViolation:
 @dataclass
 class TSEnforcementResult:
     """Result of TypeScript covenant enforcement."""
+
     violations: list[TSViolation] = field(default_factory=list)
     fixes_applied: int = 0
     files_modified: list[str] = field(default_factory=list)
@@ -133,6 +135,7 @@ def enforce_ts_covenants(
 
 # ── Covenant implementations ─────────────────────────────────────────────────
 
+
 def _enforce_js_extensions(
     fname: str, content: str, auto_fix: bool
 ) -> tuple[str, list[TSViolation]]:
@@ -150,14 +153,15 @@ def _enforce_js_extensions(
             if not path.endswith((".js", ".json", ".mjs", ".cjs", ".css", ".svg")):
                 v = TSViolation(
                     covenant="C1:js-extension",
-                    file=fname, line=i, severity="critical",
+                    file=fname,
+                    line=i,
+                    severity="critical",
                     message=f"Relative import missing .js extension: {path}",
                 )
                 if auto_fix:
                     fixed_path = path + ".js"
                     new_line = line.replace(
-                        match.group(0),
-                        f"{match.group(1)}{fixed_path}{match.group(3)}"
+                        match.group(0), f"{match.group(1)}{fixed_path}{match.group(3)}"
                     )
                     v.auto_fixed = True
                     v.fix_applied = f"{path} → {fixed_path}"
@@ -177,11 +181,15 @@ def _enforce_mcp_subpaths(
     pattern = r"""from\s+['"]@modelcontextprotocol/sdk['"]"""
     for i, line in enumerate(content.split("\n"), 1):
         if re.search(pattern, line):
-            violations.append(TSViolation(
-                covenant="C2:mcp-subpath",
-                file=fname, line=i, severity="critical",
-                message="Bare @modelcontextprotocol/sdk import — must use subpath like /server/mcp.js",
-            ))
+            violations.append(
+                TSViolation(
+                    covenant="C2:mcp-subpath",
+                    file=fname,
+                    line=i,
+                    severity="critical",
+                    message="Bare @modelcontextprotocol/sdk import — must use subpath like /server/mcp.js",
+                )
+            )
 
     # Can't reliably auto-fix because we don't know which subpath they need
     return content, violations
@@ -198,18 +206,20 @@ def _enforce_x402_packages(
     for pkg in nonexistent:
         for i, line in enumerate(content.split("\n"), 1):
             if pkg in line and "import" in line:
-                violations.append(TSViolation(
-                    covenant="C3:x402-nonexistent",
-                    file=fname, line=i, severity="critical",
-                    message=f"Package {pkg} does not exist — types are in @x402/core",
-                ))
+                violations.append(
+                    TSViolation(
+                        covenant="C3:x402-nonexistent",
+                        file=fname,
+                        line=i,
+                        severity="critical",
+                        message=f"Package {pkg} does not exist — types are in @x402/core",
+                    )
+                )
 
     return new_content, violations
 
 
-def _enforce_no_dirname(
-    fname: str, content: str, auto_fix: bool
-) -> tuple[str, list[TSViolation]]:
+def _enforce_no_dirname(fname: str, content: str, auto_fix: bool) -> tuple[str, list[TSViolation]]:
     """C4: No __dirname or __filename in ESM — runtime crash."""
     violations = []
 
@@ -217,24 +227,41 @@ def _enforce_no_dirname(
         stripped = line.strip()
         if stripped.startswith("//"):
             continue
-        if "__dirname" in stripped and "import.meta" not in stripped and "fileURLToPath" not in content:
-            violations.append(TSViolation(
-                covenant="C4:no-dirname",
-                file=fname, line=i, severity="important",
-                message="__dirname is undefined in ESM — use import.meta.dirname or fileURLToPath(import.meta.url)",
-            ))
-        if "__filename" in stripped and "import.meta" not in stripped and "fileURLToPath" not in content:
-            violations.append(TSViolation(
-                covenant="C4:no-filename",
-                file=fname, line=i, severity="important",
-                message="__filename is undefined in ESM — use fileURLToPath(import.meta.url)",
-            ))
+        if (
+            "__dirname" in stripped
+            and "import.meta" not in stripped
+            and "fileURLToPath" not in content
+        ):
+            violations.append(
+                TSViolation(
+                    covenant="C4:no-dirname",
+                    file=fname,
+                    line=i,
+                    severity="important",
+                    message="__dirname is undefined in ESM — use import.meta.dirname or fileURLToPath(import.meta.url)",
+                )
+            )
+        if (
+            "__filename" in stripped
+            and "import.meta" not in stripped
+            and "fileURLToPath" not in content
+        ):
+            violations.append(
+                TSViolation(
+                    covenant="C4:no-filename",
+                    file=fname,
+                    line=i,
+                    severity="important",
+                    message="__filename is undefined in ESM — use fileURLToPath(import.meta.url)",
+                )
+            )
 
     return content, violations
 
 
 def _enforce_no_require(
-    fname: str, content: str,
+    fname: str,
+    content: str,
 ) -> tuple[str, list[TSViolation]]:
     """C5: No require() in ESM modules."""
     violations = []
@@ -244,18 +271,20 @@ def _enforce_no_require(
         if stripped.startswith("//"):
             continue
         if "require(" in stripped and "createRequire" not in content:
-            violations.append(TSViolation(
-                covenant="C5:no-require",
-                file=fname, line=i, severity="critical",
-                message="require() is not available in ESM — use import",
-            ))
+            violations.append(
+                TSViolation(
+                    covenant="C5:no-require",
+                    file=fname,
+                    line=i,
+                    severity="critical",
+                    message="require() is not available in ESM — use import",
+                )
+            )
 
     return content, violations
 
 
-def _enforce_ethers_v6(
-    fname: str, content: str, auto_fix: bool
-) -> tuple[str, list[TSViolation]]:
+def _enforce_ethers_v6(fname: str, content: str, auto_fix: bool) -> tuple[str, list[TSViolation]]:
     """C7: No ethers v5 patterns — providers/utils/constants are top-level in v6."""
     violations = []
     new_content = content
@@ -275,11 +304,15 @@ def _enforce_ethers_v6(
             if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
                 continue
             if re.search(pattern, line):
-                violations.append(TSViolation(
-                    covenant="C7:ethers-v6",
-                    file=fname, line=i, severity="critical",
-                    message=msg,
-                ))
+                violations.append(
+                    TSViolation(
+                        covenant="C7:ethers-v6",
+                        file=fname,
+                        line=i,
+                        severity="critical",
+                        message=msg,
+                    )
+                )
 
     return new_content, violations
 
@@ -295,7 +328,9 @@ def _enforce_no_ethersproject(
         if "@ethersproject/" in line and "import" in line:
             v = TSViolation(
                 covenant="C9:no-ethersproject",
-                file=fname, line=i, severity="critical",
+                file=fname,
+                line=i,
+                severity="critical",
                 message="@ethersproject/* packages eliminated in ethers v6 — import from 'ethers'",
             )
             if auto_fix:
@@ -309,15 +344,14 @@ def _enforce_no_ethersproject(
     return new_content, violations
 
 
-def _enforce_vitest(
-    fname: str, content: str, auto_fix: bool
-) -> tuple[str, list[TSViolation]]:
+def _enforce_vitest(fname: str, content: str, auto_fix: bool) -> tuple[str, list[TSViolation]]:
     """C10: No jest.* — use vi.* from vitest."""
     violations = []
     new_content = content
 
-    if not (fname.endswith((".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx",
-                            ".test.js", ".spec.js"))):
+    if not (
+        fname.endswith((".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx", ".test.js", ".spec.js"))
+    ):
         return content, violations
 
     jest_patterns = [
@@ -334,7 +368,9 @@ def _enforce_vitest(
             if re.search(pattern, line):
                 v = TSViolation(
                     covenant="C10:no-jest",
-                    file=fname, line=i, severity="critical",
+                    file=fname,
+                    line=i,
+                    severity="critical",
                     message=f"jest.* not available in vitest — use {replacement}",
                 )
                 if auto_fix:
@@ -350,7 +386,9 @@ def _enforce_vitest(
     if has_test_funcs and not has_vitest_import:
         v = TSViolation(
             covenant="C11:vitest-import",
-            file=fname, line=1, severity="critical",
+            file=fname,
+            line=1,
+            severity="critical",
             message="Test file missing vitest import — add: import { describe, it, expect } from 'vitest'",
         )
         if auto_fix:

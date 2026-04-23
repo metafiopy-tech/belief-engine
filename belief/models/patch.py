@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 class PatchStatus(str, Enum):
     """Status of a patch candidate through the validation pipeline."""
+
     GENERATED = "generated"
     SYNTAX_VALID = "syntax_valid"
     SYNTAX_INVALID = "syntax_invalid"
@@ -28,6 +29,7 @@ class PatchStatus(str, Enum):
 
 class DiffHunk(BaseModel):
     """A single hunk in a unified diff."""
+
     old_start: int = Field(description="Starting line in the original file")
     old_count: int = Field(description="Number of lines in the original")
     new_start: int = Field(description="Starting line in the new file")
@@ -37,6 +39,7 @@ class DiffHunk(BaseModel):
 
 class UnifiedDiff(BaseModel):
     """A patch in unified diff format."""
+
     file_path: str = Field(description="Path to the file being patched")
     hunks: list[DiffHunk] = Field(default_factory=list)
     old_content: str = Field(default="", description="Original file content")
@@ -49,6 +52,7 @@ class UnifiedDiff(BaseModel):
             return True
         try:
             import ast
+
             ast.parse(self.new_content)
             return True
         except SyntaxError:
@@ -61,7 +65,9 @@ class UnifiedDiff(BaseModel):
             f"+++ b/{self.file_path}",
         ]
         for hunk in self.hunks:
-            lines.append(f"@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@")
+            lines.append(
+                f"@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@"
+            )
             lines.append(hunk.content)
         return "\n".join(lines)
 
@@ -120,6 +126,7 @@ class UnifiedDiff(BaseModel):
 
 class PatchCandidateModel(BaseModel):
     """A candidate patch with its validation state."""
+
     id: int = 0
     diff: UnifiedDiff = Field(default_factory=lambda: UnifiedDiff(file_path=""))
     explanation: str = ""
@@ -139,6 +146,7 @@ class PatchCandidateModel(BaseModel):
 
 class PatchRanking(BaseModel):
     """Result of CodeT dual execution ranking across candidates."""
+
     candidates: list[PatchCandidateModel] = Field(default_factory=list)
     selected_id: int = -1
     ranking_method: str = "codet"

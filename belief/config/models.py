@@ -80,9 +80,9 @@ class RouteMode(str, Enum):
 
 
 class Backend(str, Enum):
-    CLOUD = "cloud"       # Anthropic
-    LOCAL = "local"       # Ollama
-    NONE = "none"         # deterministic path (no LLM)
+    CLOUD = "cloud"  # Anthropic
+    LOCAL = "local"  # Ollama
+    NONE = "none"  # deterministic path (no LLM)
 
 
 # Per-role intent under mode="hybrid". Mechanical tasks go local,
@@ -130,6 +130,7 @@ class ModelRouter(BaseModel):
       BELIEF_LOCAL_MODEL=qwen2.5-coder:14b   (default: see DEFAULT_LOCAL_MODEL)
       BELIEF_OLLAMA_URL=http://host:11434    (default: localhost)
     """
+
     backend: str = Field(default="anthropic")
     overrides: dict[str, str] = Field(default_factory=dict)
     mode: RouteMode = Field(default=RouteMode.CLOUD)

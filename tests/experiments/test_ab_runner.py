@@ -5,7 +5,6 @@ No network calls, no subprocess — engine builds are mocked.
 
 from __future__ import annotations
 
-import asyncio
 import sqlite3
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -13,7 +12,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from belief.experiments.ab_runner import (
-    DEFAULT_DB_PATH,
     ExperimentResult,
     init_db,
     run_experiment,
@@ -38,7 +36,6 @@ def tmp_db(tmp_path: Path) -> Path:
 
 
 class TestInitDb:
-
     def test_creates_tables(self, tmp_db: Path):
         init_db(tmp_db)
         assert tmp_db.exists()
@@ -46,9 +43,7 @@ class TestInitDb:
         conn = sqlite3.connect(str(tmp_db))
         tables = {
             row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         conn.close()
         assert "results" in tables
@@ -70,7 +65,6 @@ class TestInitDb:
 
 
 class TestStoreResult:
-
     def _make_result(self, **overrides) -> ExperimentResult:
         defaults = dict(
             experiment_id="exp-test",
@@ -144,6 +138,7 @@ class TestStoreResult:
 
 def _mock_raw_result(goal: str, **kwargs):
     from belief.experiments.raw_runner import RawRunResult
+
     return RawRunResult(
         goal=goal,
         model=kwargs.get("model", "test-model"),
@@ -159,14 +154,17 @@ async def _async_mock_raw(**kwargs):
 
 
 class TestRunExperiment:
-
     @pytest.mark.asyncio
     async def test_stores_all_conditions(self, tmp_db: Path):
         challenges = [{"id": "t1-fizzbuzz", "goal": "Build FizzBuzz"}]
 
         engine_data = {
-            "passed": True, "tests_passed": 3, "tests_total": 3,
-            "weighted_score": 1.0, "cost": 0.05, "time_seconds": 30.0,
+            "passed": True,
+            "tests_passed": 3,
+            "tests_total": 3,
+            "weighted_score": 1.0,
+            "cost": 0.05,
+            "time_seconds": 30.0,
             "error": None,
         }
 
@@ -208,8 +206,12 @@ class TestRunExperiment:
         challenges = [{"id": "t1-fizzbuzz", "goal": "Build FizzBuzz"}]
 
         engine_data = {
-            "passed": False, "tests_passed": 0, "tests_total": 0,
-            "weighted_score": 0.0, "cost": 0.0, "time_seconds": 5.0,
+            "passed": False,
+            "tests_passed": 0,
+            "tests_total": 0,
+            "weighted_score": 0.0,
+            "cost": 0.0,
+            "time_seconds": 5.0,
             "error": "timeout",
         }
 

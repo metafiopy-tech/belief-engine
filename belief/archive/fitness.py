@@ -13,16 +13,15 @@ not laws of physics.
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from belief.archive.outcome import BuildOutcome
 
 
 # Default weights — must sum to 1.0.  Override per-weight via env var.
 _DEFAULT_WEIGHTS = {
-    "U_W_SCORE": 0.5,      # weighted_score (tests passed)
-    "U_W_COST": 0.2,       # 1 - normalised cost (lower is better)
-    "U_W_TIME": 0.15,      # 1 - normalised wallclock
+    "U_W_SCORE": 0.5,  # weighted_score (tests passed)
+    "U_W_COST": 0.2,  # 1 - normalised cost (lower is better)
+    "U_W_TIME": 0.15,  # 1 - normalised wallclock
     "U_W_COVENANT": 0.15,  # covenant-fidelity rate
 }
 
@@ -94,12 +93,7 @@ def utility(
     time_term = _clip01(1.0 - outcome.wallclock_s / _TIME_CEILING_S)
     cov_term = covenant_rate(outcome, expected_covenants=expected_covenants)
 
-    u = (
-        w_score * quality
-        + w_cost * cost_term
-        + w_time * time_term
-        + w_cov * cov_term
-    )
+    u = w_score * quality + w_cost * cost_term + w_time * time_term + w_cov * cov_term
     return _clip01(u)
 
 

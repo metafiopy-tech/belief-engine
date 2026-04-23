@@ -33,13 +33,14 @@ logger = logging.getLogger("belief.evolution.search")
 @dataclass
 class Individual:
     """A single candidate solution in the population."""
+
     id: int
     code_files: dict[str, str]
     score: float = 0.0
     tests_passed: int = 0
     tests_total: int = 0
     complexity: int = 0  # Behavioral dimension: code complexity
-    code_size: int = 0   # Behavioral dimension: total lines
+    code_size: int = 0  # Behavioral dimension: total lines
     generation: int = 0
     parent_id: int = -1
     mutation_type: str = ""  # "breadth" (Haiku) or "depth" (Sonnet)
@@ -48,6 +49,7 @@ class Individual:
 @dataclass
 class Island:
     """An independently evolving sub-population."""
+
     id: int
     population: dict[tuple[int, int], Individual] = field(default_factory=dict)
     # Key is (complexity_bin, size_bin) — MAP-Elites behavioral grid
@@ -87,7 +89,7 @@ class Island:
     def _get_cell(self, individual: Individual) -> tuple[int, int]:
         """Map an individual to its MAP-Elites grid cell."""
         complexity_bin = min(individual.complexity // 3, 4)  # 0-4
-        size_bin = min(individual.code_size // 100, 4)       # 0-4
+        size_bin = min(individual.code_size // 100, 4)  # 0-4
         return (complexity_bin, size_bin)
 
 
@@ -160,7 +162,9 @@ class EvolutionarySearch:
                 island = random.choice(self.islands)
                 island.insert(ind)
 
-        logger.info(f"Evolution: seeded {sum(len(i.population) for i in self.islands)} individuals across {self.n_islands} islands")
+        logger.info(
+            f"Evolution: seeded {sum(len(i.population) for i in self.islands)} individuals across {self.n_islands} islands"
+        )
 
         # Evolution loop
         best_score = self._global_best_score()
@@ -184,8 +188,11 @@ class EvolutionarySearch:
                     # Breadth: 2 cheap Haiku mutations
                     for _ in range(2):
                         mutant = await self._mutate(
-                            parent, spec, llm,
-                            role="latios", temperature=0.7 + random.random() * 0.3,
+                            parent,
+                            spec,
+                            llm,
+                            role="latios",
+                            temperature=0.7 + random.random() * 0.3,
                             inspiration=inspiration,
                         )
                         if mutant:
@@ -194,8 +201,11 @@ class EvolutionarySearch:
 
                     # Depth: 1 quality Sonnet mutation
                     mutant = await self._mutate(
-                        parent, spec, llm,
-                        role="architect", temperature=0.3,
+                        parent,
+                        spec,
+                        llm,
+                        role="architect",
+                        temperature=0.3,
                         inspiration=inspiration,
                     )
                     if mutant:
@@ -262,7 +272,9 @@ class EvolutionarySearch:
                 f"### {fname}\n```python\n{code[:300]}\n```"
                 for fname, code in list(inspiration.code_files.items())[:2]
             )
-            inspiration_text = f"\n\nAnother approach (score={inspiration.score:.2f}):\n{inspiration_summary}"
+            inspiration_text = (
+                f"\n\nAnother approach (score={inspiration.score:.2f}):\n{inspiration_summary}"
+            )
 
         prompt = f"""Improve this code to better match the specification.
 
@@ -288,6 +300,7 @@ Generate an IMPROVED version. Output each file as:
 
             # Parse files from response
             import re
+
             code_files = dict(parent.code_files)  # Start with parent's files
             parts = re.split(r"###FILE:\s*", response)
             for part in parts[1:]:
@@ -295,7 +308,7 @@ Generate an IMPROVED version. Output each file as:
                 if nl == -1:
                     continue
                 fname = part[:nl].strip()
-                content = re.sub(r"###END\s*$", "", part[nl + 1:]).strip()
+                content = re.sub(r"###END\s*$", "", part[nl + 1 :]).strip()
                 content = re.sub(r"^```\w*\n?", "", content)
                 content = re.sub(r"\n?```\s*$", "", content)
                 if fname and content:
@@ -329,6 +342,7 @@ Generate an IMPROVED version. Output each file as:
     def _syntax_check(self, individual: Individual) -> bool:
         """Cheap filter: check all Python files parse."""
         import ast
+
         for fname, code in individual.code_files.items():
             if fname.endswith(".py"):
                 try:

@@ -52,9 +52,7 @@ class PromptStore:
         path = self.store_dir / filename
         path.write_text(json.dumps(data, indent=2))
 
-        logger.info(
-            f"Saved {len(prompts)} optimized prompts for version {version_id}"
-        )
+        logger.info(f"Saved {len(prompts)} optimized prompts for version {version_id}")
         return path
 
     def load_latest(self) -> Optional[dict[str, str]]:
@@ -99,11 +97,13 @@ class PromptStore:
         for path in sorted(self.store_dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text())
-                versions.append({
-                    "version_id": data.get("version_id", path.stem),
-                    "timestamp": data.get("timestamp", ""),
-                    "prompt_count": len(data.get("prompts", {})),
-                })
+                versions.append(
+                    {
+                        "version_id": data.get("version_id", path.stem),
+                        "timestamp": data.get("timestamp", ""),
+                        "prompt_count": len(data.get("prompts", {})),
+                    }
+                )
             except (json.JSONDecodeError, OSError):
                 continue
         return versions

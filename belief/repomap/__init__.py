@@ -39,12 +39,10 @@ Attribution:
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import pickle
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -64,13 +62,12 @@ def _canonical_fname(path: Path, root: Path) -> str:
     """Relative-to-root fname, resilient to macOS /private/var vs /var
     symlink expansion.  Falls back to the absolute resolved path.
     """
-    import os
     rp = os.path.realpath(str(path))
     rr = os.path.realpath(str(root))
     if rp.startswith(rr + os.sep):
-        return rp[len(rr) + 1:]
+        return rp[len(rr) + 1 :]
     if rp == rr:
-        return ''
+        return ""
     return rp
 
 
@@ -87,11 +84,12 @@ class Tag:
     For defs, ``line`` is the line of the ``def``/``class`` keyword; for
     refs, it's where the identifier appears.
     """
+
     fname: str
     name: str
     kind: str
     line: int
-    signature: str = ""   # for defs: the line of source containing `def X(…):`
+    signature: str = ""  # for defs: the line of source containing `def X(…):`
 
 
 # ---------------------------------------------------------------------------
@@ -153,10 +151,14 @@ class RepoMap:
             return []
         tags = list(self._parse_python(path, source))
         try:
-            cache_file.write_bytes(pickle.dumps({
-                "mtime": st.st_mtime_ns,
-                "tags": [t.__dict__ for t in tags],
-            }))
+            cache_file.write_bytes(
+                pickle.dumps(
+                    {
+                        "mtime": st.st_mtime_ns,
+                        "tags": [t.__dict__ for t in tags],
+                    }
+                )
+            )
         except Exception as e:
             logger.debug("repomap cache write failed for %s: %s", path, e)
         return tags
@@ -198,7 +200,11 @@ class RepoMap:
                     )
 
             # DEFINITION: module-level simple assignment (uppercase-named)
-            if node.type == "assignment" and node.parent is not None and node.parent.type == "module":
+            if (
+                node.type == "assignment"
+                and node.parent is not None
+                and node.parent.type == "module"
+            ):
                 target = node.children[0] if node.children else None
                 if target is not None and target.type == "identifier":
                     name = target.text.decode("utf-8", errors="replace")
@@ -224,7 +230,9 @@ class RepoMap:
                             name = attr.text.decode("utf-8", errors="replace")
                     if name:
                         yield Tag(
-                            fname=fname, name=name, kind="ref",
+                            fname=fname,
+                            name=name,
+                            kind="ref",
                             line=node.start_point[0] + 1,
                         )
 
@@ -238,7 +246,9 @@ class RepoMap:
                     if child.type == "aliased_import" or child.type == "identifier":
                         name = child.text.decode("utf-8", errors="replace").split(" as ")[0]
                         yield Tag(
-                            fname=fname, name=name, kind="ref",
+                            fname=fname,
+                            name=name,
+                            kind="ref",
                             line=node.start_point[0] + 1,
                         )
 
@@ -263,9 +273,7 @@ class RepoMap:
     # Graph + PageRank
     # ------------------------------------------------------------------
 
-    def build_graph(
-        self, files: Iterable[Path] | None = None
-    ) -> tuple[Any, dict[str, list[Tag]]]:
+    def build_graph(self, files: Iterable[Path] | None = None) -> tuple[Any, dict[str, list[Tag]]]:
         """Build the reference graph for the project.
 
         Returns ``(graph, defs_by_name)`` where ``defs_by_name`` maps a
@@ -416,8 +424,18 @@ class RepoMap:
     def _iter_python_files(self) -> Iterable[Path]:
         """Yield every .py file under ``self.root`` (skipping common
         non-source dirs)."""
-        skip = {".git", ".venv", "venv", "node_modules", "__pycache__",
-                ".pytest_cache", ".ruff_cache", "build", "dist", "output"}
+        skip = {
+            ".git",
+            ".venv",
+            "venv",
+            "node_modules",
+            "__pycache__",
+            ".pytest_cache",
+            ".ruff_cache",
+            "build",
+            "dist",
+            "output",
+        }
         for p in self.root.rglob("*.py"):
             if any(part in skip for part in p.parts):
                 continue

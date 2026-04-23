@@ -49,22 +49,24 @@ logger = logging.getLogger("belief.safety.danger_theory")
 # safety primitives themselves so the immune system can't disable
 # itself in a self-modification cycle.  Extend this list — don't
 # shrink it — when in doubt.
-CRITICAL_FILES: frozenset[str] = frozenset({
-    # Explicit constraints from CLAUDE.md
-    "belief/benchmark.py",
-    "belief/hardening.py",
-    # Safety-critical primitives — the immune system mustn't edit
-    # its own detectors.
-    "belief/safety/overseer.py",
-    "belief/safety/probes.py",
-    "belief/safety/goodhart_canary.py",
-    "belief/safety/danger_theory.py",
-    "belief/safety/pheromones.py",
-    # Evaluation/scoring: editing these would let SICA Goodhart its
-    # own benchmark.
-    "belief/evolution/archive.py",
-    "belief/evolution/cascade.py",
-})
+CRITICAL_FILES: frozenset[str] = frozenset(
+    {
+        # Explicit constraints from CLAUDE.md
+        "belief/benchmark.py",
+        "belief/hardening.py",
+        # Safety-critical primitives — the immune system mustn't edit
+        # its own detectors.
+        "belief/safety/overseer.py",
+        "belief/safety/probes.py",
+        "belief/safety/goodhart_canary.py",
+        "belief/safety/danger_theory.py",
+        "belief/safety/pheromones.py",
+        # Evaluation/scoring: editing these would let SICA Goodhart its
+        # own benchmark.
+        "belief/evolution/archive.py",
+        "belief/evolution/cascade.py",
+    }
+)
 
 
 def _normalize_path(module_path: str) -> str:
@@ -129,8 +131,7 @@ def _failure_mentions_module(failure: Any, module_path: str) -> bool:
         return False
 
     # Direct path-like fields
-    for attr in ("module", "module_path", "path",
-                 "failing_file", "target_file", "file"):
+    for attr in ("module", "module_path", "path", "failing_file", "target_file", "file"):
         value = None
         if isinstance(failure, dict):
             value = failure.get(attr)
@@ -143,8 +144,7 @@ def _failure_mentions_module(failure: Any, module_path: str) -> bool:
             return True
 
     # Free-text fields (traceback, error_message)
-    for attr in ("error", "error_message", "traceback", "tb",
-                 "message"):
+    for attr in ("error", "error_message", "traceback", "tb", "message"):
         value = None
         if isinstance(failure, dict):
             value = failure.get(attr)
@@ -178,9 +178,7 @@ def has_localized_failures(
     if not failures:
         return False
 
-    blamed = sum(
-        1 for f in failures if _failure_mentions_module(f, module_path)
-    )
+    blamed = sum(1 for f in failures if _failure_mentions_module(f, module_path))
     if blamed < min_count:
         return False
     fraction = blamed / len(failures)
@@ -245,12 +243,12 @@ def is_danger_zone(
     without reaching into live subsystems.
     """
     if is_critical(module_path):
-        logger.info(
-            f"danger_theory: {module_path} is CRITICAL — never a danger zone"
-        )
+        logger.info(f"danger_theory: {module_path} is CRITICAL — never a danger zone")
         return False
     if not has_localized_failures(
-        module_path, recent_failures, min_fraction=min_fraction,
+        module_path,
+        recent_failures,
+        min_fraction=min_fraction,
     ):
         return False
     if not uncertainty_rising(uncertainty_trend, min_samples=min_samples):
@@ -277,7 +275,8 @@ class DangerSignals:
 
 
 def evaluate(
-    module_path: str, signals: DangerSignals,
+    module_path: str,
+    signals: DangerSignals,
 ) -> tuple[bool, str]:
     """Decide whether a self-modification targeting ``module_path`` is justified.
 
@@ -295,18 +294,18 @@ def evaluate(
     if is_critical(module_path):
         return False, f"critical: {module_path} is on CRITICAL_FILES"
     if not has_localized_failures(
-        module_path, signals.recent_failures,
+        module_path,
+        signals.recent_failures,
         min_fraction=signals.min_fraction,
     ):
         return False, (
-            "no-localized-failures: recent test failures are not "
-            f"concentrated on {module_path}"
+            f"no-localized-failures: recent test failures are not concentrated on {module_path}"
         )
     if not uncertainty_rising(
-        signals.uncertainty_trend, min_samples=signals.min_samples,
+        signals.uncertainty_trend,
+        min_samples=signals.min_samples,
     ):
         return False, (
-            "no-uncertainty-rise: confidence probe is stable or "
-            f"improving around {module_path}"
+            f"no-uncertainty-rise: confidence probe is stable or improving around {module_path}"
         )
     return True, f"danger-zone: self-modification of {module_path} justified"

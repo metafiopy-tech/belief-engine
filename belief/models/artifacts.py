@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 # File Manifest (output of architect agent)
 # ---------------------------------------------------------------------------
 
+
 class FileManifest(BaseModel):
     filename: str = Field(description="Relative path, e.g. 'src/api/router.py'")
     purpose: str = Field(description="One-line description: what this file does")
@@ -38,6 +39,7 @@ class FileManifestPlan(BaseModel):
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class GapSeverity(str, Enum):
     BLOCKER = "blocker"
     MAJOR = "major"
@@ -55,6 +57,7 @@ class ValidationVerdict(str, Enum):
 # ---------------------------------------------------------------------------
 # Requirement Spec (output of intake)
 # ---------------------------------------------------------------------------
+
 
 class CredentialRequirement(BaseModel):
     name: str = Field(description="Human-readable name")
@@ -79,6 +82,7 @@ class RequirementSpec(BaseModel):
 # Build Memory
 # ---------------------------------------------------------------------------
 
+
 class BuildReference(BaseModel):
     goal: str
     similarity_score: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -91,6 +95,7 @@ class BuildReference(BaseModel):
 # ---------------------------------------------------------------------------
 # Research Report (output of research agent)
 # ---------------------------------------------------------------------------
+
 
 class SourceReference(BaseModel):
     url: str
@@ -126,6 +131,7 @@ class ResearchReport(BaseModel):
 # Implementation Plan (output of planner)
 # ---------------------------------------------------------------------------
 
+
 class PlanStep(BaseModel):
     order: int
     description: str
@@ -145,6 +151,7 @@ class ImplementationPlan(BaseModel):
 # ---------------------------------------------------------------------------
 # Gap Report (output of gap analyst)
 # ---------------------------------------------------------------------------
+
 
 class Gap(BaseModel):
     description: str
@@ -167,6 +174,7 @@ class GapReport(BaseModel):
 # ---------------------------------------------------------------------------
 # Execution Result (output of executor)
 # ---------------------------------------------------------------------------
+
 
 class PytestTestItem(BaseModel):
     node_id: str
@@ -229,37 +237,53 @@ ANTHROPIC_COST_PER_1K: dict[str, dict[str, float]] = {
     # Sonnet 4        | $0.003    | $0.015    | $0.00375       | $0.0003
     # Haiku 3.5/4.5   | $0.0008   | $0.004    | $0.001         | $0.00008
     # Opus 4          | $0.015    | $0.075    | $0.01875       | $0.0015
-
     "claude-sonnet-4-6": {
-        "input": 0.003, "output": 0.015,
-        "cache_write": 0.00375, "cache_read": 0.0003,
+        "input": 0.003,
+        "output": 0.015,
+        "cache_write": 0.00375,
+        "cache_read": 0.0003,
     },
     "claude-sonnet-4-20250514": {
-        "input": 0.003, "output": 0.015,
-        "cache_write": 0.00375, "cache_read": 0.0003,
+        "input": 0.003,
+        "output": 0.015,
+        "cache_write": 0.00375,
+        "cache_read": 0.0003,
     },
     "claude-haiku-4-5-20251001": {
-        "input": 0.0008, "output": 0.004,
-        "cache_write": 0.001, "cache_read": 0.00008,
+        "input": 0.0008,
+        "output": 0.004,
+        "cache_write": 0.001,
+        "cache_read": 0.00008,
     },
     "claude-haiku-4-5": {
-        "input": 0.0008, "output": 0.004,
-        "cache_write": 0.001, "cache_read": 0.00008,
+        "input": 0.0008,
+        "output": 0.004,
+        "cache_write": 0.001,
+        "cache_read": 0.00008,
     },
     "claude-opus-4-6": {
-        "input": 0.015, "output": 0.075,
-        "cache_write": 0.01875, "cache_read": 0.0015,
+        "input": 0.015,
+        "output": 0.075,
+        "cache_write": 0.01875,
+        "cache_read": 0.0015,
     },
 }
 
 _DEFAULT_COST = {
-    "input": 0.003, "output": 0.015,
-    "cache_write": 0.00375, "cache_read": 0.0003,
+    "input": 0.003,
+    "output": 0.015,
+    "cache_write": 0.00375,
+    "cache_read": 0.0003,
 }
 
 
-def _cost_usd(model: str, prompt_tokens: int, completion_tokens: int,
-              cache_read_tokens: int = 0, cache_create_tokens: int = 0) -> float:
+def _cost_usd(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cache_read_tokens: int = 0,
+    cache_create_tokens: int = 0,
+) -> float:
     """Calculate cost from token counts and model-specific pricing.
 
     The Anthropic API does NOT return cost — only token counts.
@@ -303,8 +327,9 @@ class TokenUsage(BaseModel):
     total_cost_usd: float = 0.0
     by_role: dict[str, RoleUsage] = Field(default_factory=dict)
 
-    def add_call(self, role: str, prompt_tokens: int, completion_tokens: int,
-                 cost_usd: float = 0.0) -> None:
+    def add_call(
+        self, role: str, prompt_tokens: int, completion_tokens: int, cost_usd: float = 0.0
+    ) -> None:
         self.total_prompt_tokens += prompt_tokens
         self.total_completion_tokens += completion_tokens
         self.total_cost_usd += cost_usd
@@ -341,10 +366,11 @@ class TokenUsage(BaseModel):
 # Validation Result (output of validator)
 # ---------------------------------------------------------------------------
 
+
 class TestTier(str, Enum):
-    SMOKE = "smoke"          # P0 — must all pass
+    SMOKE = "smoke"  # P0 — must all pass
     FUNCTIONAL = "functional"  # P1 — business logic
-    EDGE_CASE = "edge_case"    # P2 — boundary conditions
+    EDGE_CASE = "edge_case"  # P2 — boundary conditions
     ENVIRONMENT = "environment"  # import/dep failures — weight 0
 
 

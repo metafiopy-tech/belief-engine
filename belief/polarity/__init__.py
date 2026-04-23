@@ -14,9 +14,13 @@ from belief.polarity.frequency import FrequencyLayer
 from belief.polarity.convergence import LoopBlocker, OscillationDetector, ActionDeduplicator
 
 __all__ = [
-    "IncompletenessLoop", "Remainder",
-    "BeliefLoop", "Covenant",
+    "IncompletenessLoop",
+    "Remainder",
+    "BeliefLoop",
+    "Covenant",
     "CrossTalkManager",
     "FrequencyLayer",
-    "LoopBlocker", "OscillationDetector", "ActionDeduplicator",
+    "LoopBlocker",
+    "OscillationDetector",
+    "ActionDeduplicator",
 ]

@@ -60,12 +60,16 @@ class IntakeAgent(BaseAgent):
             spec.complexity_score = max(1, min(5, spec.complexity_score))
             state.requirement_spec = spec
             state.complexity_score = spec.complexity_score
-            logger.info(f"Intake: {len(spec.acceptance_criteria)} criteria, complexity={spec.complexity_score}")
+            logger.info(
+                f"Intake: {len(spec.acceptance_criteria)} criteria, complexity={spec.complexity_score}"
+            )
 
         except (ConnectionError, ValueError) as e:
             logger.warning(f"Intake fallback: {e}")
             state.requirement_spec = RequirementSpec(
-                goal=goal, goal_refined=goal, target_type="python",
+                goal=goal,
+                goal_refined=goal,
+                target_type="python",
                 acceptance_criteria=[
                     f"The automation for '{goal}' executes without errors",
                     "The automation produces the expected output",

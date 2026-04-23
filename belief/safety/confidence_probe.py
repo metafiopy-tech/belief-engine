@@ -109,12 +109,12 @@ THRESH_ESCALATE = 0.4
 class StepFeatures:
     """Flat feature vector expected by the probe."""
 
-    agent_one_hot: list[int]           # len == len(KNOWN_AGENTS)
+    agent_one_hot: list[int]  # len == len(KNOWN_AGENTS)
     iteration: int
     cost_ratio: float
     output_length: int
-    error_keywords: int                # 0 or 1
-    step_position: float               # [0, 1+]
+    error_keywords: int  # 0 or 1
+    step_position: float  # [0, 1+]
 
     def to_vector(self) -> list[float]:
         return [
@@ -216,9 +216,7 @@ class ConfidenceProbe:
                 meta = payload.get("metadata")
                 if isinstance(meta, dict):
                     known = {f for f in ProbeMetadata.__dataclass_fields__}
-                    self.metadata = ProbeMetadata(
-                        **{k: v for k, v in meta.items() if k in known}
-                    )
+                    self.metadata = ProbeMetadata(**{k: v for k, v in meta.items() if k in known})
         except Exception as exc:
             logger.warning("failed to load probe from %s: %s", self.model_path, exc)
             self.model = None
@@ -243,19 +241,16 @@ class ConfidenceProbe:
         if n < int(min_samples):
             logger.warning(
                 "probe.train: only %d rows (< %d min); refusing to train",
-                n, min_samples,
+                n,
+                min_samples,
             )
-            self.metadata = ProbeMetadata(
-                n_samples=n, min_samples_required=int(min_samples)
-            )
+            self.metadata = ProbeMetadata(n_samples=n, min_samples_required=int(min_samples))
             return self.metadata
 
         sk = _load_sklearn()
         if sk is None:
             logger.warning("sklearn not installed; probe.train is a no-op")
-            self.metadata = ProbeMetadata(
-                n_samples=n, min_samples_required=int(min_samples)
-            )
+            self.metadata = ProbeMetadata(n_samples=n, min_samples_required=int(min_samples))
             return self.metadata
 
         X, y = self._build_matrix(rows_list, max_budget=max_budget)
@@ -272,13 +267,9 @@ class ConfidenceProbe:
         # raw classifier if the minority class is too thin.
         min_class = min(y.count(0), y.count(1)) if y else 0
         if min_class >= _CALIBRATION_CV:
-            clf = sk["CalibratedClassifierCV"](
-                base, cv=_CALIBRATION_CV, method=_CALIBRATION_METHOD
-            )
+            clf = sk["CalibratedClassifierCV"](base, cv=_CALIBRATION_CV, method=_CALIBRATION_METHOD)
         else:
-            logger.info(
-                "too-thin minority class (%d); skipping calibration", min_class
-            )
+            logger.info("too-thin minority class (%d); skipping calibration", min_class)
             clf = base
             calibrated = False
 
@@ -441,7 +432,10 @@ def is_probe_routing_enabled() -> bool:
     has trained a probe enables it by setting BELIEF_ENABLE_PROBE=1.
     """
     if os.environ.get("BELIEF_ENABLE_PROBE", "").strip().lower() not in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }:
         return False
     return get_default_probe().model is not None

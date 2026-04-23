@@ -149,9 +149,7 @@ class SwebenchMirror:
             tasks.append(
                 BittensorTask(
                     id=str(r.get("instance_id") or r.get("id") or ""),
-                    problem_statement=str(
-                        r.get("problem_statement") or r.get("prompt") or ""
-                    ),
+                    problem_statement=str(r.get("problem_statement") or r.get("prompt") or ""),
                     repo=str(r.get("repo") or ""),
                     ecosystem=str(r.get("language") or "polyglot"),
                 )
@@ -169,8 +167,7 @@ class SwebenchMirror:
         with self._conn() as c:
             if ecosystem:
                 rows = c.execute(
-                    "SELECT * FROM bittensor_tasks WHERE ecosystem = ? "
-                    "ORDER BY RANDOM() LIMIT ?;",
+                    "SELECT * FROM bittensor_tasks WHERE ecosystem = ? ORDER BY RANDOM() LIMIT ?;",
                     (ecosystem, int(n)),
                 ).fetchall()
             else:
@@ -191,16 +188,13 @@ def _row_to_task(row: Any) -> BittensorTask:
     )
 
 
-def _try_load_hf_rows(
-    dataset: str, *, split: str, limit: Optional[int]
-) -> list[dict[str, Any]]:
+def _try_load_hf_rows(dataset: str, *, split: str, limit: Optional[int]) -> list[dict[str, Any]]:
     """Attempt to pull rows via HuggingFace `datasets`. Return [] on failure."""
     try:
         from datasets import load_dataset  # type: ignore[import-untyped]
     except ImportError:
         logger.info(
-            "datasets not installed; skipping HF pull for %s. "
-            "Install with: pip install datasets",
+            "datasets not installed; skipping HF pull for %s. Install with: pip install datasets",
             dataset,
         )
         return []

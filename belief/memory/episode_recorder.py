@@ -170,8 +170,8 @@ def _analyze_code(code_files: dict[str, str]) -> dict[str, Any]:
     # Hardcoded secrets (crude pattern)
     secret_patterns = [
         r'(api_key|secret_key|password|token)\s*=\s*["\'][^"\']{8,}["\']',
-        r'sk-[a-zA-Z0-9]{20,}',
-        r'ghp_[a-zA-Z0-9]{36}',
+        r"sk-[a-zA-Z0-9]{20,}",
+        r"ghp_[a-zA-Z0-9]{36}",
     ]
     for pattern in secret_patterns:
         features["hardcoded_secret_count"] += len(re.findall(pattern, all_code, re.IGNORECASE))
@@ -195,7 +195,7 @@ def _analyze_code(code_files: dict[str, str]) -> dict[str, Any]:
 
         # Print count (excluding test files)
         if "test" not in fname.lower():
-            features["print_count"] += len(re.findall(r'\bprint\s*\(', code))
+            features["print_count"] += len(re.findall(r"\bprint\s*\(", code))
 
         # AST-based analysis
         try:
@@ -207,14 +207,10 @@ def _analyze_code(code_files: dict[str, str]) -> dict[str, Any]:
 
                 # Async vs sync endpoints
                 if isinstance(node, ast.AsyncFunctionDef):
-                    if any(
-                        isinstance(d, ast.Call) for d in node.decorator_list
-                    ):
+                    if any(isinstance(d, ast.Call) for d in node.decorator_list):
                         has_async_endpoints = True
                 elif isinstance(node, ast.FunctionDef):
-                    if any(
-                        isinstance(d, ast.Call) for d in node.decorator_list
-                    ):
+                    if any(isinstance(d, ast.Call) for d in node.decorator_list):
                         has_sync_endpoints = True
         except SyntaxError:
             pass
@@ -228,8 +224,11 @@ def _is_passing(state: dict) -> bool:
     """Check if the build passed."""
     validation = state.get("validation_result")
     if validation:
-        v = (validation.get("verdict") if isinstance(validation, dict)
-             else getattr(validation, "verdict", None))
+        v = (
+            validation.get("verdict")
+            if isinstance(validation, dict)
+            else getattr(validation, "verdict", None)
+        )
         if v:
             verdict = v.value if hasattr(v, "value") else str(v)
             return verdict == "pass"
@@ -240,8 +239,11 @@ def _get_score(state: dict) -> float:
     """Extract the build score."""
     validation = state.get("validation_result")
     if validation:
-        score = (validation.get("weighted_score", 0.0) if isinstance(validation, dict)
-                 else getattr(validation, "weighted_score", 0.0))
+        score = (
+            validation.get("weighted_score", 0.0)
+            if isinstance(validation, dict)
+            else getattr(validation, "weighted_score", 0.0)
+        )
         return float(score)
     return 0.0
 

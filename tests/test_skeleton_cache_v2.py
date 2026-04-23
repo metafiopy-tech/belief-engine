@@ -8,7 +8,6 @@ Covers:
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 
@@ -121,6 +120,7 @@ def test_get_or_generate_propagates_generator_exceptions(cache_dir):
 
 def test_cached_ast_parse_returns_cached_object():
     from belief.cache.skeleton_cache import cached_ast_parse, clear_caches
+
     clear_caches()
 
     src = "x = 1\ndef f():\n    return 42\n"
@@ -131,18 +131,21 @@ def test_cached_ast_parse_returns_cached_object():
 
 def test_cached_ast_parse_different_sources_different_trees():
     from belief.cache.skeleton_cache import cached_ast_parse, clear_caches
+
     clear_caches()
     assert cached_ast_parse("a = 1") is not cached_ast_parse("b = 2")
 
 
 def test_cached_ast_parse_rejects_non_string():
     from belief.cache.skeleton_cache import cached_ast_parse
+
     with pytest.raises(TypeError):
         cached_ast_parse(123)
 
 
 def test_cached_ast_parse_raises_on_invalid_syntax():
     from belief.cache.skeleton_cache import cached_ast_parse, clear_caches
+
     clear_caches()
     with pytest.raises(SyntaxError):
         cached_ast_parse("def :::")

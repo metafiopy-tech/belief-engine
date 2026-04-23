@@ -34,7 +34,7 @@ class BuildOutcome:
 
     run_id: str
     goal: str
-    verdict: str                                       # pass / fail_fixable / fail_hard
+    verdict: str  # pass / fail_fixable / fail_hard
     tests_passed: int = 0
     tests_total: int = 0
     weighted_score: float = 0.0
@@ -68,8 +68,9 @@ class BuildOutcome:
         filtered = {k: v for k, v in data.items() if k in known}
         ac = filtered.get("agent_configurations", {})
         filtered["agent_configurations"] = {
-            name: (cfg if isinstance(cfg, AgentConfiguration)
-                   else AgentConfiguration.from_dict(cfg))
+            name: (
+                cfg if isinstance(cfg, AgentConfiguration) else AgentConfiguration.from_dict(cfg)
+            )
             for name, cfg in ac.items()
         }
         return cls(**filtered)

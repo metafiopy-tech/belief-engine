@@ -35,8 +35,7 @@ def parse_feed_text(text: str) -> Any:
         import feedparser  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
-            "feedparser is required for RSS/Atom sources. "
-            "Install the [photosynthesis] extra."
+            "feedparser is required for RSS/Atom sources. Install the [photosynthesis] extra."
         ) from exc
     return feedparser.parse(text)
 

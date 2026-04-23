@@ -17,14 +17,12 @@ from __future__ import annotations
 
 import textwrap
 
-import pytest
 
 from belief.covenants import (
     enforce_python_covenants,
     enforce_python_covenants_on_files,
 )
 from belief.covenants.forbidden_imports import (
-    apply_forbidden_imports_covenant,
     is_stdlib_name,
 )
 from belief.covenants.pydantic_v2 import apply_pydantic_v2_covenant
@@ -124,6 +122,7 @@ class TestConfigToConfigDict:
         # some v1 names are substrings of their v2 replacements
         # (e.g., `schema_extra` is a substring of `json_schema_extra`).
         import re
+
         for v1 in (
             "orm_mode",
             "allow_population_by_field_name",
@@ -419,32 +418,33 @@ class TestBulkEntryPoint:
 class TestCheatsheetTrigger:
     def test_triggers_on_models_filename(self) -> None:
         from belief.prompts.cheatsheets import should_inject_pydantic_v2_cheatsheet
+
         assert should_inject_pydantic_v2_cheatsheet(filename="src/models.py")
         assert should_inject_pydantic_v2_cheatsheet(filename="app/schemas.py")
         assert should_inject_pydantic_v2_cheatsheet(filename="settings.py")
 
     def test_does_not_trigger_on_plain_filename(self) -> None:
         from belief.prompts.cheatsheets import should_inject_pydantic_v2_cheatsheet
+
         assert not should_inject_pydantic_v2_cheatsheet(filename="fib.py")
         assert not should_inject_pydantic_v2_cheatsheet(filename="main.py")
 
     def test_triggers_on_pydantic_import(self) -> None:
         from belief.prompts.cheatsheets import should_inject_pydantic_v2_cheatsheet
-        assert should_inject_pydantic_v2_cheatsheet(
-            planned_imports=["pydantic", "os"]
-        )
-        assert should_inject_pydantic_v2_cheatsheet(
-            planned_imports=["langchain_core.tools"]
-        )
+
+        assert should_inject_pydantic_v2_cheatsheet(planned_imports=["pydantic", "os"])
+        assert should_inject_pydantic_v2_cheatsheet(planned_imports=["langchain_core.tools"])
 
     def test_triggers_on_fastapi_goal(self) -> None:
         from belief.prompts.cheatsheets import should_inject_pydantic_v2_cheatsheet
+
         assert should_inject_pydantic_v2_cheatsheet(
             user_goal="Build a FastAPI service that stores users",
         )
 
     def test_cheatsheet_text_has_v1_v2_contrast(self) -> None:
         from belief.prompts.cheatsheets import load_pydantic_v2_cheatsheet
+
         text = load_pydantic_v2_cheatsheet()
         assert text, "cheatsheet file must ship with the package"
         # Basic sanity — must contain at least one Wrong/Right pair.

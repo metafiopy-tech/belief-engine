@@ -73,10 +73,7 @@ class TestGoalGeneration:
         """Should have at least one goal from each tier 1-3."""
         goals = generate_expansion_goals(5)
         has_script = any("script" in g.lower() for g in goals)
-        has_cli_or_api = any(
-            "CLI" in g or "API" in g or "FastAPI" in g
-            for g in goals
-        )
+        has_cli_or_api = any("CLI" in g or "API" in g or "FastAPI" in g for g in goals)
         # At least 2 of the 3 tiers should be present
         assert has_script or has_cli_or_api
 
@@ -91,7 +88,6 @@ class TestGoalGeneration:
 class TestGraphStructure:
     def test_graph_has_all_nodes(self):
         graph = build_jitterbug_graph()
-        expected = {"expansion", "compression", "reconstruction", "validation", "integration"}
         # LangGraph stores nodes differently, check via the builder
         assert "expansion" in graph.nodes
         assert "compression" in graph.nodes
@@ -115,11 +111,13 @@ class TestRouting:
 
     def test_validation_failed_routes_to_end(self):
         from langgraph.graph import END
+
         state = {"validation_passed": False}
         assert route_after_validation(state) == END
 
     def test_dry_run_routes_to_end(self):
         from langgraph.graph import END
+
         state = {"dry_run": True}
         assert route_after_compression(state) == END
 
@@ -162,12 +160,25 @@ class TestCompressionNode:
     async def test_compression_with_failures(self):
         state = _default_state()
         state["expansion_traces"] = [
-            {"passed": False, "errors": ["ImportError: no module named 'xyz'"],
-             "trace_id": "t1", "code_files": {}},
-            {"passed": False, "errors": ["ImportError: cannot import 'abc'"],
-             "trace_id": "t2", "code_files": {}},
-            {"passed": True, "errors": [], "user_goal": "test",
-             "trace_id": "t3", "code_files": {"main.py": "x=1"}},
+            {
+                "passed": False,
+                "errors": ["ImportError: no module named 'xyz'"],
+                "trace_id": "t1",
+                "code_files": {},
+            },
+            {
+                "passed": False,
+                "errors": ["ImportError: cannot import 'abc'"],
+                "trace_id": "t2",
+                "code_files": {},
+            },
+            {
+                "passed": True,
+                "errors": [],
+                "user_goal": "test",
+                "trace_id": "t3",
+                "code_files": {"main.py": "x=1"},
+            },
         ]
 
         result = await compression_node(state)
@@ -222,7 +233,13 @@ class TestValidationNode:
         fail_result.challenge_id = "t1-fail"
 
         with patch("belief.benchmark.run_benchmark", new_callable=AsyncMock) as mock_bench:
-            mock_bench.return_value = [pass_result, pass_result, fail_result, fail_result, fail_result]
+            mock_bench.return_value = [
+                pass_result,
+                pass_result,
+                fail_result,
+                fail_result,
+                fail_result,
+            ]
             result = await validation_node(state)
 
         assert result["validation_passed"] is False
@@ -336,11 +353,13 @@ class TestCLICommands:
     def test_progression_cmd_exists(self):
         """The progression command should be importable and callable."""
         from belief.cli import _run_progression_cmd
+
         assert callable(_run_progression_cmd)
 
     def test_jitterbug_cmd_exists(self):
         """The jitterbug command should be importable."""
         from belief.cli import _run_jitterbug_cmd
+
         assert callable(_run_jitterbug_cmd)
 
     def test_argparse_registers_jitterbug(self):

@@ -181,17 +181,15 @@ class GrinderDaemon:
     # ---------------------------------------------------------------- status
     def _current_status(self) -> GrinderStatus:
         s = GrinderStatus(
-            state="stopping" if self._stop_requested else (
-                "paused" if self._is_paused() else (
-                    "building" if self._current_goal else "idle"
-                )
+            state="stopping"
+            if self._stop_requested
+            else (
+                "paused" if self._is_paused() else ("building" if self._current_goal else "idle")
             ),
             builds_completed=self.stats.builds_completed,
             builds_failed=self.stats.builds_failed,
             current_goal_id=self._current_goal.goal_id if self._current_goal else "",
-            current_goal_text=(
-                self._current_goal.goal_text if self._current_goal else ""
-            ),
+            current_goal_text=(self._current_goal.goal_text if self._current_goal else ""),
             queue_depth=self.queue.queue_depth(),
             started_at=self._started_at,
             last_result=self._last_result,
@@ -219,15 +217,15 @@ class GrinderDaemon:
         self._persist_status()
         logger.info(
             "grinder started: mode=%s pending_dir=%s max_builds=%s",
-            self.model_mode, self.pending_dir, max_builds,
+            self.model_mode,
+            self.pending_dir,
+            max_builds,
         )
 
         while not self._stop_requested:
             # max_builds caps TOTAL processed so a run of only-failures
             # still exits. Equivalently: stop after N dispatch slots.
-            total_processed = (
-                self.stats.builds_completed + self.stats.builds_failed
-            )
+            total_processed = self.stats.builds_completed + self.stats.builds_failed
             if max_builds is not None and total_processed >= max_builds:
                 break
 
@@ -300,7 +298,8 @@ class GrinderDaemon:
         self._persist_status()
         logger.info(
             "grinder stopped: %d completed, %d failed",
-            self.stats.builds_completed, self.stats.builds_failed,
+            self.stats.builds_completed,
+            self.stats.builds_failed,
         )
         return self.stats
 
@@ -328,9 +327,7 @@ class GrinderDaemon:
                 error=str(exc),
             )
 
-    async def _run_improvement(
-        self, name: str, runner: Optional[ImprovementRunner]
-    ) -> None:
+    async def _run_improvement(self, name: str, runner: Optional[ImprovementRunner]) -> None:
         if runner is None:
             logger.info("%s hook not wired; skipping", name)
             return

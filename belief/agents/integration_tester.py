@@ -42,6 +42,7 @@ async def integration_test_node(state: dict[str, Any]) -> dict[str, Any]:
     if isinstance(architecture, dict):
         try:
             from belief.models.service_architecture import ServiceArchitecture
+
             architecture = ServiceArchitecture.model_validate(architecture)
         except Exception:
             result["integration_results"] = {"skipped": True, "reason": "bad architecture"}
@@ -104,14 +105,16 @@ def _spec_to_test_file(service, spec: dict) -> str:
     ]
 
     # Health check test
-    lines.extend([
-        f"def test_{service.package}_health():",
-        '    """Smoke test: service is reachable."""',
-        "    response = httpx.get(f\"{BASE_URL}/health\", timeout=5)",
-        "    assert response.status_code in (200, 404)  # 404 OK if no /health route",
-        "",
-        "",
-    ])
+    lines.extend(
+        [
+            f"def test_{service.package}_health():",
+            '    """Smoke test: service is reachable."""',
+            '    response = httpx.get(f"{BASE_URL}/health", timeout=5)',
+            "    assert response.status_code in (200, 404)  # 404 OK if no /health route",
+            "",
+            "",
+        ]
+    )
 
     # Generate a test for each route
     paths = spec.get("paths", {})
@@ -122,7 +125,12 @@ def _spec_to_test_file(service, spec: dict) -> str:
             if method in ("parameters", "summary", "description"):
                 continue
 
-            test_name = operation.get("operationId", f"{method}_{path}").replace("/", "_").replace("{", "").replace("}", "")
+            test_name = (
+                operation.get("operationId", f"{method}_{path}")
+                .replace("/", "_")
+                .replace("{", "")
+                .replace("}", "")
+            )
             test_name = f"test_{test_name}".replace("__", "_")
 
             # Build the request
@@ -145,7 +153,9 @@ def _spec_to_test_file(service, spec: dict) -> str:
             else:
                 lines.append(f"    response = httpx.{method}(url, timeout=5)")
 
-            lines.append("    assert response.status_code < 500, f\"Server error: {response.status_code}\"")
+            lines.append(
+                '    assert response.status_code < 500, f"Server error: {response.status_code}"'
+            )
             lines.append("")
             lines.append("")
 
@@ -181,19 +191,21 @@ def _generate_cross_service_tests(architecture) -> str | None:
 
     for svc, dep, target in deps[:5]:  # Cap at 5 cross-service tests
         test_name = f"test_{svc.package}_calls_{target.package}"
-        lines.extend([
-            f"def {test_name}():",
-            f'    """Verify {svc.name} can reach {target.name}."""',
-            '    # Target service should be reachable',
-            f'    response = httpx.get("http://localhost:{target.port}/health", timeout=5)',
-            "    assert response.status_code < 500",
-            "",
-            '    # Source service should be reachable',
-            f'    response = httpx.get("http://localhost:{svc.port}/health", timeout=5)',
-            "    assert response.status_code < 500",
-            "",
-            "",
-        ])
+        lines.extend(
+            [
+                f"def {test_name}():",
+                f'    """Verify {svc.name} can reach {target.name}."""',
+                "    # Target service should be reachable",
+                f'    response = httpx.get("http://localhost:{target.port}/health", timeout=5)',
+                "    assert response.status_code < 500",
+                "",
+                "    # Source service should be reachable",
+                f'    response = httpx.get("http://localhost:{svc.port}/health", timeout=5)',
+                "    assert response.status_code < 500",
+                "",
+                "",
+            ]
+        )
 
     return "\n".join(lines)
 
@@ -228,7 +240,9 @@ def run_integration_tests_live(
 
             # Inject correct base URLs
             for pkg, url in base_urls.items():
-                content = content.replace("http://localhost:", url.replace("http://localhost:", "http://localhost:"))
+                content = content.replace(
+                    "http://localhost:", url.replace("http://localhost:", "http://localhost:")
+                )
 
             fpath.write_text(content)
 
@@ -236,11 +250,14 @@ def run_integration_tests_live(
         try:
             proc = subprocess.run(
                 [sys.executable, "-m", "pytest", "-v", "--tb=short", "-q"],
-                capture_output=True, text=True,
-                timeout=60, cwd=str(tmp_path),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(tmp_path),
             )
 
             import re
+
             passed = 0
             failed = 0
             match = re.search(r"(\d+) passed", proc.stdout)

@@ -28,8 +28,12 @@ def test_auto_approve_below_threshold(store: ApprovalStore) -> None:
     client = AutoApproveTestClient(decision=False)  # should not be asked
     decision = asyncio.run(
         request_approval(
-            "generator", {"x": 1}, est_cost=0.02,
-            client=client, store=store, auto_threshold=0.05,
+            "generator",
+            {"x": 1},
+            est_cost=0.02,
+            client=client,
+            store=store,
+            auto_threshold=0.05,
         )
     )
     assert decision.granted is True
@@ -41,8 +45,11 @@ def test_hard_block_above_threshold(store: ApprovalStore) -> None:
     client = AutoApproveTestClient(decision=True)  # shouldn't be asked
     decision = asyncio.run(
         request_approval(
-            "generator", {"x": 1}, est_cost=1.50,
-            client=client, store=store,
+            "generator",
+            {"x": 1},
+            est_cost=1.50,
+            client=client,
+            store=store,
         )
     )
     assert decision.granted is False
@@ -54,8 +61,12 @@ def test_human_approve_in_ask_band(store: ApprovalStore) -> None:
     client = AutoApproveTestClient(decision=True)
     decision = asyncio.run(
         request_approval(
-            "generator", {"x": 1}, est_cost=0.10,
-            client=client, store=store, auto_threshold=0.05,
+            "generator",
+            {"x": 1},
+            est_cost=0.10,
+            client=client,
+            store=store,
+            auto_threshold=0.05,
         )
     )
     assert decision.granted is True
@@ -67,8 +78,12 @@ def test_human_reject_in_ask_band(store: ApprovalStore) -> None:
     client = AutoApproveTestClient(decision=False)
     decision = asyncio.run(
         request_approval(
-            "generator", {"x": 1}, est_cost=0.10,
-            client=client, store=store, auto_threshold=0.05,
+            "generator",
+            {"x": 1},
+            est_cost=0.10,
+            client=client,
+            store=store,
+            auto_threshold=0.05,
         )
     )
     assert decision.granted is False
@@ -79,8 +94,12 @@ def test_timeout_fails_closed(store: ApprovalStore) -> None:
     client = NullApprovalClient()  # always returns None
     decision = asyncio.run(
         request_approval(
-            "generator", {"x": 1}, est_cost=0.10,
-            client=client, store=store, auto_threshold=0.05,
+            "generator",
+            {"x": 1},
+            est_cost=0.10,
+            client=client,
+            store=store,
+            auto_threshold=0.05,
         )
     )
     assert decision.granted is False
@@ -98,8 +117,12 @@ def test_store_records_decision(store: ApprovalStore) -> None:
     client = AutoApproveTestClient(decision=True)
     decision = asyncio.run(
         request_approval(
-            "generator", {"payload": "x"}, est_cost=0.02,
-            client=client, store=store, auto_threshold=0.05,
+            "generator",
+            {"payload": "x"},
+            est_cost=0.02,
+            client=client,
+            store=store,
+            auto_threshold=0.05,
         )
     )
     assert decision.status is ApprovalStatus.AUTO_APPROVED

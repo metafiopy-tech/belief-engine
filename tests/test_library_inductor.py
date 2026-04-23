@@ -20,10 +20,7 @@ from belief.memory.library_inductor import (
 from belief.memory.tool_registry import SelfAuthoredTool
 
 
-VALID_CODE = (
-    "def normalize_whitespace(text: str) -> str:\n"
-    "    return ' '.join(text.split())\n"
-)
+VALID_CODE = "def normalize_whitespace(text: str) -> str:\n    return ' '.join(text.split())\n"
 
 VALID_NAMING = json.dumps(
     {
@@ -152,6 +149,7 @@ def _rejecting_validator(tool: SelfAuthoredTool) -> Any:
     class _Result:
         valid = False
         errors = ["banned call: os.remove"]
+
     return _Result()
 
 
@@ -196,9 +194,7 @@ class TestPromoteApexPredator:
         outcome = promote_apex_predator(
             _eligible_candidate(),
             tool_registry=_FakeToolRegistry(),
-            naming_client=_FakeClient(
-                [INVALID_NAMING_GENERIC_NAME, INVALID_NAMING_BAD_IDENT]
-            ),
+            naming_client=_FakeClient([INVALID_NAMING_GENERIC_NAME, INVALID_NAMING_BAD_IDENT]),
             validator=_permissive_validator,
         )
         assert outcome.success is False
@@ -247,9 +243,7 @@ class TestPromoteApexPredator:
 class TestPromoteEligible:
     def test_cap_respected(self) -> None:
         reg = _FakeToolRegistry()
-        candidates = [
-            _eligible_candidate(nutrient_id=f"n-{i}") for i in range(6)
-        ]
+        candidates = [_eligible_candidate(nutrient_id=f"n-{i}") for i in range(6)]
         # Every call returns the same VALID_NAMING
         client = _FakeClient([VALID_NAMING] * 6)
         outcomes = promote_eligible(
@@ -265,13 +259,12 @@ class TestPromoteEligible:
 
     def test_failures_dont_consume_budget(self) -> None:
         reg = _FakeToolRegistry()
-        candidates = [
-            _eligible_candidate(nutrient_id=f"n-{i}") for i in range(4)
-        ]
+        candidates = [_eligible_candidate(nutrient_id=f"n-{i}") for i in range(4)]
         # First response fails validation, rest succeed
         client = _FakeClient(
             [
-                INVALID_NAMING_GENERIC_NAME, INVALID_NAMING_BAD_IDENT,  # first candidate retries
+                INVALID_NAMING_GENERIC_NAME,
+                INVALID_NAMING_BAD_IDENT,  # first candidate retries
                 VALID_NAMING,  # second candidate
                 VALID_NAMING,  # third candidate
                 VALID_NAMING,  # fourth (shouldn't be hit; budget=2)

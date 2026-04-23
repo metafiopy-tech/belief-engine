@@ -16,6 +16,7 @@ Covers:
     for code collections, voyage-3-large otherwise)
   - VoyageEmbeddingFunction falls back to hash when voyageai is missing
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -38,8 +39,7 @@ from belief.memory.fsrs import (
 class _FakeNutrient:
     """Duck-type match for Nutrient — only the fields clade walkers touch."""
 
-    __slots__ = ("nutrient_id", "lineage_parent_ids",
-                 "reinforcement_count", "lapse_count")
+    __slots__ = ("nutrient_id", "lineage_parent_ids", "reinforcement_count", "lapse_count")
 
     def __init__(self, nid: str, parents=None, reps: int = 0, lapses: int = 0):
         self.nutrient_id = nid
@@ -83,8 +83,8 @@ class TestCladeProductivity:
     def test_transitive_descendants_followed(self):
         """root → c1 → c2 — the clade of root should include c2."""
         root = _FakeNutrient("root")
-        c1 = _FakeNutrient("c1", parents=["root"], reps=3, lapses=1)   # 3.0
-        c2 = _FakeNutrient("c2", parents=["c1"], reps=2, lapses=0)    # 2.0
+        c1 = _FakeNutrient("c1", parents=["root"], reps=3, lapses=1)  # 3.0
+        c2 = _FakeNutrient("c2", parents=["c1"], reps=2, lapses=0)  # 2.0
         soil = _FakeSoil([root, c1, c2])
         # descendants of root = {c1, c2}; score = (3.0 + 2.0) / 2 = 2.5
         assert clade_productivity("root", soil) == pytest.approx(2.5)
@@ -120,8 +120,7 @@ class TestCladeProductivity:
         cache: dict = {}
         p1 = clade_productivity("root", soil, cache=cache)
         # Mutate soil — cache should still return the old value.
-        soil._nutrients.append(_FakeNutrient("c2", parents=["root"],
-                                             reps=100, lapses=0))
+        soil._nutrients.append(_FakeNutrient("c2", parents=["root"], reps=100, lapses=0))
         p2 = clade_productivity("root", soil, cache=cache)
         assert p1 == p2
 
@@ -149,15 +148,12 @@ class TestReviewProductivityWeighting:
     def test_default_productivity_identical_to_classical(self):
         """productivity=0 (default) must match the classical FSRS behaviour."""
         s_default = review(self._base_state(), grade=3, now=self.NOW_10)
-        s_explicit_zero = review(self._base_state(), grade=3, now=self.NOW_10,
-                                 productivity=0.0)
+        s_explicit_zero = review(self._base_state(), grade=3, now=self.NOW_10, productivity=0.0)
         assert s_default.stability == s_explicit_zero.stability
 
     def test_positive_productivity_amplifies_success(self):
-        plain = review(self._base_state(), grade=3, now=self.NOW_10,
-                       productivity=0.0)
-        boosted = review(self._base_state(), grade=3, now=self.NOW_10,
-                         productivity=5.0)
+        plain = review(self._base_state(), grade=3, now=self.NOW_10, productivity=0.0)
+        boosted = review(self._base_state(), grade=3, now=self.NOW_10, productivity=5.0)
         assert boosted.stability > plain.stability
         # Both must have grown above the starting stability.
         assert plain.stability > 5.0
@@ -165,10 +161,8 @@ class TestReviewProductivityWeighting:
 
     def test_productivity_ignored_on_failure(self):
         """Failure (grade=1) must not benefit from high productivity."""
-        low = review(self._base_state(), grade=1, now=self.NOW_10,
-                     productivity=0.0)
-        high = review(self._base_state(), grade=1, now=self.NOW_10,
-                      productivity=10.0)
+        low = review(self._base_state(), grade=1, now=self.NOW_10, productivity=0.0)
+        high = review(self._base_state(), grade=1, now=self.NOW_10, productivity=10.0)
         assert low.stability == high.stability
 
     def test_productivity_weight_caps_at_ten(self):
@@ -266,8 +260,12 @@ class TestSoilLineage:
         assert score == pytest.approx(4.0)
 
     def _age_nutrient(
-        self, soil, collection_name: str, nid: str,
-        days_ago: float = 30.0, stability: float = 5.0,
+        self,
+        soil,
+        collection_name: str,
+        nid: str,
+        days_ago: float = 30.0,
+        stability: float = 5.0,
     ):
         """Helper: retroactively set fsrs_last_review / fsrs_stability.
 
@@ -279,9 +277,7 @@ class TestSoilLineage:
         and stability can't move.  We simulate a 30-day-old nutrient
         so the spacing-effect term fires and growth becomes visible.
         """
-        past = (
-            datetime.now(timezone.utc) - timedelta(days=days_ago)
-        ).timestamp()
+        past = (datetime.now(timezone.utc) - timedelta(days=days_ago)).timestamp()
         col = soil._collections[collection_name]
         m = col.get(ids=[nid], include=["metadatas"])["metadatas"][0]
         m["fsrs_last_review"] = past
@@ -307,14 +303,16 @@ class TestSoilLineage:
         )
         soil.deposit(parent_a)
         for i in range(3):
-            soil.deposit(Nutrient(
-                nutrient_type=NutrientType.PATTERN,
-                content=f"child-a-{i}",
-                embedding_text=f"child-a-{i} distinct embedding blob {i}",
-                lineage_parent_ids=[parent_a.nutrient_id],
-                reinforcement_count=5,
-                lapse_count=0,
-            ))
+            soil.deposit(
+                Nutrient(
+                    nutrient_type=NutrientType.PATTERN,
+                    content=f"child-a-{i}",
+                    embedding_text=f"child-a-{i} distinct embedding blob {i}",
+                    lineage_parent_ids=[parent_a.nutrient_id],
+                    reinforcement_count=5,
+                    lapse_count=0,
+                )
+            )
 
         # Parent with no descendants → productivity = 0
         parent_b = Nutrient(
@@ -331,12 +329,12 @@ class TestSoilLineage:
         soil.review_nutrient(parent_a.nutrient_id, col_name, grade=3)
         soil.review_nutrient(parent_b.nutrient_id, col_name, grade=3)
 
-        a = soil._collections[col_name].get(
-            ids=[parent_a.nutrient_id], include=["metadatas"]
-        )["metadatas"][0]
-        b = soil._collections[col_name].get(
-            ids=[parent_b.nutrient_id], include=["metadatas"]
-        )["metadatas"][0]
+        a = soil._collections[col_name].get(ids=[parent_a.nutrient_id], include=["metadatas"])[
+            "metadatas"
+        ][0]
+        b = soil._collections[col_name].get(ids=[parent_b.nutrient_id], include=["metadatas"])[
+            "metadatas"
+        ][0]
         # Both grew above 5.0 (classical FSRS), the heavy-clade parent
         # grew further.
         assert b["fsrs_stability"] > 5.0
@@ -353,11 +351,10 @@ class TestSoilLineage:
         soil.deposit(n)
         self._age_nutrient(soil, col_name, n.nutrient_id)
 
-        soil.review_nutrient(n.nutrient_id, col_name,
-                             grade=3, productivity=8.0)
-        meta = soil._collections[col_name].get(
-            ids=[n.nutrient_id], include=["metadatas"]
-        )["metadatas"][0]
+        soil.review_nutrient(n.nutrient_id, col_name, grade=3, productivity=8.0)
+        meta = soil._collections[col_name].get(ids=[n.nutrient_id], include=["metadatas"])[
+            "metadatas"
+        ][0]
         # With productivity=8.0 the weight is 2.6, so stability grows
         # well above the aged starting value of 5.0.
         assert meta["fsrs_stability"] > 5.0
@@ -369,8 +366,7 @@ class TestSoilLineage:
 class TestEmbeddingRouting:
     def test_no_key_falls_back_to_hash(self, monkeypatch):
         monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
-        for ctype in ("tools", "failures", "covenants",
-                      "episodes", "principles"):
+        for ctype in ("tools", "failures", "covenants", "episodes", "principles"):
             ef = _get_embedding_function(ctype)
             assert isinstance(ef, _HashEmbeddingFunction)
 
@@ -392,6 +388,7 @@ class TestEmbeddingRouting:
         """When voyageai is not installed, embedding calls must succeed
         via the hash fallback rather than raising."""
         import builtins
+
         real_import = builtins.__import__
 
         def _no_voyage(name, *args, **kwargs):
@@ -408,9 +405,7 @@ class TestEmbeddingRouting:
         # HNSW index stays consistent if the fallback fires mid-session.
         assert len(out[0]) == VoyageEmbeddingFunction._VOYAGE_DIM
 
-    def test_soil_init_routes_per_collection_when_no_ef_passed(
-        self, tmp_path, monkeypatch
-    ):
+    def test_soil_init_routes_per_collection_when_no_ef_passed(self, tmp_path, monkeypatch):
         """When VOYAGE_API_KEY is set and no EF is passed, each collection
         receives its routed EF."""
         monkeypatch.setenv("VOYAGE_API_KEY", "sk-test")
@@ -421,9 +416,7 @@ class TestEmbeddingRouting:
             ef = soil._per_collection_ef[name]
             assert isinstance(ef, VoyageEmbeddingFunction)
             expected_model = (
-                "voyage-code-3"
-                if ctype in ("tools", "failures", "covenants")
-                else "voyage-3-large"
+                "voyage-code-3" if ctype in ("tools", "failures", "covenants") else "voyage-3-large"
             )
             assert ef._model == expected_model
 

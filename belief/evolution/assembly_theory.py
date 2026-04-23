@@ -47,8 +47,8 @@ logger = logging.getLogger("belief.evolution.assembly_theory")
 DEFAULT_MIN_NODES = 3
 
 # Default promotion classifier thresholds.
-DEFAULT_AI_HIGH = 0.6       # "lots of shared substructure"
-DEFAULT_USAGE_HIGH = 5      # "reused >= 5 times"
+DEFAULT_AI_HIGH = 0.6  # "lots of shared substructure"
+DEFAULT_USAGE_HIGH = 5  # "reused >= 5 times"
 
 
 # ── AST canonicalisation ───────────────────────────────────────────────────
@@ -77,9 +77,11 @@ def _node_label(node: ast.AST) -> str:
         return f"arg({node.arg})"
     if isinstance(node, (ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare)):
         # The op attribute is what distinguishes a + b from a * b.
-        op_types = ", ".join(type(o).__name__ for o in
-                             (getattr(node, "ops", None) or [getattr(node, "op", None)])
-                             if o is not None)
+        op_types = ", ".join(
+            type(o).__name__
+            for o in (getattr(node, "ops", None) or [getattr(node, "op", None)])
+            if o is not None
+        )
         return f"{label}({op_types})"
     return label
 
@@ -97,6 +99,7 @@ def _hash_subtree(node: ast.AST) -> str:
     canonical names, so syntactically-equivalent snippets from
     different source files collide as intended.
     """
+
     def _sig(n: ast.AST) -> str:
         label = _node_label(n)
         children = [_sig(c) for c in ast.iter_child_nodes(n)]
@@ -221,8 +224,8 @@ class PromotionVerdict:
     """Human-readable outcome of :func:`should_promote`."""
 
     should_promote: bool
-    category: str               # 'building_block' | 'unique_workhorse' |
-                                # 'creative_novelty' | 'trivial'
+    category: str  # 'building_block' | 'unique_workhorse' |
+    # 'creative_novelty' | 'trivial'
     assembly_index: float
     usage_count: int
     rationale: str = ""
@@ -293,8 +296,7 @@ def should_promote(
         assembly_index=ai,
         usage_count=usage_count,
         rationale=(
-            f"AI={ai:.2f} < {ai_high} and usage={usage_count} < "
-            f"{usage_high}: trivial or unproven"
+            f"AI={ai:.2f} < {ai_high} and usage={usage_count} < {usage_high}: trivial or unproven"
         ),
     )
 

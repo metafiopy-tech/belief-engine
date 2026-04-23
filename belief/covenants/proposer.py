@@ -72,10 +72,10 @@ class CovenantProposal:
     cluster_size: int
     error_signature: str
     representative_error: str
-    proposed_pattern: str = ""       # regex or libcst description
-    proposed_replacement: str = ""   # what to rewrite to (empty for forbidden-pattern covenants)
+    proposed_pattern: str = ""  # regex or libcst description
+    proposed_replacement: str = ""  # what to rewrite to (empty for forbidden-pattern covenants)
     rationale: str = ""
-    status: str = "proposed"         # proposed / auto_pass / auto_fail / approved / rejected
+    status: str = "proposed"  # proposed / auto_pass / auto_fail / approved / rejected
     metrics: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
 
@@ -86,11 +86,11 @@ class CovenantProposal:
 
 
 _SCRUB_PATTERNS = [
-    (re.compile(r"0x[0-9a-fA-F]+"), "0xADDR"),           # memory addresses
-    (re.compile(r"\bline\s+\d+"), "line N"),              # line numbers
-    (re.compile(r"File \"[^\"]+\""), "File PATH"),        # file paths in traceback
-    (re.compile(r"\b\d{3,}\b"), "N"),                     # big numbers
-    (re.compile(r"'[^']{40,}'"), "'STR'"),                # long literals
+    (re.compile(r"0x[0-9a-fA-F]+"), "0xADDR"),  # memory addresses
+    (re.compile(r"\bline\s+\d+"), "line N"),  # line numbers
+    (re.compile(r"File \"[^\"]+\""), "File PATH"),  # file paths in traceback
+    (re.compile(r"\b\d{3,}\b"), "N"),  # big numbers
+    (re.compile(r"'[^']{40,}'"), "'STR'"),  # long literals
 ]
 
 
@@ -173,7 +173,10 @@ def default_llm_proposer(signature: str, cluster: list[FailureTrace]) -> dict[st
 
         async def _call() -> str:
             return await llm.generate_text(
-                role=ModelRole.DEBUGGER, system=system, prompt=user, temperature=0.1,
+                role=ModelRole.DEBUGGER,
+                system=system,
+                prompt=user,
+                temperature=0.1,
             )
 
         raw = _asyncio.run(_call())
@@ -200,7 +203,7 @@ def _extract_json(raw: str) -> dict[str, Any]:
     if start == -1 or end == -1 or end <= start:
         return {}
     try:
-        return json.loads(raw[start:end + 1])
+        return json.loads(raw[start : end + 1])
     except json.JSONDecodeError:
         return {}
 
@@ -232,18 +235,18 @@ def propose_covenants_from_failures(
         if len(members) < min_cluster_size:
             continue
         spec = proposer(sig, members)
-        proposal_id = hashlib.sha256(
-            (sig + str(len(members))).encode("utf-8")
-        ).hexdigest()[:16]
-        proposals.append(CovenantProposal(
-            proposal_id=proposal_id,
-            cluster_size=len(members),
-            error_signature=sig,
-            representative_error=members[0].error_text[:500],
-            proposed_pattern=spec.get("pattern", sig),
-            proposed_replacement=spec.get("replacement", ""),
-            rationale=spec.get("rationale", ""),
-        ))
+        proposal_id = hashlib.sha256((sig + str(len(members))).encode("utf-8")).hexdigest()[:16]
+        proposals.append(
+            CovenantProposal(
+                proposal_id=proposal_id,
+                cluster_size=len(members),
+                error_signature=sig,
+                representative_error=members[0].error_text[:500],
+                proposed_pattern=spec.get("pattern", sig),
+                proposed_replacement=spec.get("replacement", ""),
+                rationale=spec.get("rationale", ""),
+            )
+        )
     return proposals
 
 
@@ -264,14 +267,10 @@ def load_proposals(path: Path | None = None) -> list[CovenantProposal]:
     return [CovenantProposal(**p) for p in raw]
 
 
-def save_proposals(
-    proposals: list[CovenantProposal], path: Path | None = None
-) -> None:
+def save_proposals(proposals: list[CovenantProposal], path: Path | None = None) -> None:
     target = path or _DEFAULT_PROPOSALS_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps([asdict(p) for p in proposals], indent=2), encoding="utf-8"
-    )
+    target.write_text(json.dumps([asdict(p) for p in proposals], indent=2), encoding="utf-8")
 
 
 __all__ = [

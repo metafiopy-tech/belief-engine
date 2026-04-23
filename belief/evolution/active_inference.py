@@ -253,10 +253,7 @@ class EFESignalSource:
             # stand-in that tracks how much the engine is
             # out-performing its archive baseline.
             median = scores[len(scores) // 2]
-            novel = sum(
-                1 for r in recent
-                if float(getattr(r, "score", 0.0)) >= median
-            )
+            novel = sum(1 for r in recent if float(getattr(r, "score", 0.0)) >= median)
             novelty = novel / len(recent)
         else:
             novelty = 0.0

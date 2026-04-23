@@ -84,11 +84,9 @@ async def async_score_novelty(
     unset (Session 4 default in tests), mid-band seeds are conservatively
     rejected with reason='mid_no_judge'.
     """
-    text = f"{seed.get('title','')} {seed.get('summary','')}".strip()
+    text = f"{seed.get('title', '')} {seed.get('summary', '')}".strip()
     if not text:
-        return NoveltyResult(
-            accepted=False, reason="empty_seed", novelty=0.0
-        )
+        return NoveltyResult(accepted=False, reason="empty_seed", novelty=0.0)
 
     vec = embedder(text)
     neighbors = archive.query_neighbors("goal_archive", vec, top_k=top_k)
@@ -96,8 +94,11 @@ async def async_score_novelty(
     if not neighbors:
         # Empty archive: accept outright, maximum novelty.
         return NoveltyResult(
-            accepted=True, reason="archive_empty", novelty=1.0,
-            cosine_top1=0.0, neighbors=[],
+            accepted=True,
+            reason="archive_empty",
+            novelty=1.0,
+            cosine_top1=0.0,
+            neighbors=[],
         )
 
     top = neighbors[0].cosine
@@ -105,30 +106,42 @@ async def async_score_novelty(
     # Hard duplicate gate.
     if top >= HARD_DUP_THRESHOLD:
         return NoveltyResult(
-            accepted=False, reason="hard_duplicate", novelty=0.0,
-            cosine_top1=top, neighbors=neighbors,
+            accepted=False,
+            reason="hard_duplicate",
+            novelty=0.0,
+            cosine_top1=top,
+            neighbors=neighbors,
         )
 
     # Distinct gate — no LLM call needed.
     if top < DISTINCT_THRESHOLD:
         return NoveltyResult(
-            accepted=True, reason="distinct", novelty=_novelty_from_cos(top),
-            cosine_top1=top, neighbors=neighbors,
+            accepted=True,
+            reason="distinct",
+            novelty=_novelty_from_cos(top),
+            cosine_top1=top,
+            neighbors=neighbors,
         )
 
     # Mid-band — call judge.
     if llm_judge is None:
         return NoveltyResult(
-            accepted=False, reason="mid_no_judge", novelty=0.0,
-            cosine_top1=top, neighbors=neighbors,
+            accepted=False,
+            reason="mid_no_judge",
+            novelty=0.0,
+            cosine_top1=top,
+            neighbors=neighbors,
         )
 
     prompt = _build_judge_prompt(seed, neighbors[:judge_neighbors])
     verdict = await _call_judge_with_retry(llm_judge, prompt)
     if verdict is None:
         return NoveltyResult(
-            accepted=False, reason="judge_invalid", novelty=0.0,
-            cosine_top1=top, neighbors=neighbors,
+            accepted=False,
+            reason="judge_invalid",
+            novelty=0.0,
+            cosine_top1=top,
+            neighbors=neighbors,
         )
 
     interesting = bool(verdict.get("interesting"))
@@ -190,9 +203,7 @@ def _novelty_from_cos(cos: float) -> float:
 
 
 def _build_judge_prompt(seed: dict[str, Any], neighbors: list[Neighbor]) -> str:
-    neighbors_formatted = format_neighbors(
-        [n.to_prompt_dict() for n in neighbors]
-    )
+    neighbors_formatted = format_neighbors([n.to_prompt_dict() for n in neighbors])
     return INTERESTINGNESS_PROMPT.format(
         title=seed.get("title", ""),
         summary=seed.get("summary", ""),
@@ -218,9 +229,7 @@ async def _call_judge_with_retry(
         parsed = _parse_verdict(raw)
         if parsed is not None:
             return parsed
-        logger.warning(
-            "judge verdict invalid on attempt %d: %r", i + 1, (raw or "")[:200]
-        )
+        logger.warning("judge verdict invalid on attempt %d: %r", i + 1, (raw or "")[:200])
     return None
 
 

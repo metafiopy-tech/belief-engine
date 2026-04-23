@@ -125,6 +125,7 @@ Constraints:
 # A one-line formatter for neighbor rows injected into prompts.
 # ---------------------------------------------------------------------------
 
+
 def format_neighbors(neighbors: list[dict]) -> str:
     """Turn a list of {goal_id, title, cosine, ...} dicts into prompt text.
 
@@ -136,8 +137,8 @@ def format_neighbors(neighbors: list[dict]) -> str:
     lines = []
     for n in neighbors[:5]:
         lines.append(
-            f"  {n.get('goal_id','?')}  cosine={float(n.get('cosine', 0)):.3f}  "
-            f"{n.get('title','(no title)')}"
+            f"  {n.get('goal_id', '?')}  cosine={float(n.get('cosine', 0)):.3f}  "
+            f"{n.get('title', '(no title)')}"
         )
     return "\n".join(lines)
 

@@ -112,10 +112,9 @@ class TestTemplateSweep:
     def test_precision_threshold(self):
         """Candidates need precision >= 0.90."""
         # Mix of good and bad traces
-        traces = (
-            [_make_trace(bare_except_count=0) for _ in range(8)]
-            + [_make_trace(bare_except_count=3) for _ in range(5)]
-        )
+        traces = [_make_trace(bare_except_count=0) for _ in range(8)] + [
+            _make_trace(bare_except_count=3) for _ in range(5)
+        ]
         candidates = sweep_templates(traces)
         for c in candidates:
             assert c.precision >= 0.90
@@ -126,10 +125,7 @@ class TestTemplateSweep:
 
     def test_min_test_ratio_detected(self):
         """Should detect min_test_ratio when test_count >= 1.5 * file_count."""
-        traces = [
-            _make_trace(file_count=4, test_count=8)
-            for _ in range(10)
-        ]
+        traces = [_make_trace(file_count=4, test_count=8) for _ in range(10)]
         candidates = sweep_templates(traces)
         names = [c.name for c in candidates]
         assert "min_test_ratio" in names
@@ -164,6 +160,7 @@ class TestClaudeProposer:
     @pytest.mark.asyncio
     async def test_propose_handles_bad_json(self):
         from belief.evolution.crystallizer import _parse_proposals
+
         assert _parse_proposals("not json at all", []) == []
 
     @pytest.mark.asyncio
@@ -253,9 +250,11 @@ class TestPromotion:
         )
 
         from belief.evolution.crystallizer import _generate_covenant_code
+
         code = _generate_covenant_code(candidate)
 
         import ast
+
         ast.parse(code)  # Should not raise
 
     def test_generates_valid_regex_code(self):
@@ -270,8 +269,10 @@ class TestPromotion:
         )
 
         from belief.evolution.crystallizer import _generate_covenant_code
+
         code = _generate_covenant_code(candidate)
         import ast
+
         ast.parse(code)
 
     def test_generates_valid_assertion_code(self):
@@ -286,8 +287,10 @@ class TestPromotion:
         )
 
         from belief.evolution.crystallizer import _generate_covenant_code
+
         code = _generate_covenant_code(candidate)
         import ast
+
         ast.parse(code)
 
     def test_promotion_stores_in_soil(self, tmp_path):
@@ -316,6 +319,7 @@ class TestPromotion:
     def test_rejects_unqualified(self, tmp_path):
         """Unqualified candidates should raise ValueError."""
         from belief.memory.soil import Soil
+
         soil = Soil(persist_dir=tmp_path / "soil")
 
         candidate = CandidateInvariant(
@@ -338,27 +342,36 @@ class TestPromotion:
 class TestCandidateInvariant:
     def test_qualified_property(self):
         c = CandidateInvariant(
-            name="test", description="test",
+            name="test",
+            description="test",
             implementation_kind="ast",
-            support=10, violations=0, precision=1.0,
+            support=10,
+            violations=0,
+            precision=1.0,
             proposer="template",
         )
         assert c.qualified is True
 
     def test_not_qualified_low_support(self):
         c = CandidateInvariant(
-            name="test", description="test",
+            name="test",
+            description="test",
             implementation_kind="ast",
-            support=5, violations=0, precision=1.0,
+            support=5,
+            violations=0,
+            precision=1.0,
             proposer="template",
         )
         assert c.qualified is False
 
     def test_not_qualified_low_precision(self):
         c = CandidateInvariant(
-            name="test", description="test",
+            name="test",
+            description="test",
             implementation_kind="ast",
-            support=20, violations=5, precision=0.80,
+            support=20,
+            violations=5,
+            precision=0.80,
             proposer="template",
         )
         assert c.qualified is False
@@ -467,18 +480,14 @@ class TestEpisodeRecorder:
     def test_detects_api_framework(self):
         from belief.memory.episode_recorder import _analyze_code
 
-        code_files = {
-            "main.py": "from fastapi import FastAPI\napp = FastAPI()\n"
-        }
+        code_files = {"main.py": "from fastapi import FastAPI\napp = FastAPI()\n"}
         features = _analyze_code(code_files)
         assert features["has_api_framework"] is True
 
     def test_counts_bare_excepts(self):
         from belief.memory.episode_recorder import _analyze_code
 
-        code_files = {
-            "main.py": "try:\n    pass\nexcept:\n    pass\n"
-        }
+        code_files = {"main.py": "try:\n    pass\nexcept:\n    pass\n"}
         features = _analyze_code(code_files)
         assert features["bare_except_count"] == 1
 
@@ -492,9 +501,7 @@ class TestEpisodeRecorder:
     def test_counts_tests(self):
         from belief.memory.episode_recorder import _analyze_code
 
-        code_files = {
-            "test_app.py": "def test_one():\n    pass\ndef test_two():\n    pass\n"
-        }
+        code_files = {"test_app.py": "def test_one():\n    pass\ndef test_two():\n    pass\n"}
         features = _analyze_code(code_files)
         assert features["test_count"] == 2
 
@@ -540,7 +547,9 @@ class TestFullPipeline:
             )
 
         # Mock the Claude proposer to avoid API calls
-        with patch("belief.evolution.crystallizer.propose_invariants", new_callable=AsyncMock) as mock_propose:
+        with patch(
+            "belief.evolution.crystallizer.propose_invariants", new_callable=AsyncMock
+        ) as mock_propose:
             mock_propose.return_value = []
 
             new_ids = await run_crystallization(soil, registry, n_recent_traces=15)

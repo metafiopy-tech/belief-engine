@@ -117,6 +117,7 @@ def _compress_for_local(profile, drop_human_docs: bool = True):
     per-category counts (top-3 patterns / antipatterns, 1 skeleton).
     Returns a new profile; the input is not mutated.
     """
+
     def _filter(nutrients):
         if not nutrients:
             return []
@@ -192,13 +193,11 @@ def reorder_by_domain(nutrients: list, target_domain: str) -> list:
 
     if target_domain == GENERAL_DOMAIN or not nutrients:
         return list(nutrients)
-    scored = [
-        (_nutrient_domain_score(n, target_domain), i, n)
-        for i, n in enumerate(nutrients)
-    ]
+    scored = [(_nutrient_domain_score(n, target_domain), i, n) for i, n in enumerate(nutrients)]
     # Higher score first; stable by original index on ties
     scored.sort(key=lambda t: (-t[0], t[1]))
     return [n for _, _, n in scored]
+
 
 # ── Soil accessor (shared with decomposer) ───────────────────────────────────
 
@@ -210,6 +209,7 @@ def _get_soil():
     global _soil_instance
     if _soil_instance is None:
         from belief.memory.soil import Soil
+
         soil_dir = Path("~/.belief-engine/soil").expanduser()
         _soil_instance = Soil(soil_dir)
     return _soil_instance
@@ -234,6 +234,7 @@ def _fsrs_filter(nutrients: list, now_ts: float) -> list:
 
 
 # ── The node ─────────────────────────────────────────────────────────────
+
 
 async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
     """Pre-build LangGraph node: retrieve nutrients and enrich architect context.
@@ -355,6 +356,7 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
         # Retrieve self-authored tools relevant to this goal
         try:
             from belief.memory.tool_registry import ToolRegistry
+
             tool_registry = ToolRegistry(soil)
             # Local mode: cap at 1 tool — 14B models rarely benefit from a menu.
             k_tools = 1 if local_mode else 3
@@ -381,17 +383,22 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
                     result["available_tools"] = [
                         {"id": t.id, "name": t.name} for t in relevant_tools
                     ]
-                    logger.info(f"Recomposer: added {len(relevant_tools)} self-authored tools to context")
+                    logger.info(
+                        f"Recomposer: added {len(relevant_tools)} self-authored tools to context"
+                    )
         except Exception as e:
             logger.debug(f"Tool retrieval skipped: {e}")
 
         # Retrieve past reflexions for similar goals
         try:
             from belief.memory.reflexion import retrieve_reflexions
+
             reflexions = retrieve_reflexions(goal, n=3)
             if reflexions:
                 reflexion_block = "\n\n## LESSONS FROM PAST FAILURES\n" + "\n".join(
-                    f"- {r.split('Reflection: ')[-1][:200]}" if 'Reflection: ' in r else f"- {r[:200]}"
+                    f"- {r.split('Reflection: ')[-1][:200]}"
+                    if "Reflection: " in r
+                    else f"- {r[:200]}"
                     for r in reflexions
                 )
                 current_block = result.get("nutrient_context", context_block)

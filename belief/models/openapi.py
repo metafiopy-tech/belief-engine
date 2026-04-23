@@ -116,7 +116,11 @@ def _build_spec_for_service(service, architecture) -> dict[str, Any]:
     shared_names = {m.name for m in architecture.shared_models}
     for route in service.routes:
         for model_name in (route.request_model, route.response_model):
-            if model_name and model_name not in shared_names and model_name not in spec["components"]["schemas"]:
+            if (
+                model_name
+                and model_name not in shared_names
+                and model_name not in spec["components"]["schemas"]
+            ):
                 spec["components"]["schemas"][model_name] = {
                     "type": "object",
                     "description": f"Schema for {model_name}",
@@ -141,7 +145,8 @@ def _model_to_schema(model) -> dict[str, Any]:
 
     # All fields with non-optional types are required
     required = [
-        name for name, ftype in model.fields.items()
+        name
+        for name, ftype in model.fields.items()
         if "optional" not in ftype.lower() and "none" not in ftype.lower()
     ]
     if required:
@@ -195,7 +200,8 @@ def _type_to_json_schema(python_type: str) -> dict[str, Any]:
 def _extract_path_params(path: str) -> list[str]:
     """Extract path parameters from an OpenAPI path template."""
     import re
-    return re.findall(r'\{(\w+)\}', path)
+
+    return re.findall(r"\{(\w+)\}", path)
 
 
 def _make_operation_id(route) -> str:

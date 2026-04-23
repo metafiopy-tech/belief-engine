@@ -49,7 +49,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Union
 
 from belief.covenants.forbidden_imports import (
     apply_forbidden_imports_covenant,
@@ -139,11 +138,14 @@ def _run_ruff_fix(source: str, filename: str) -> tuple[str, bool]:
     try:
         proc = subprocess.run(
             [
-                ruff, "check",
-                "--select", "UP,F401,F811,I",
+                ruff,
+                "check",
+                "--select",
+                "UP,F401,F811,I",
                 "--fix",
                 "--fix-only",
-                "--stdin-filename", filename,
+                "--stdin-filename",
+                filename,
                 "-",
             ],
             input=source,
@@ -233,9 +235,7 @@ def enforce_python_covenants(
         filename.lower().endswith(".txt")
         and ("requirement" in filename.lower() or "constraint" in filename.lower())
     ):
-        new_source, reqs_applied = apply_forbidden_imports_covenant(
-            source, filename=filename
-        )
+        new_source, reqs_applied = apply_forbidden_imports_covenant(source, filename=filename)
         applied.extend(reqs_applied)
         return new_source, applied
 
@@ -258,24 +258,26 @@ def enforce_python_covenants(
         ruff_target_filename = filename or "file.py"
         stage3_source, stage3_changed = _run_ruff_fix(new_source, ruff_target_filename)
         if stage3_changed:
-            applied.append(CovenantApplied(
-                rule="ruff_fix.post_libcst_cleanup",
-                detail="ruff --fix removed unused imports and sorted blocks",
-                file=filename or None,
-            ))
+            applied.append(
+                CovenantApplied(
+                    rule="ruff_fix.post_libcst_cleanup",
+                    detail="ruff --fix removed unused imports and sorted blocks",
+                    file=filename or None,
+                )
+            )
             new_source = stage3_source
 
     # Stage 4 — bump-pydantic (only when source genuinely imports pydantic)
     if _source_imports_pydantic(new_source):
-        stage4_source, stage4_changed = _run_bump_pydantic(
-            new_source, filename or "file.py"
-        )
+        stage4_source, stage4_changed = _run_bump_pydantic(new_source, filename or "file.py")
         if stage4_changed:
-            applied.append(CovenantApplied(
-                rule="bump_pydantic.residual_rewrites",
-                detail="bump-pydantic CLI caught patterns LibCST left behind",
-                file=filename or None,
-            ))
+            applied.append(
+                CovenantApplied(
+                    rule="bump_pydantic.residual_rewrites",
+                    detail="bump-pydantic CLI caught patterns LibCST left behind",
+                    file=filename or None,
+                )
+            )
             new_source = stage4_source
 
     return new_source, applied

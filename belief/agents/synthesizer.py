@@ -43,9 +43,8 @@ class SynthesizerAgent(BaseAgent):
         # quality drop from 14B → 1.5B is (per ablation) acceptable.
         # Override via env: SYNTHESIZER_POLISH_MODEL=... (empty disables swap).
         import os as _os
-        _polish_model = _os.environ.get(
-            "SYNTHESIZER_POLISH_MODEL", "qwen2.5-coder:1.5b"
-        ).strip()
+
+        _polish_model = _os.environ.get("SYNTHESIZER_POLISH_MODEL", "qwen2.5-coder:1.5b").strip()
         _original_local_model: str | None = None
         try:
             _mode_val = getattr(self.router.mode, "value", str(self.router.mode))
@@ -56,7 +55,8 @@ class SynthesizerAgent(BaseAgent):
             self.router.local_model = _polish_model
             logger.info(
                 "Synthesizer: routing polish through %s (local) instead of %s",
-                _polish_model, _original_local_model,
+                _polish_model,
+                _original_local_model,
             )
 
         llm = LLMClient(self.router)
@@ -80,9 +80,11 @@ class SynthesizerAgent(BaseAgent):
                 skeleton_files = set(state.skeleton_files.keys())
 
             polish_candidates = {
-                f: c for f, c in sorted(state.code_files.items())
+                f: c
+                for f, c in sorted(state.code_files.items())
                 if len(c) <= 6000
-                and "/test" not in f and not f.startswith("test")
+                and "/test" not in f
+                and not f.startswith("test")
                 and f.endswith(".py")
                 and f not in skeleton_files
             }
@@ -98,17 +100,29 @@ class SynthesizerAgent(BaseAgent):
                 state.code_files = _generate_deployment_artifacts(state)
                 return state
 
-            code_str = "\n\n".join(f"--- {f} ---\n{c}" for f, c in sorted(polish_candidates.items()))
+            code_str = "\n\n".join(
+                f"--- {f} ---\n{c}" for f, c in sorted(polish_candidates.items())
+            )
 
             prompt = SYNTHESIZER_PROMPT.format(
-                goal=goal, goal_refined=spec.goal_refined if spec else goal,
-                acceptance_criteria="\n".join(f"  {i}. {c}" for i, c in enumerate(spec.acceptance_criteria, 1)) if spec else "  (none)",
-                credentials="\n".join(f"  - {c.name}: {c.env_var}" for c in spec.credentials) if spec and spec.credentials else "  (none)",
+                goal=goal,
+                goal_refined=spec.goal_refined if spec else goal,
+                acceptance_criteria="\n".join(
+                    f"  {i}. {c}" for i, c in enumerate(spec.acceptance_criteria, 1)
+                )
+                if spec
+                else "  (none)",
+                credentials="\n".join(f"  - {c.name}: {c.env_var}" for c in spec.credentials)
+                if spec and spec.credentials
+                else "  (none)",
                 code_files=code_str,
             )
             raw = await llm.generate_text(
-                role=self.role, system=SYNTHESIZER_SYSTEM, prompt=prompt,
-                temperature=0.3, complexity=state.complexity_score,
+                role=self.role,
+                system=SYNTHESIZER_SYSTEM,
+                prompt=prompt,
+                temperature=0.3,
+                complexity=state.complexity_score,
             )
             polished = _parse_files(raw)
             if polished:
@@ -176,13 +190,18 @@ def _generate_deployment_artifacts(state: UnifiedState) -> dict[str, str]:
     files = dict(state.code_files)
 
     try:
-        from belief.models.project_manifest import manifest_from_skeleton, ProjectManifest, ServiceType
+        from belief.models.project_manifest import (
+            manifest_from_skeleton,
+            ProjectManifest,
+            ServiceType,
+        )
         from belief.tools.deployment_generator import generate_all_deployment_artifacts
 
         # Try skeleton-based manifest first
         skeleton = state.skeleton_artifact
         if skeleton:
             from belief.models.skeleton import SkeletonArtifact
+
             if isinstance(skeleton, dict):
                 skeleton = SkeletonArtifact.model_validate(skeleton)
             manifest = manifest_from_skeleton(skeleton, files)
@@ -196,10 +215,13 @@ def _generate_deployment_artifacts(state: UnifiedState) -> dict[str, str]:
             manifest = ProjectManifest(
                 project_name="automation",
                 service_type=ServiceType.API if is_api else ServiceType.CLI,
-                pip_packages=list({
-                    line.strip() for line in files.get("requirements.txt", "").splitlines()
-                    if line.strip() and not line.startswith("#")
-                }),
+                pip_packages=list(
+                    {
+                        line.strip()
+                        for line in files.get("requirements.txt", "").splitlines()
+                        if line.strip() and not line.startswith("#")
+                    }
+                ),
             )
 
         # Only generate if it's a server/API
@@ -242,7 +264,7 @@ def _parse_files(raw: str) -> dict[str, str]:
         fname = part[:nl].strip()
         if not fname:
             continue
-        content = re.sub(r"###END\s*$", "", part[nl + 1:])
+        content = re.sub(r"###END\s*$", "", part[nl + 1 :])
         content = re.sub(r"^```[a-zA-Z]*\n?", "", content)
         content = re.sub(r"\n?```\s*$", "", content)
         files[fname] = content
@@ -269,7 +291,9 @@ def _detect_entry_point(files: dict[str, str]) -> tuple[str, str] | None:
     ASGI app is detected, otherwise ``python <path>``. Returns None
     when no plausible entry point exists.
     """
-    py_files = [f for f in files if f.endswith(".py") and not f.startswith("test") and "/test" not in f]
+    py_files = [
+        f for f in files if f.endswith(".py") and not f.startswith("test") and "/test" not in f
+    ]
     if not py_files:
         return None
 
@@ -287,10 +311,7 @@ def _detect_entry_point(files: dict[str, str]) -> tuple[str, str] | None:
             chosen = sorted(py_files, key=len)[0]
 
     content = files.get(chosen, "")
-    is_asgi = bool(
-        re.search(r"\bFastAPI\s*\(", content)
-        or re.search(r"\bStarlette\s*\(", content)
-    )
+    is_asgi = bool(re.search(r"\bFastAPI\s*\(", content) or re.search(r"\bStarlette\s*\(", content))
     has_main_block = "__main__" in content
 
     if is_asgi and not has_main_block:
@@ -326,7 +347,7 @@ def _ensure_run_script(files: dict[str, str]) -> dict[str, str]:
     install_block = (
         '  if [ -z "${BELIEF_RUN_SKIP_INSTALL:-}" ] && [ -s requirements.txt ]; then\n'
         '    "$VENV/bin/pip" install --quiet --disable-pip-version-check -r requirements.txt\n'
-        '  fi\n'
+        "  fi\n"
         if has_requirements
         else "  :\n"
     )
@@ -358,7 +379,9 @@ exec {launch_cmd} "$@"
 def _ensure_basics(files: dict[str, str], goal: str) -> dict[str, str]:
     result = dict(files)
     if "README.md" not in result:
-        result["README.md"] = f"# Automation\n\n{goal}\n\n## Setup\n\n1. `pip install -r requirements.txt`\n2. Set env vars\n3. `python main.py`\n"
+        result["README.md"] = (
+            f"# Automation\n\n{goal}\n\n## Setup\n\n1. `pip install -r requirements.txt`\n2. Set env vars\n3. `python main.py`\n"
+        )
     if any(f.endswith(".py") for f in result) and "requirements.txt" not in result:
         result["requirements.txt"] = "# No external dependencies\n"
     return result

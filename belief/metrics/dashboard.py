@@ -27,16 +27,16 @@ class IterationMetrics:
     iteration: int
     timestamp: str
     benchmark_score: float
-    benchmark_ci_lower: float = 0.0         # Bootstrap 95% CI
+    benchmark_ci_lower: float = 0.0  # Bootstrap 95% CI
     benchmark_ci_upper: float = 1.0
     cost_per_solved: float = 0.0
-    novel_capabilities: int = 0              # Tasks newly passing
-    regressions: int = 0                     # Tasks that regressed
+    novel_capabilities: int = 0  # Tasks newly passing
+    regressions: int = 0  # Tasks that regressed
     tool_library_size: int = 0
-    tool_invocation_entropy: float = 0.0     # Shannon entropy of tool usage
+    tool_invocation_entropy: float = 0.0  # Shannon entropy of tool usage
     retrieval_precision_at_5: float = 0.0
     covenant_count: int = 0
-    covenant_discovery_rate: float = 0.0     # New covenants in last 10 builds
+    covenant_discovery_rate: float = 0.0  # New covenants in last 10 builds
     canary_score: Optional[float] = None
     # Session 7: soil lift = warm_score - cold_score for a sampled build
     # pair, measuring how much accumulated nutrients improve local-model
@@ -104,10 +104,7 @@ class MetricsDashboard:
         results["linear"] = self._fit_linear(iterations, scores)
 
         # Exponential fit (on logit-transformed scores for bounded [0,1])
-        logit_scores = [
-            math.log(max(s, 0.01) / max(1.0 - s, 0.01))
-            for s in scores
-        ]
+        logit_scores = [math.log(max(s, 0.01) / max(1.0 - s, 0.01)) for s in scores]
         results["exponential"] = self._fit_exponential(iterations, logit_scores)
 
         # Doubling time
@@ -116,10 +113,7 @@ class MetricsDashboard:
             results["doubling_time"] = math.log(2) / rate
 
         # Best fit by AIC
-        fits = {
-            k: v for k, v in results.items()
-            if isinstance(v, dict) and "aic" in v
-        }
+        fits = {k: v for k, v in results.items() if isinstance(v, dict) and "aic" in v}
         if fits:
             results["best_fit"] = min(fits, key=lambda k: fits[k]["aic"])
         else:

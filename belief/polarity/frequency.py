@@ -33,8 +33,9 @@ class FrequencyLayer:
     def __init__(self) -> None:
         self._tick_count = 0
 
-    def update(self, polarity: PolarityState, latios_signal: float,
-               latias_signal: float) -> PolarityState:
+    def update(
+        self, polarity: PolarityState, latios_signal: float, latias_signal: float
+    ) -> PolarityState:
         """Update coherence from latest signals and return new state."""
         self._tick_count += 1
 
@@ -43,12 +44,8 @@ class FrequencyLayer:
         polarity.update_latias(latias_signal)
 
         # Decay (prevents stale high values)
-        polarity.latios_coherence = max(0.0, round(
-            polarity.latios_coherence - DECAY, 4
-        ))
-        polarity.latias_coherence = max(0.0, round(
-            polarity.latias_coherence - DECAY, 4
-        ))
+        polarity.latios_coherence = max(0.0, round(polarity.latios_coherence - DECAY, 4))
+        polarity.latias_coherence = max(0.0, round(polarity.latias_coherence - DECAY, 4))
 
         # World state is recalculated inside update_latios/update_latias
         # but we re-check after decay
@@ -76,9 +73,12 @@ class FrequencyLayer:
         la = polarity.latias_coherence
 
         def level(v: float) -> str:
-            if v > 0.75: return "high"
-            if v > 0.5: return "mid"
-            if v > 0.25: return "low"
+            if v > 0.75:
+                return "high"
+            if v > 0.5:
+                return "mid"
+            if v > 0.25:
+                return "low"
             return "flat"
 
         return (

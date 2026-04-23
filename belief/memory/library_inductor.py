@@ -97,9 +97,7 @@ Hints:
 
 
 class NamingClient(Protocol):
-    def generate_text(
-        self, *, system: str, prompt: str, max_tokens: int
-    ) -> str: ...  # noqa: E704
+    def generate_text(self, *, system: str, prompt: str, max_tokens: int) -> str: ...  # noqa: E704
 
 
 class NamingResult(BaseModel):

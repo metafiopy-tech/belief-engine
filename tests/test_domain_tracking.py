@@ -106,9 +106,7 @@ def test_compute_progression_general_sees_all_tools() -> None:
         _FakeTool("fastapi_linter", tags=["fastapi"]),
         _FakeTool("click_helper", tags=["cli"]),
     ]
-    metrics = compute_progression(
-        _FakeSoil(), _FakeRegistry(tools), [], domain=GENERAL_DOMAIN
-    )
+    metrics = compute_progression(_FakeSoil(), _FakeRegistry(tools), [], domain=GENERAL_DOMAIN)
     assert metrics.domain == GENERAL_DOMAIN
     assert metrics.total_tool_count == 2
 
@@ -119,9 +117,7 @@ def test_compute_progression_domain_filters_tools() -> None:
         _FakeTool("click_helper", tags=["cli"]),
         _FakeTool("mcp_probe", tags=["mcp"]),
     ]
-    metrics = compute_progression(
-        _FakeSoil(), _FakeRegistry(tools), [], domain="cli"
-    )
+    metrics = compute_progression(_FakeSoil(), _FakeRegistry(tools), [], domain="cli")
     assert metrics.domain == "cli"
     assert metrics.total_tool_count == 1
 
@@ -156,9 +152,7 @@ def test_progress_fraction_for_empty_domain_is_zero() -> None:
 
 
 def test_progress_fraction_stage2_uses_coverage() -> None:
-    m = ProgressionMetrics(
-        total_tool_count=5, current_stage=2, coverage_fraction=0.85
-    )
+    m = ProgressionMetrics(total_tool_count=5, current_stage=2, coverage_fraction=0.85)
     assert _progress_fraction(m) == 0.85
     assert "coverage" in _progress_note(m)
 
@@ -214,8 +208,12 @@ def test_reorder_preserves_stability_on_ties() -> None:
 def test_format_row_shows_delta() -> None:
     row = ChallengeComparison(
         challenge_id="t1-fizzbuzz",
-        cloud_verdict="pass", cloud_score=1.0, cloud_cost=0.0,
-        local_verdict="pass", local_score=0.9, local_cost=0.0,
+        cloud_verdict="pass",
+        cloud_score=1.0,
+        cloud_cost=0.0,
+        local_verdict="pass",
+        local_score=0.9,
+        local_cost=0.0,
     )
     line = format_row(row)
     assert "t1-fizzbuzz" in line
@@ -229,9 +227,12 @@ def test_format_report_renders_overall() -> None:
         ChallengeComparison("t1-b", "pass", 1.0, 1.5, "fail", 0.2, 0.0),
     ]
     report = CompareReport(
-        rows=rows, local_available=True,
-        cloud_score_overall=2.0, local_score_overall=1.0,
-        cloud_cost_overall=2.5, local_cost_overall=0.0,
+        rows=rows,
+        local_available=True,
+        cloud_score_overall=2.0,
+        local_score_overall=1.0,
+        cloud_cost_overall=2.5,
+        local_cost_overall=0.0,
     )
     text = format_report(report)
     assert "Overall" in text
@@ -243,7 +244,8 @@ def test_format_report_renders_overall() -> None:
 
 def test_format_report_shows_skip_note_when_local_unavailable() -> None:
     report = CompareReport(
-        rows=[], local_available=False,
+        rows=[],
+        local_available=False,
         local_skipped_reason="Ollama not running",
     )
     text = format_report(report)

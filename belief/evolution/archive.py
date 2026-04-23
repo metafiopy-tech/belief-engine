@@ -37,19 +37,19 @@ from typing import Optional
 class AgentVersion:
     """One version of the full agent configuration in the evolutionary DAG."""
 
-    id: str                                       # UUID4
-    parent_id: Optional[str]                      # None for seed
+    id: str  # UUID4
+    parent_id: Optional[str]  # None for seed
     created_at: datetime
-    system_prompts: dict[str, str]                # agent_name -> prompt text hash
-    tool_ids: list[str]                           # ChromaDB tool IDs active
-    principle_ids: list[str]                      # ChromaDB principle IDs active
-    covenant_ids: list[str]                       # Covenant IDs active
-    model_config: dict[str, str]                  # agent_name -> model string
-    diff_from_parent: str                         # What changed
-    proposal_rationale: str                       # Why
-    utility: float                                # Composite score
+    system_prompts: dict[str, str]  # agent_name -> prompt text hash
+    tool_ids: list[str]  # ChromaDB tool IDs active
+    principle_ids: list[str]  # ChromaDB principle IDs active
+    covenant_ids: list[str]  # Covenant IDs active
+    model_config: dict[str, str]  # agent_name -> model string
+    diff_from_parent: str  # What changed
+    proposal_rationale: str  # Why
+    utility: float  # Composite score
     children_count: int = 0
-    niche_descriptor: tuple = ()                  # MAP-Elites niche
+    niche_descriptor: tuple = ()  # MAP-Elites niche
     canary_passed: bool = False
 
 
@@ -177,18 +177,14 @@ class Archive:
 
     def get_version(self, version_id: str) -> AgentVersion:
         """Retrieve a single version by ID."""
-        row = self._conn.execute(
-            "SELECT * FROM versions WHERE id = ?", (version_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM versions WHERE id = ?", (version_id,)).fetchone()
         if row is None:
             raise KeyError(f"Version {version_id} not found")
         return self._row_to_version(row)
 
     def get_all_versions(self) -> list[AgentVersion]:
         """Retrieve all versions ordered by creation time."""
-        rows = self._conn.execute(
-            "SELECT * FROM versions ORDER BY created_at"
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM versions ORDER BY created_at").fetchall()
         return [self._row_to_version(r) for r in rows]
 
     def get_results(self, version_id: str) -> list[BenchmarkResult]:
@@ -282,9 +278,7 @@ class Archive:
 
     def get_niche_map(self) -> dict[tuple, AgentVersion]:
         """Return a dict mapping each filled niche to its best version."""
-        rows = self._conn.execute(
-            "SELECT * FROM versions ORDER BY utility DESC"
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM versions ORDER BY utility DESC").fetchall()
 
         niche_map: dict[tuple, AgentVersion] = {}
         for row in rows:

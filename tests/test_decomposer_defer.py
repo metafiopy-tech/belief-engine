@@ -14,8 +14,6 @@ COMPLETE.  This test file guards three contracts:
 
 from __future__ import annotations
 
-import pytest
-
 
 def test_route_never_returns_decomposer():
     """Router must never target a node that isn't in the compiled graph."""
@@ -26,10 +24,8 @@ def test_route_never_returns_decomposer():
     scenarios = [
         {},
         {"validation_result": {"verdict": "pass"}},
-        {"validation_result": {"verdict": "fail_fixable"},
-         "execution_result": {"success": True}},
-        {"validation_result": {"verdict": "fail_fixable"},
-         "execution_result": {"success": False}},
+        {"validation_result": {"verdict": "fail_fixable"}, "execution_result": {"success": True}},
+        {"validation_result": {"verdict": "fail_fixable"}, "execution_result": {"success": False}},
         {"validation_result": {"verdict": "fail_unfixable"}},
         {"validation_result": {"verdict": "unknown"}},
     ]
@@ -40,14 +36,13 @@ def test_route_never_returns_decomposer():
             f"router returned {result!r} for state {state!r}; "
             f"only {allowed} are valid targets in the compiled graph"
         )
-        assert result != "decomposer", (
-            "router must never route to decomposer in local mode"
-        )
+        assert result != "decomposer", "router must never route to decomposer in local mode"
 
 
 def test_decomposer_node_still_exists():
     """Regression: we removed decomposer from the graph, not the module."""
     from belief.memory.decomposer import decomposer_node
+
     assert callable(decomposer_node)
 
 
@@ -56,6 +51,7 @@ def test_decomposer_is_async():
     If someone makes it sync, that await would raise at runtime."""
     import inspect
     from belief.memory.decomposer import decomposer_node
+
     assert inspect.iscoroutinefunction(decomposer_node), (
         "decomposer_node must be async — cli.py awaits it post-print"
     )
@@ -69,6 +65,7 @@ def test_local_pipeline_terminates_at_validator_or_refinement():
     We verify this by walking the graph's edges and asserting no
     edge points at a non-existent 'decomposer' target."""
     import os
+
     os.environ.setdefault("ANTHROPIC_API_KEY", "sk-fake")
     from belief.config.models import ModelRouter, RouteMode
     from belief.graph_local import build_local_pipeline
@@ -77,6 +74,4 @@ def test_local_pipeline_terminates_at_validator_or_refinement():
     router.set_mode(RouteMode.LOCAL)
     pipeline = build_local_pipeline(router)
     node_names = set(pipeline.nodes.keys())
-    assert "decomposer" not in node_names, (
-        f"decomposer leaked into graph_local.nodes: {node_names}"
-    )
+    assert "decomposer" not in node_names, f"decomposer leaked into graph_local.nodes: {node_names}"

@@ -33,15 +33,15 @@ from belief.models.skeleton import (  # noqa: E402
     ConfigSchema,
     ExceptionSpec,
 )
-from belief.models.symbol_registry import (
+from belief.models.symbol_registry import (  # noqa: E402
     SymbolRegistry,
     parse_file,
 )
-from belief.agents.skeleton_builder import (
+from belief.agents.skeleton_builder import (  # noqa: E402
     generate_skeleton_file,
     generate_all_skeletons,
 )
-from belief.agents.skeleton_pipeline import (
+from belief.agents.skeleton_pipeline import (  # noqa: E402
     parse_skeleton_from_llm,
     run_skeleton_pipeline,
     skeleton_artifact_to_state,
@@ -51,6 +51,7 @@ from belief.agents.skeleton_pipeline import (
 # ---------------------------------------------------------------------------
 # Fixtures — a minimal lead-gen-style skeleton for testing
 # ---------------------------------------------------------------------------
+
 
 def _make_lead_gen_skeleton() -> SkeletonArtifact:
     """Build a small SkeletonArtifact resembling a lead gen pipeline."""
@@ -142,10 +143,20 @@ def _make_lead_gen_skeleton() -> SkeletonArtifact:
                         file_path="models/lead.py",
                         base_class="BaseModel",
                         fields=[
-                            ModelFieldSpec(name="name", type_annotation="str", description="Business name"),
-                            ModelFieldSpec(name="address", type_annotation="Optional[str]", default="None"),
-                            ModelFieldSpec(name="phone", type_annotation="Optional[str]", default="None"),
-                            ModelFieldSpec(name="place_id", type_annotation="str", description="Google Places ID"),
+                            ModelFieldSpec(
+                                name="name", type_annotation="str", description="Business name"
+                            ),
+                            ModelFieldSpec(
+                                name="address", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="phone", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="place_id",
+                                type_annotation="str",
+                                description="Google Places ID",
+                            ),
                         ],
                         docstring="Raw lead from Google Places API",
                     ),
@@ -154,9 +165,15 @@ def _make_lead_gen_skeleton() -> SkeletonArtifact:
                         file_path="models/lead.py",
                         base_class="RawLead",
                         fields=[
-                            ModelFieldSpec(name="website", type_annotation="Optional[str]", default="None"),
-                            ModelFieldSpec(name="email", type_annotation="Optional[str]", default="None"),
-                            ModelFieldSpec(name="tech_stack", type_annotation="list[str]", default="[]"),
+                            ModelFieldSpec(
+                                name="website", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="email", type_annotation="Optional[str]", default="None"
+                            ),
+                            ModelFieldSpec(
+                                name="tech_stack", type_annotation="list[str]", default="[]"
+                            ),
                         ],
                         docstring="Lead enriched with website, email, and tech detection",
                     ),
@@ -166,7 +183,9 @@ def _make_lead_gen_skeleton() -> SkeletonArtifact:
                         base_class="EnrichedLead",
                         fields=[
                             ModelFieldSpec(name="score", type_annotation="float", default="0.0"),
-                            ModelFieldSpec(name="score_reasons", type_annotation="list[str]", default="[]"),
+                            ModelFieldSpec(
+                                name="score_reasons", type_annotation="list[str]", default="[]"
+                            ),
                         ],
                         docstring="Lead with ICP scoring applied",
                         validators=["validate_score"],
@@ -208,7 +227,11 @@ def _make_lead_gen_skeleton() -> SkeletonArtifact:
                 name="PipelineSettings",
                 file_path="models/config.py",
                 fields=[
-                    ModelFieldSpec(name="google_api_key", type_annotation="str", description="Google Places API key"),
+                    ModelFieldSpec(
+                        name="google_api_key",
+                        type_annotation="str",
+                        description="Google Places API key",
+                    ),
                     ModelFieldSpec(name="max_concurrency", type_annotation="int", default="5"),
                     ModelFieldSpec(name="cost_budget", type_annotation="float", default="2.0"),
                 ],
@@ -245,6 +268,7 @@ def _make_lead_gen_skeleton() -> SkeletonArtifact:
 # ===========================================================================
 # Test SkeletonArtifact Model
 # ===========================================================================
+
 
 class TestSkeletonArtifact:
     def test_basic_creation(self):
@@ -400,6 +424,7 @@ class TestSymbolRegistry:
 # Test Skeleton Builder (Pass 1)
 # ===========================================================================
 
+
 class TestSkeletonBuilder:
     def setup_method(self):
         self.skeleton = _make_lead_gen_skeleton()
@@ -473,6 +498,7 @@ class TestSkeletonBuilder:
 # Test Pipeline Integration
 # ===========================================================================
 
+
 class TestSkeletonPipeline:
     def test_pass1_only(self):
         """Pipeline runs Pass 1 without LLM function."""
@@ -514,8 +540,7 @@ class TestSkeletonPipeline:
 
         # Build context for an implementation file
         ctx = registry.context_for_file(
-            "pipeline/discovery.py",
-            ["pipeline/base.py", "models/lead.py"]
+            "pipeline/discovery.py", ["pipeline/base.py", "models/lead.py"]
         )
         assert "BasePipelineStage" in ctx
         assert "RawLead" in ctx

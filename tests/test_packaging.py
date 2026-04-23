@@ -6,6 +6,7 @@ band: catch simple packaging mistakes (wrong version string,
 missing extras group, a README that dropped a section) before
 they reach PyPI.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -45,9 +46,7 @@ def _load_pyproject() -> dict:
 class TestPyprojectVersion:
     def test_version_bumped_to_3_1_0(self):
         cfg = _load_pyproject()
-        assert cfg["project"]["version"] == "3.1.0", (
-            "Session 18 spec: bump to 3.1.0"
-        )
+        assert cfg["project"]["version"] == "3.1.0", "Session 18 spec: bump to 3.1.0"
 
     def test_project_name_unchanged(self):
         cfg = _load_pyproject()
@@ -81,9 +80,7 @@ class TestOptionalDependencies:
 
     def test_photosynthesis_has_harvester_stack(self):
         cfg = _load_pyproject()
-        photo = " ".join(
-            cfg["project"]["optional-dependencies"]["photosynthesis"]
-        )
+        photo = " ".join(cfg["project"]["optional-dependencies"]["photosynthesis"])
         # Items that drove Session 3-5's harvester:
         for pkg in ("apscheduler", "feedparser", "tenacity"):
             assert pkg in photo, f"[photosynthesis] missing {pkg}"
@@ -94,8 +91,14 @@ class TestOptionalDependencies:
         label in the pyproject comment is a lie."""
         cfg = _load_pyproject()
         full = " ".join(cfg["project"]["optional-dependencies"]["full"])
-        for pkg in ("ollama", "apscheduler", "feedparser", "dspy",
-                    "scikit-learn", "sentence-transformers"):
+        for pkg in (
+            "ollama",
+            "apscheduler",
+            "feedparser",
+            "dspy",
+            "scikit-learn",
+            "sentence-transformers",
+        ):
             assert pkg in full, f"[full] missing {pkg}"
 
 
@@ -119,7 +122,8 @@ class TestSetupScript:
         """bash -n catches unclosed quotes, missing fi, etc."""
         result = subprocess.run(
             ["bash", "-n", str(SETUP_SCRIPT)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"bash -n failed: {result.stderr}"
 
@@ -156,7 +160,8 @@ class TestDemoScript:
     def test_syntax_is_valid(self):
         result = subprocess.run(
             ["bash", "-n", str(DEMO_SCRIPT)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"bash -n failed: {result.stderr}"
 

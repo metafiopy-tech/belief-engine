@@ -43,7 +43,9 @@ def test_step_trace_truncates_long_output() -> None:
 
 def test_step_trace_preserves_short_output() -> None:
     trace = StepTrace(
-        build_id="b1", step_index=0, agent_name="builder",
+        build_id="b1",
+        step_index=0,
+        agent_name="builder",
         output_summary="hello",
     )
     assert trace.output_summary == "hello"
@@ -74,13 +76,9 @@ def test_concurrent_writes_all_persisted(tmp_path: Path) -> None:
 
     def worker(build: str, n: int) -> None:
         for i in range(n):
-            c.record_step(
-                StepTrace(build_id=build, step_index=i, agent_name="builder")
-            )
+            c.record_step(StepTrace(build_id=build, step_index=i, agent_name="builder"))
 
-    threads = [
-        threading.Thread(target=worker, args=(f"b{i}", 20)) for i in range(4)
-    ]
+    threads = [threading.Thread(target=worker, args=(f"b{i}", 20)) for i in range(4)]
     for t in threads:
         t.start()
     for t in threads:
@@ -103,12 +101,8 @@ def test_close_is_idempotent(collector: TraceCollector) -> None:
 
 def test_finalize_build_marks_all_steps(collector: TraceCollector) -> None:
     for i in range(5):
-        collector.record_step(
-            StepTrace(build_id="b1", step_index=i, agent_name="builder")
-        )
-    collector.record_step(
-        StepTrace(build_id="b2", step_index=0, agent_name="tester")
-    )
+        collector.record_step(StepTrace(build_id="b1", step_index=i, agent_name="builder"))
+    collector.record_step(StepTrace(build_id="b2", step_index=0, agent_name="tester"))
     updated = collector.finalize_build("b1", passed=True)
     assert updated == 5
 
@@ -118,9 +112,7 @@ def test_finalize_build_marks_all_steps(collector: TraceCollector) -> None:
 
     # b2 untouched
     c = sqlite3.connect(str(collector.db_path))
-    row = c.execute(
-        "SELECT build_passed FROM traces WHERE build_id = 'b2';"
-    ).fetchone()
+    row = c.execute("SELECT build_passed FROM traces WHERE build_id = 'b2';").fetchone()
     c.close()
     assert row[0] is None
 
@@ -130,9 +122,7 @@ def test_finalize_build_records_failure(collector: TraceCollector) -> None:
     updated = collector.finalize_build("b3", passed=False)
     assert updated == 1
     c = sqlite3.connect(str(collector.db_path))
-    row = c.execute(
-        "SELECT build_passed FROM traces WHERE build_id = 'b3';"
-    ).fetchone()
+    row = c.execute("SELECT build_passed FROM traces WHERE build_id = 'b3';").fetchone()
     c.close()
     assert row[0] == 0
 
@@ -152,9 +142,7 @@ def test_training_data_respects_min_builds(collector: TraceCollector) -> None:
 
 def test_training_data_returns_finalized_rows(collector: TraceCollector) -> None:
     for i in range(3):
-        collector.record_step(
-            StepTrace(build_id=f"b{i}", step_index=0, agent_name="builder")
-        )
+        collector.record_step(StepTrace(build_id=f"b{i}", step_index=0, agent_name="builder"))
         collector.finalize_build(f"b{i}", passed=(i % 2 == 0))
     data = collector.get_training_data(min_builds=1)
     assert len(data) == 3
@@ -189,7 +177,8 @@ def test_build_count_only_counts_finalized(collector: TraceCollector) -> None:
 
 
 def test_export_produces_csv_with_header_only_when_empty(
-    collector: TraceCollector, tmp_path: Path,
+    collector: TraceCollector,
+    tmp_path: Path,
 ) -> None:
     out = tmp_path / "probe_data.csv"
     count = collector.export_for_probe_training(out)
@@ -201,12 +190,11 @@ def test_export_produces_csv_with_header_only_when_empty(
 
 
 def test_export_writes_rows(
-    collector: TraceCollector, tmp_path: Path,
+    collector: TraceCollector,
+    tmp_path: Path,
 ) -> None:
     for i in range(3):
-        collector.record_step(
-            StepTrace(build_id="b1", step_index=i, agent_name="builder")
-        )
+        collector.record_step(StepTrace(build_id="b1", step_index=i, agent_name="builder"))
     collector.finalize_build("b1", passed=True)
     out = tmp_path / "probe_data.csv"
     count = collector.export_for_probe_training(out)
@@ -224,7 +212,8 @@ def test_export_writes_rows(
 
 
 def test_record_step_from_state_populates_build_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     c = TraceCollector(tmp_path / "traces.db")
     set_default_collector(c)
@@ -245,7 +234,8 @@ def test_record_step_from_state_populates_build_id(
 
 
 def test_record_step_from_state_swallows_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Passing a non-dict state should NOT raise.
     record_step_from_state("not a dict", agent_name="builder")  # type: ignore[arg-type]

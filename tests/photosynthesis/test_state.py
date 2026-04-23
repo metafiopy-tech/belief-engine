@@ -69,9 +69,7 @@ def test_insert_signal_dedups_via_unique_constraint(
 
 
 def test_pending_and_update_cycle(state: PhotosynthesisState) -> None:
-    seed = CandidateSeed(
-        source="s", source_id="1", title="hello", summary="some fastapi text"
-    )
+    seed = CandidateSeed(source="s", source_id="1", title="hello", summary="some fastapi text")
     sid = state.insert_signal(seed)
     assert sid is not None
 
@@ -79,9 +77,7 @@ def test_pending_and_update_cycle(state: PhotosynthesisState) -> None:
     assert len(pending) == 1
     assert pending[0]["source"] == "s"
 
-    state.update_filter_result(
-        sid, stage_reached=2, filter_score=0.42, status="kept"
-    )
+    state.update_filter_result(sid, stage_reached=2, filter_score=0.42, status="kept")
 
     # Now it's no longer in 'raw'
     assert state.pending_signals() == []

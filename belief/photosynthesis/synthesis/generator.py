@@ -94,16 +94,12 @@ class GoalSpec(BaseModel):
     @classmethod
     def _valid_artifact(cls, v: str) -> str:
         if v not in ALLOWED_ARTIFACT_TYPES:
-            raise ValueError(
-                f"artifact_type must be one of {sorted(ALLOWED_ARTIFACT_TYPES)}"
-            )
+            raise ValueError(f"artifact_type must be one of {sorted(ALLOWED_ARTIFACT_TYPES)}")
         return v
 
     @field_validator("acceptance_criteria")
     @classmethod
-    def _at_least_one(
-        cls, v: list[AcceptanceCriterion]
-    ) -> list[AcceptanceCriterion]:
+    def _at_least_one(cls, v: list[AcceptanceCriterion]) -> list[AcceptanceCriterion]:
         if not v:
             raise ValueError("acceptance_criteria must have at least one entry")
         return v
@@ -203,10 +199,7 @@ async def synthesize(
     # shapes SN62 scores on. This is a post-generation augmentation —
     # it doesn't alter the LLM's original output beyond adding required
     # criteria.
-    if (
-        bittensor_cosine is not None
-        and bittensor_cosine >= bittensor_bias_cutoff
-    ):
+    if bittensor_cosine is not None and bittensor_cosine >= bittensor_bias_cutoff:
         best_spec = _inject_bittensor_constraints(best_spec)
 
     if not best_ranker.accepted:
@@ -262,9 +255,7 @@ def _build_prompt(
     pred_time_min: int,
     neighbors: list[Neighbor],
 ) -> str:
-    neighbors_formatted = format_neighbors(
-        [n.to_prompt_dict() for n in neighbors[:5]]
-    )
+    neighbors_formatted = format_neighbors([n.to_prompt_dict() for n in neighbors[:5]])
     return GENERATOR_PROMPT.format(
         title=seed.get("title", ""),
         summary=seed.get("summary", ""),

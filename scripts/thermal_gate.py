@@ -49,8 +49,7 @@ def main() -> int:
         pressure = read_thermal_pressure()
         dur = _duration_for(pressure)
         print(
-            f"{pressure.value} ({_numeric(pressure)}) "
-            f"(would sleep {dur:.1f}s — --dry-run passed)"
+            f"{pressure.value} ({_numeric(pressure)}) (would sleep {dur:.1f}s — --dry-run passed)"
         )
         return 0
 

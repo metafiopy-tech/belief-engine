@@ -174,8 +174,8 @@ async def test_all_three_hooks_independent(workspace) -> None:
         crystallize_runner=lambda: mk(crystal),
     )
     await daemon.run_forever(max_builds=15)
-    assert len(sica) == 3     # builds 5, 10, 15
-    assert len(jitter) == 5   # builds 3, 6, 9, 12, 15
+    assert len(sica) == 3  # builds 5, 10, 15
+    assert len(jitter) == 5  # builds 3, 6, 9, 12, 15
     assert len(crystal) == 1  # build 15
 
 

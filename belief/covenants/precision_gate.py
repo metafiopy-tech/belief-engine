@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Callable, Iterable
 
 from belief.covenants.policy import DEFAULT_POLICY, GatePolicy
 from belief.covenants.proposer import CovenantProposal
@@ -30,9 +30,10 @@ logger = logging.getLogger("belief.covenants.precision_gate")
 @dataclass
 class ArchivedBuild:
     """A past build's materials, as the gate sees them."""
+
     run_id: str
     goal: str
-    verdict: str                # pass / fail_fixable / fail_hard
+    verdict: str  # pass / fail_fixable / fail_hard
     code_files: dict[str, str]  # filename → source
 
 
@@ -45,9 +46,7 @@ Applier = Callable[[CovenantProposal, str], tuple[str, bool]]
 """Given (proposal, source), return (rewritten_source, did_rewrite)."""
 
 
-def default_regex_applier(
-    proposal: CovenantProposal, source: str
-) -> tuple[str, bool]:
+def default_regex_applier(proposal: CovenantProposal, source: str) -> tuple[str, bool]:
     """Treat proposed_pattern as a regex.  If proposed_replacement is
     empty, the rule is "forbid this pattern" — the applier returns
     ``(source_without_matches, True)`` on match.  Otherwise the

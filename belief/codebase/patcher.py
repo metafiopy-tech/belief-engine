@@ -27,6 +27,7 @@ logger = logging.getLogger("belief.codebase.patcher")
 @dataclass
 class PatchEdit:
     """A single search/replace edit."""
+
     file_path: str
     old_str: str
     new_str: str
@@ -37,6 +38,7 @@ class PatchEdit:
 @dataclass
 class PatchPlan:
     """A plan for modifying an existing codebase."""
+
     description: str
     edits: list[PatchEdit] = field(default_factory=list)
     new_files: dict[str, str] = field(default_factory=dict)  # path → content
@@ -49,6 +51,7 @@ class PatchPlan:
 
 class _PatchResponse(BaseModel):
     """LLM response for a single file patch."""
+
     edits: list[dict] = Field(default_factory=list)
     new_files: list[dict] = Field(default_factory=list)
     explanation: str = ""
@@ -182,13 +185,15 @@ async def generate_patch(
                     logger.warning(f"Patcher: edit produces invalid Python in {fpath}")
                     validated = False
 
-            plan.edits.append(PatchEdit(
-                file_path=fpath,
-                old_str=old_str,
-                new_str=new_str,
-                explanation=explanation,
-                validated=validated,
-            ))
+            plan.edits.append(
+                PatchEdit(
+                    file_path=fpath,
+                    old_str=old_str,
+                    new_str=new_str,
+                    explanation=explanation,
+                    validated=validated,
+                )
+            )
 
         # Process new files
         for new_dict in result.new_files:

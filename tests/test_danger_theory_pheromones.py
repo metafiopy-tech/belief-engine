@@ -28,6 +28,7 @@ SICA integration:
   - gate returning (True, "ok") → SICA proceeds to apply path
   - gate raising an exception → SICA logs and proceeds
 """
+
 from __future__ import annotations
 
 import json
@@ -109,8 +110,9 @@ class TestHasLocalizedFailures:
 
     def test_traceback_substring_matches(self):
         fails = [
-            self._fail(error="Traceback (most recent call last):\n  "
-                             "File \"belief/memory/soil.py\", line 10"),
+            self._fail(
+                error='Traceback (most recent call last):\n  File "belief/memory/soil.py", line 10'
+            ),
             self._fail(error="Traceback: belief/memory/soil.py:20"),
         ]
         assert has_localized_failures("belief/memory/soil.py", fails)
@@ -122,13 +124,16 @@ class TestHasLocalizedFailures:
 
     def test_below_min_fraction(self):
         """Two failures on soil but 20+ unrelated → not localized."""
-        fails = ([self._fail(path="belief/memory/soil.py")] * 2 +
-                 [self._fail(path=f"belief/other_{i}.py") for i in range(20)])
+        fails = [self._fail(path="belief/memory/soil.py")] * 2 + [
+            self._fail(path=f"belief/other_{i}.py") for i in range(20)
+        ]
         assert not has_localized_failures("belief/memory/soil.py", fails)
 
     def test_object_with_attributes(self):
         class _F:
-            def __init__(self, path): self.path = path
+            def __init__(self, path):
+                self.path = path
+
         fails = [_F("belief/memory/soil.py"), _F("belief/memory/soil.py")]
         assert has_localized_failures("belief/memory/soil.py", fails)
 
@@ -181,15 +186,14 @@ class TestIsDangerZone:
         )
 
     def test_no_failures(self):
-        assert not is_danger_zone("belief/memory/soil.py", [],
-                                   [0.1, 0.2, 0.3, 0.4])
+        assert not is_danger_zone("belief/memory/soil.py", [], [0.1, 0.2, 0.3, 0.4])
 
     def test_failures_not_localized(self):
         """Many failures but only 1 on soil → below min_count."""
-        fails = ([{"path": "belief/memory/soil.py"}] +
-                 [{"path": f"belief/other_{i}.py"} for i in range(20)])
-        assert not is_danger_zone("belief/memory/soil.py", fails,
-                                   [0.1, 0.2, 0.3, 0.4])
+        fails = [{"path": "belief/memory/soil.py"}] + [
+            {"path": f"belief/other_{i}.py"} for i in range(20)
+        ]
+        assert not is_danger_zone("belief/memory/soil.py", fails, [0.1, 0.2, 0.3, 0.4])
 
     def test_uncertainty_not_rising(self):
         assert not is_danger_zone(
@@ -201,34 +205,46 @@ class TestIsDangerZone:
 
 class TestEvaluate:
     def test_danger_zone_reason(self):
-        permit, reason = evaluate("belief/memory/soil.py", DangerSignals(
-            recent_failures=[{"path": "belief/memory/soil.py"}] * 4,
-            uncertainty_trend=[0.1, 0.2, 0.3, 0.4],
-        ))
+        permit, reason = evaluate(
+            "belief/memory/soil.py",
+            DangerSignals(
+                recent_failures=[{"path": "belief/memory/soil.py"}] * 4,
+                uncertainty_trend=[0.1, 0.2, 0.3, 0.4],
+            ),
+        )
         assert permit is True
         assert "danger-zone" in reason
 
     def test_critical_reason(self):
-        permit, reason = evaluate("belief/benchmark.py", DangerSignals(
-            recent_failures=[{"path": "belief/benchmark.py"}] * 4,
-            uncertainty_trend=[0.1, 0.2, 0.3, 0.4],
-        ))
+        permit, reason = evaluate(
+            "belief/benchmark.py",
+            DangerSignals(
+                recent_failures=[{"path": "belief/benchmark.py"}] * 4,
+                uncertainty_trend=[0.1, 0.2, 0.3, 0.4],
+            ),
+        )
         assert permit is False
         assert "critical" in reason
 
     def test_no_localized_reason(self):
-        permit, reason = evaluate("belief/memory/soil.py", DangerSignals(
-            recent_failures=[],
-            uncertainty_trend=[0.1, 0.2, 0.3, 0.4],
-        ))
+        permit, reason = evaluate(
+            "belief/memory/soil.py",
+            DangerSignals(
+                recent_failures=[],
+                uncertainty_trend=[0.1, 0.2, 0.3, 0.4],
+            ),
+        )
         assert permit is False
         assert "no-localized-failures" in reason
 
     def test_no_uncertainty_rise_reason(self):
-        permit, reason = evaluate("belief/memory/soil.py", DangerSignals(
-            recent_failures=[{"path": "belief/memory/soil.py"}] * 4,
-            uncertainty_trend=[0.4, 0.4, 0.4, 0.4],
-        ))
+        permit, reason = evaluate(
+            "belief/memory/soil.py",
+            DangerSignals(
+                recent_failures=[{"path": "belief/memory/soil.py"}] * 4,
+                uncertainty_trend=[0.4, 0.4, 0.4, 0.4],
+            ),
+        )
         assert permit is False
         assert "no-uncertainty-rise" in reason
 
@@ -239,8 +255,11 @@ class TestEvaluate:
 class TestPheromoneRoundTrip:
     def test_deposit_and_read(self, tmp_path):
         t = deposit_pheromone(
-            "belief/memory/soil.py", "crystallized covenant-7",
-            outcome="success", source="sica", base_dir=tmp_path,
+            "belief/memory/soil.py",
+            "crystallized covenant-7",
+            outcome="success",
+            source="sica",
+            base_dir=tmp_path,
         )
         assert isinstance(t, PheromoneTrail)
         stored = read_pheromones("belief/memory/soil.py", base_dir=tmp_path)
@@ -253,7 +272,8 @@ class TestPheromoneRoundTrip:
     def test_append_multiple(self, tmp_path):
         for i in range(3):
             deposit_pheromone(
-                "belief/memory/soil.py", f"change-{i}",
+                "belief/memory/soil.py",
+                f"change-{i}",
                 base_dir=tmp_path,
             )
         stored = read_pheromones("belief/memory/soil.py", base_dir=tmp_path)
@@ -267,17 +287,23 @@ class TestPheromoneRoundTrip:
         """Readers must tolerate a partially-written JSONL line."""
         # Manually write one good line and one malformed one.
         from belief.safety.pheromones import _trail_path, _ensure_dir
+
         base = _ensure_dir(tmp_path)
         path = _trail_path("belief/memory/soil.py", base)
         with path.open("w", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "module": "belief/memory/soil.py",
-                "timestamp": 1234.0,
-                "description": "ok",
-                "outcome": "success",
-                "source": "",
-                "weight": 1.0,
-            }) + "\n")
+            fh.write(
+                json.dumps(
+                    {
+                        "module": "belief/memory/soil.py",
+                        "timestamp": 1234.0,
+                        "description": "ok",
+                        "outcome": "success",
+                        "source": "",
+                        "weight": 1.0,
+                    }
+                )
+                + "\n"
+            )
             fh.write("{not valid json\n")
         stored = read_pheromones("belief/memory/soil.py", base_dir=tmp_path)
         assert len(stored) == 1
@@ -309,38 +335,42 @@ class TestPheromoneDensity:
         now = time.time()
         for i in range(3):
             deposit_pheromone(
-                "belief/memory/soil.py", f"change-{i}",
+                "belief/memory/soil.py",
+                f"change-{i}",
                 timestamp=now - i,  # all within 3s
                 base_dir=tmp_path,
             )
         density = pheromone_density(
             "belief/memory/soil.py",
-            base_dir=tmp_path, now=now,
+            base_dir=tmp_path,
+            now=now,
         )
         assert density == pytest.approx(3.0, rel=1e-3)
 
     def test_old_deposits_decay(self, tmp_path):
         now = 1_000_000.0
         deposit_pheromone(
-            "belief/memory/soil.py", "old change",
+            "belief/memory/soil.py",
+            "old change",
             timestamp=now - 7 * DEFAULT_HALF_LIFE_SECONDS,  # 7 half-lives
             base_dir=tmp_path,
         )
         density = pheromone_density(
             "belief/memory/soil.py",
-            base_dir=tmp_path, now=now,
+            base_dir=tmp_path,
+            now=now,
         )
         # (1/2)^7 = 1/128 ≈ 0.0078
         assert density < 0.01
 
     def test_outcome_filter(self, tmp_path):
         now = time.time()
-        deposit_pheromone("m.py", "good", outcome="success",
-                          timestamp=now, base_dir=tmp_path)
-        deposit_pheromone("m.py", "bad", outcome="failure",
-                          timestamp=now, base_dir=tmp_path)
+        deposit_pheromone("m.py", "good", outcome="success", timestamp=now, base_dir=tmp_path)
+        deposit_pheromone("m.py", "bad", outcome="failure", timestamp=now, base_dir=tmp_path)
         only_success = pheromone_density(
-            "m.py", base_dir=tmp_path, now=now,
+            "m.py",
+            base_dir=tmp_path,
+            now=now,
             outcome_filter={"success"},
         )
         assert only_success == pytest.approx(1.0, rel=1e-3)
@@ -353,7 +383,10 @@ class TestIsHotZone:
         now = time.time()
         for i in range(5):
             deposit_pheromone(
-                "m.py", f"c{i}", timestamp=now, base_dir=tmp_path,
+                "m.py",
+                f"c{i}",
+                timestamp=now,
+                base_dir=tmp_path,
             )
         assert is_hot_zone("m.py", base_dir=tmp_path, now=now)
 
@@ -381,6 +414,7 @@ class TestClearPheromones:
 # skip the entire file).
 try:
     import chromadb  # noqa: F401
+
     _HAS_CHROMADB = True
 except ImportError:
     _HAS_CHROMADB = False
@@ -390,6 +424,7 @@ except ImportError:
 class TestSICADangerGate:
     def _make_cycle(self, tmp_path, gate=None):
         from belief.evolution.sica import SelfImprovementCycle
+
         return SelfImprovementCycle(
             project_root=tmp_path,
             archive_path=tmp_path / "sica_archive.json",
@@ -402,6 +437,8 @@ class TestSICADangerGate:
         assert cycle.danger_gate is None
 
     def test_gate_attribute_is_set(self, tmp_path):
-        gate = lambda target: (True, "permit")
+        def gate(target):
+            return (True, "permit")
+
         cycle = self._make_cycle(tmp_path, gate=gate)
         assert cycle.danger_gate is gate
