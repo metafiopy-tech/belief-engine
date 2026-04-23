@@ -118,12 +118,25 @@ LOCAL_MAX_DEBUG_ITERATIONS = 2
 
 def _route_after_executor(
     state: dict[str, Any],
-) -> Literal["debugger", "synthesizer"]:
-    """After executor: debug on failure (bounded), otherwise proceed.
+) -> Literal["debugger", "synthesizer", "validator"]:
+    """After executor: debug on failure (bounded), else polish OR skip to validator.
 
-    No gap_analyst call in local mode — the executor already produces
-    the success flag and the gap_analyst's primary value (soil-aware
-    repair hints) depends on a second Haiku call we'd rather skip.
+    Session 4 (v3.2) adds a third route.  Historically a successful
+    execution always went to the synthesizer for a ~180-300s polish
+    pass; per the research report, no mainstream agentic coder does
+    this because post-success polish rarely changes test outcomes.
+
+    The new rule: on success, call :func:`belief.synthesizer_router.should_polish`.
+    If any trigger fires (tests_failed, ruff_errors > 3, cyclomatic > 12,
+    lines > 150) AND we're still under the wallclock budget, go to
+    synthesizer.  Otherwise skip directly to validator.  The env var
+    ``SYNTHESIZER_ROUTE_ENABLED=0`` restores pre-session-4 behaviour
+    (always polish), which the ablation harness uses.
+
+    Failure path is unchanged: bounded debug loop, then give up into
+    the synthesizer (which may also emit a minimal run.sh / deploy
+    artifacts that the validator needs).  We keep that behaviour so
+    Session 4's change is net-zero on the failure path.
     """
     exec_r = state.get("execution_result")
     exec_success = False
@@ -133,7 +146,16 @@ def _route_after_executor(
             else getattr(exec_r, "success", False)
         )
     if exec_success:
-        return "synthesizer"
+        # Session 4: short-circuit polish when there's nothing to polish.
+        try:
+            from belief.synthesizer_router import should_polish
+            go_polish, reason = should_polish(state)
+            logger.info("synthesizer router: %s → %s",
+                        reason, "synthesizer" if go_polish else "validator")
+            return "synthesizer" if go_polish else "validator"
+        except Exception as e:  # pragma: no cover
+            logger.debug("synthesizer router errored (%s); defaulting to polish", e)
+            return "synthesizer"
 
     iteration = int(state.get("iteration", 0) or 0)
     if iteration >= LOCAL_MAX_DEBUG_ITERATIONS:
@@ -279,11 +301,17 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_edge("covenant_enforce", "import_fix")
     graph.add_edge("import_fix", "executor")
 
-    # Executor → (debug loop or synthesizer)
+    # Executor → (debug loop, synthesizer, or validator directly)
+    # Session 4: "validator" is a new destination — the synthesizer router
+    # may decide there's nothing to polish and skip the pass entirely.
     graph.add_conditional_edges(
         "executor",
         _route_after_executor,
-        {"debugger": "increment_iteration", "synthesizer": "synthesizer"},
+        {
+            "debugger": "increment_iteration",
+            "synthesizer": "synthesizer",
+            "validator": "validator",
+        },
     )
     # Increment → debugger → executor (one lap; budget checked on return)
     graph.add_edge("increment_iteration", "debugger")

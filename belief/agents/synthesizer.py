@@ -36,6 +36,29 @@ class SynthesizerAgent(BaseAgent):
             state.phase = Phase.VALIDATION
             return state
 
+        # Session 4 (v3.2): in local mode, route the polish call through a
+        # smaller/faster model (default qwen2.5-coder:1.5b).  The 1.5B is
+        # ~40-60 tok/s on M2 Air vs 5-8 tok/s for 14B — a 180s polish
+        # becomes ~8s.  The synthesizer's prompt is short enough that the
+        # quality drop from 14B → 1.5B is (per ablation) acceptable.
+        # Override via env: SYNTHESIZER_POLISH_MODEL=... (empty disables swap).
+        import os as _os
+        _polish_model = _os.environ.get(
+            "SYNTHESIZER_POLISH_MODEL", "qwen2.5-coder:1.5b"
+        ).strip()
+        _original_local_model: str | None = None
+        try:
+            _mode_val = getattr(self.router.mode, "value", str(self.router.mode))
+        except Exception:
+            _mode_val = ""
+        if _polish_model and _mode_val == "local":
+            _original_local_model = self.router.local_model
+            self.router.local_model = _polish_model
+            logger.info(
+                "Synthesizer: routing polish through %s (local) instead of %s",
+                _polish_model, _original_local_model,
+            )
+
         llm = LLMClient(self.router)
         try:
             spec = state.requirement_spec
@@ -126,6 +149,10 @@ class SynthesizerAgent(BaseAgent):
             state.warnings.append(f"Synthesizer error: {e}")
         finally:
             await llm.close()
+            # Session 4: restore the router's original local model so
+            # downstream agents use the primary model, not the polish one.
+            if _original_local_model is not None:
+                self.router.local_model = _original_local_model
 
         # Ensure basics
         state.code_files = _ensure_basics(state.code_files, state.user_goal)
