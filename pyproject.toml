@@ -35,6 +35,22 @@ dependencies = [
     "httpx>=0.27.0",
     "chromadb>=0.5.0",
     "pyyaml>=6.0.0",
+    # Session 1 (v3.2): Ollama client hardening — retry + circuit breaker.
+    # Both were previously only in the photosynthesis extra; promoted to
+    # core because belief.llm now uses them on every LLM call.  The
+    # imports in belief/llm.py are wrapped in try/except so an install
+    # that predates this change still boots (with retry/breaker disabled).
+    "tenacity>=9.0",
+    "pybreaker>=1.0",
+    # Session 2 (v3.2): LibCST Pydantic v2 covenant enforcer.
+    # libcst does the structural rewrites, ruff --fix cleans up unused
+    # imports post-rewrite, bump-pydantic catches patterns the covenant
+    # is conservative about (GenericModel, etc.).  All three run via
+    # subprocess or imported API — the covenant pipeline tolerates them
+    # missing (logs a warning, skips the stage).
+    "libcst>=1.8.6",
+    "bump-pydantic==0.8.0",
+    "ruff>=0.9.0",
 ]
 
 [project.urls]
