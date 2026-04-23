@@ -1,0 +1,29 @@
+# Known-hallucination blocklist — Session 3 (v3.2).
+#
+# Package names the Belief Engine's local model (or prior cloud calls)
+# have been observed to emit that are NOT real PyPI packages.  These
+# are fast-reject targets: the 6-layer package validator trips on
+# anything in this file before hitting the network.
+#
+# Format:
+#   - One package name per line, canonicalised (lowercase, hyphens).
+#   - Comments start with '#'.
+#   - Blank lines ignored.
+#
+# To add:
+#   belief validator add-hallucination <name>
+#
+# To remove, edit this file directly.  The sort order doesn't matter —
+# the validator loads this into a frozenset.
+#
+# DO NOT add real but confusingly-named PyPI packages here.  If a
+# name is ambiguous, trust the top-15k corpus and PyPI Simple lookup
+# instead — false positives here are a worse failure mode than the
+# 150ms extra a real lookup costs.
+
+# Seeded 2026-04-22 from overnight benchmark logs:
+settings
+settings_library
+fake_pkg
+openai_helper
+gpt4_utils
