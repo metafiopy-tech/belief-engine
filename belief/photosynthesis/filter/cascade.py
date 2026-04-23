@@ -25,6 +25,7 @@ Design invariants:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 import time
@@ -35,6 +36,27 @@ from typing import Any, Iterable, Optional, Sequence
 
 
 logger = logging.getLogger("belief.photosynthesis.filter")
+
+
+# Session 0 (v3.2): explicit offline gate. When BELIEF_OFFLINE=1 is set,
+# the stage-3 embedding path raises a *clear* RuntimeError instead of
+# silently falling through to Hugging Face's hub, which was the original
+# failure mode in the non-hermetic tests (unreachable HF during CI runs
+# produced opaque HTTPError chains). Stages 0–2 remain fully usable.
+def _offline_mode() -> bool:
+    """True when BELIEF_OFFLINE is set to a truthy value."""
+    v = os.environ.get("BELIEF_OFFLINE", "").strip().lower()
+    return v in {"1", "true", "yes", "on"}
+
+
+class OfflineModeError(RuntimeError):
+    """Raised when stage 3 is invoked under BELIEF_OFFLINE=1.
+
+    Stages 0–2 (blocklist, keyword, TF-IDF) are all-local and do not
+    raise.  Stage 3 requires a SentenceTransformer checkpoint which
+    would otherwise be fetched from Hugging Face — that is exactly
+    what BELIEF_OFFLINE exists to forbid.
+    """
 
 
 class Stage(IntEnum):
@@ -249,6 +271,15 @@ class CascadingRelevanceFilter:
     def _ensure_embed_model(self) -> None:
         if self._embed_model is not None:
             return
+        # Session 0: explicit offline gate — refuse before we try to
+        # construct SentenceTransformer, which would otherwise attempt
+        # to pull the model from Hugging Face on first call.
+        if _offline_mode():
+            raise OfflineModeError(
+                f"embedding model {self._embed_model_name!r} requested in "
+                "offline mode (BELIEF_OFFLINE=1); stage 3 is disabled. "
+                "Unset BELIEF_OFFLINE or avoid stage-3 invocation."
+            )
         SentenceTransformer = _load_sentence_transformers()
         if SentenceTransformer is None:
             return

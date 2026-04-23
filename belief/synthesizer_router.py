@@ -34,11 +34,25 @@ Toggle
   ``"0"`` to restore the pre-router behaviour (always polish).  Used
   by the ablation harness for the ``builder_plus_synth`` condition.
 
-The router never raises — every probe is wrapped in a defensive
-``try/except`` that returns False on any error, so a missing ruff,
-a broken radon install, or a malformed state dict can't block the
-build.  Worst case: skip polish when we should have run it — a
-single build's cosmetic regression, not a correctness one.
+The router never raises from :func:`should_polish` — every probe is
+wrapped in a defensive ``try/except`` that resolves to a safe
+default.  "Safe" is asymmetric by probe:
+
+* **Missing tools** (ruff / radon absent) → treat signal as absent
+  (``0``).  Best we can do when the tool simply isn't installed.
+* **Soft failures** (subprocess timeout, malformed JSON, unreadable
+  state dict) → same; treat as 0.
+* **Ruff internal error** (exit code ≥ 2 — unwritable cache, panic,
+  argv malformed) → fail *safe*, not *open*.  :func:`_count_ruff_errors`
+  raises :class:`RuffInvocationError`; :func:`should_polish` catches
+  it and routes **toward** polish with reason ``ruff-internal-error``.
+  We can't claim the code is clean, so we shouldn't skip polish on
+  that basis.
+
+Worst case under the old (pre-Session-0) fail-open behaviour: ruff
+cache unwritable → exit 2 → silent 0 errors → router skipped polish
+on code that might have been dirty.  That's now a loud, traced route
+decision instead of a silent routing bug.
 """
 
 from __future__ import annotations
@@ -101,7 +115,14 @@ def should_polish(state: dict[str, Any]) -> tuple[bool, str]:
 
     # Trigger 2 — ruff errors.
     code_files = state.get("code_files") or {}
-    ruff_err = _count_ruff_errors(code_files)
+    try:
+        ruff_err = _count_ruff_errors(code_files)
+    except RuffInvocationError as e:
+        # Fail *safe*, not *open*: if ruff itself broke, we can't claim
+        # the code is clean.  Route toward polish and surface the reason
+        # in the log so operators can fix the cache/install problem.
+        logger.warning("ruff invocation failed; routing toward polish: %s", e)
+        return True, f"polish: ruff-internal-error ({type(e).__name__})"
     if ruff_err > RUFF_ERROR_THRESHOLD:
         return True, f"polish: ruff_errors={ruff_err} > {RUFF_ERROR_THRESHOLD}"
 
@@ -168,11 +189,33 @@ def _wallclock_so_far(state: dict[str, Any]) -> float:
     return total
 
 
+class RuffInvocationError(RuntimeError):
+    """Raised when ruff itself fails to run (exit 2), not when it finds errors.
+
+    Session 0 (v3.2) audit finding: the router was silently fail-opening
+    when ruff's cache dir was unwritable — exit 2 was indistinguishable
+    from exit 0 (clean code). That routed builds *away* from the
+    synthesizer when they should have been routed *toward* it. Raise
+    loudly so operators fix the cache problem instead of shipping
+    unpolished code they think was polished.
+    """
+
+
 def _count_ruff_errors(code_files: dict[str, str]) -> int:
     """Count ruff errors across every .py file.
 
-    Uses ruff's JSON output for robust parsing.  Returns 0 on any error
-    (ruff missing, timeout, etc.) — see module docstring on fail-open.
+    Uses ruff's JSON output for robust parsing. Returns 0 on zero
+    findings; raises :class:`RuffInvocationError` when ruff itself
+    fails to run (exit code 2). Missing ruff binary or timeout still
+    fail-opens (returns 0) — those are environment issues, not
+    configuration bugs.
+
+    Session 0 (v3.2) hardening:
+    * ``--no-cache`` — don't rely on .ruff_cache being writable. The
+      router runs once per build so the cache adds no value and has
+      caused silent fail-open in directories with permission quirks.
+    * exit code 2 → raise. ruff's "internal error" return code was
+      being treated as "clean file" because stdout was empty.
     """
     import shutil as _shutil
     ruff = _shutil.which("ruff")
@@ -192,12 +235,33 @@ def _count_ruff_errors(code_files: dict[str, str]) -> int:
                 p = td_path / Path(fname).name
                 p.write_text(content)
             proc = subprocess.run(
-                [ruff, "check", "--select", RUFF_SELECT, "--output-format", "json", str(td_path)],
+                [
+                    ruff, "check",
+                    "--no-cache",
+                    "--select", RUFF_SELECT,
+                    "--output-format", "json",
+                    str(td_path),
+                ],
                 capture_output=True, text=True, timeout=10,
             )
     except (subprocess.TimeoutExpired, OSError) as e:
         logger.debug("ruff check timed out/failed: %s", e)
         return 0
+
+    # ruff exit codes:
+    #   0 = no errors (stdout may be empty or "[]")
+    #   1 = errors found (stdout has JSON findings)
+    #   2 = internal error (unwritable cache, malformed argv, panic, …)
+    # Anything ≥ 2 is NOT a signal about the code — it's a signal
+    # about our invocation. Fail loud so the caller can fix it instead
+    # of polishing-or-not based on noise.
+    if proc.returncode >= 2:
+        stderr_tail = (proc.stderr or "").strip().splitlines()[-1:] or ["<no stderr>"]
+        raise RuffInvocationError(
+            f"ruff exited {proc.returncode} (internal error, not a lint finding). "
+            f"argv={[ruff, 'check', '--no-cache', '--select', RUFF_SELECT, '--output-format', 'json', str(td_path)]!r}; "
+            f"stderr tail: {stderr_tail[-1]}"
+        )
 
     if not proc.stdout:
         return 0
@@ -267,6 +331,7 @@ __all__ = [
     "CYCLOMATIC_COMPLEXITY_THRESHOLD",
     "LINES_ADDED_THRESHOLD",
     "RUFF_ERROR_THRESHOLD",
+    "RuffInvocationError",
     "WALLCLOCK_BUDGET_S",
     "route_enabled",
     "should_polish",

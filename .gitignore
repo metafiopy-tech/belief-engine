@@ -45,3 +45,6 @@ Thumbs.db
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Session handoff checklists (ephemeral — written per-session, not versioned)
+docs/sessions/

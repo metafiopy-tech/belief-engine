@@ -21,6 +21,7 @@ from belief.synthesizer_router import (
     CYCLOMATIC_COMPLEXITY_THRESHOLD,
     LINES_ADDED_THRESHOLD,
     RUFF_ERROR_THRESHOLD,
+    RuffInvocationError,
     WALLCLOCK_BUDGET_S,
     route_enabled,
     should_polish,
@@ -270,3 +271,158 @@ def f(x):
 """
         cc = _max_cyclomatic_complexity({"complex.py": code})
         assert cc is not None and cc >= 6
+
+
+# ---------------------------------------------------------------------------
+# Session 0 (v3.2) — ruff invocation hardening
+# ---------------------------------------------------------------------------
+
+
+class _FakeCompleted:
+    """Minimal stand-in for subprocess.CompletedProcess."""
+
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+class TestRuffHardening:
+    """Session 0 audit finding: _count_ruff_errors must
+
+    1. pass ``--no-cache`` so an unwritable .ruff_cache cannot silently
+       fail-open the router, and
+    2. raise ``RuffInvocationError`` on exit code ≥ 2 (internal error)
+       rather than returning 0 indistinguishably from a clean run.
+    """
+
+    def _captured_argv(self, monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+        """Patch subprocess.run in the router module and capture the argv
+        list of every invocation. Returns the (mutating) list."""
+        import shutil
+
+        import belief.synthesizer_router as sr
+
+        # Guarantee the "ruff missing" short-circuit is NOT taken —
+        # shutil.which is imported locally inside _count_ruff_errors
+        # via `import shutil as _shutil`, so patching shutil.which on
+        # the real module works because Python returns the cached
+        # module from sys.modules on the inner import.
+        monkeypatch.setattr(
+            shutil, "which",
+            lambda name: "/usr/bin/" + name if name == "ruff" else None,
+        )
+
+        captured: list[list[str]] = []
+
+        def fake_run(argv, **_kwargs):  # noqa: ANN001 — mirrors subprocess.run
+            captured.append(list(argv))
+            return _FakeCompleted(returncode=0, stdout="[]")
+
+        monkeypatch.setattr(sr.subprocess, "run", fake_run)
+        return captured
+
+    def test_no_cache_flag_is_passed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every ruff invocation must include ``--no-cache``. Directly
+        asserts the argv — the invariant that made the old fail-open
+        bug possible is that the cache was being used."""
+        from belief.synthesizer_router import _count_ruff_errors
+
+        captured = self._captured_argv(monkeypatch)
+        n = _count_ruff_errors({"main.py": "x = 1\n"})
+
+        assert n == 0  # stdout "[]" → zero findings
+        assert captured, "subprocess.run was never called"
+        argv = captured[0]
+        assert "--no-cache" in argv, f"--no-cache missing from argv: {argv}"
+        # Sanity: we're still invoking the right subcommand and rules.
+        assert "check" in argv
+        assert "--output-format" in argv
+        assert "json" in argv
+
+    def test_exit_code_2_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Ruff exit code 2 = internal error (e.g. unwritable cache dir,
+        malformed argv, panic). The old code returned 0 in this case,
+        silently fail-opening the polish router. Must now raise."""
+        import shutil
+
+        import belief.synthesizer_router as sr
+
+        monkeypatch.setattr(
+            shutil, "which",
+            lambda name: "/usr/bin/" + name if name == "ruff" else None,
+        )
+
+        def fake_run(_argv, **_kwargs):  # noqa: ANN001
+            return _FakeCompleted(
+                returncode=2,
+                stdout="",
+                stderr="error: unable to initialize cache at ./.ruff_cache\n",
+            )
+
+        monkeypatch.setattr(sr.subprocess, "run", fake_run)
+
+        from belief.synthesizer_router import _count_ruff_errors
+
+        with pytest.raises(RuffInvocationError) as excinfo:
+            _count_ruff_errors({"main.py": "x = 1\n"})
+        # The error message must name the exit code and include a
+        # stderr tail — operators reading logs need enough to diagnose.
+        msg = str(excinfo.value)
+        assert "2" in msg
+        assert "internal error" in msg.lower() or "cache" in msg.lower()
+
+    def test_should_polish_routes_toward_polish_on_ruff_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The module docstring contract: should_polish never raises.
+        If ruff itself errors, route *toward* polish (fail-safe, not
+        fail-open)."""
+        import shutil
+
+        import belief.synthesizer_router as sr
+
+        monkeypatch.setattr(
+            shutil, "which",
+            lambda name: "/usr/bin/" + name if name == "ruff" else None,
+        )
+
+        def fake_run(_argv, **_kwargs):  # noqa: ANN001
+            return _FakeCompleted(returncode=2, stdout="", stderr="ruff panic\n")
+
+        monkeypatch.setattr(sr.subprocess, "run", fake_run)
+
+        polish, reason = should_polish(_state())
+        assert polish is True
+        assert "ruff-internal-error" in reason
+        assert "RuffInvocationError" in reason
+
+    def test_exit_code_1_with_findings_is_not_an_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 = ruff ran fine, found lint issues. This is the normal
+        path and must not raise — only the count must be returned."""
+        import shutil
+
+        import belief.synthesizer_router as sr
+
+        monkeypatch.setattr(
+            shutil, "which",
+            lambda name: "/usr/bin/" + name if name == "ruff" else None,
+        )
+
+        def fake_run(_argv, **_kwargs):  # noqa: ANN001
+            # Ruff returns exit 1 when findings exist. Stdout has JSON
+            # list of findings.
+            return _FakeCompleted(
+                returncode=1,
+                stdout='[{"code":"F401"},{"code":"E501"},{"code":"E302"},{"code":"B007"}]',
+                stderr="",
+            )
+
+        monkeypatch.setattr(sr.subprocess, "run", fake_run)
+
+        from belief.synthesizer_router import _count_ruff_errors
+
+        n = _count_ruff_errors({"main.py": "x=1\n"})
+        assert n == 4
