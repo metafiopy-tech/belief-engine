@@ -62,23 +62,38 @@ fi
 #   cold-boot M2 Air; 10 minutes is still below the per-role budget.
 # ---------------------------------------------------------------------------
 
-declare -A ENV_VARS=(
-    [OLLAMA_KEEP_ALIVE]="-1"
-    [OLLAMA_FLASH_ATTENTION]="1"
-    [OLLAMA_KV_CACHE_TYPE]="q8_0"
-    [OLLAMA_NUM_PARALLEL]="1"
-    [OLLAMA_MAX_LOADED_MODELS]="2"
-    [OLLAMA_LOAD_TIMEOUT]="10m"
+# NOTE: macOS ships bash 3.2, which has no associative arrays (`declare -A`).
+# Using parallel plain arrays keeps this portable across bash 3.2 / 4 / 5
+# and zsh, so the user doesn't have to install Homebrew bash just to run
+# one setup script.  `set -u` is honoured: we iterate by index, so every
+# lookup is defined.
+ENV_KEYS=(
+    "OLLAMA_KEEP_ALIVE"
+    "OLLAMA_FLASH_ATTENTION"
+    "OLLAMA_KV_CACHE_TYPE"
+    "OLLAMA_NUM_PARALLEL"
+    "OLLAMA_MAX_LOADED_MODELS"
+    "OLLAMA_LOAD_TIMEOUT"
+)
+ENV_VALS=(
+    "-1"
+    "1"
+    "q8_0"
+    "1"
+    "2"
+    "10m"
 )
 
 echo "[setup_ollama_env] Setting Ollama environment via launchctl setenv..."
 
-# Preserve bash key iteration order.
-for KEY in OLLAMA_KEEP_ALIVE OLLAMA_FLASH_ATTENTION OLLAMA_KV_CACHE_TYPE \
-          OLLAMA_NUM_PARALLEL OLLAMA_MAX_LOADED_MODELS OLLAMA_LOAD_TIMEOUT; do
-    VAL="${ENV_VARS[$KEY]}"
+# Iterate by index — bash 3.2 compatible.
+I=0
+while [ $I -lt ${#ENV_KEYS[@]} ]; do
+    KEY="${ENV_KEYS[$I]}"
+    VAL="${ENV_VALS[$I]}"
     launchctl setenv "$KEY" "$VAL"
     echo "  ${KEY}=${VAL}"
+    I=$((I + 1))
 done
 
 # DO NOT USE — kept here as a commented warning so nobody re-introduces it.
