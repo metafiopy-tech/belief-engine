@@ -469,7 +469,36 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
     if not code_files:
         return result
 
-    # ── Python covenants ──
+    # ── Session 2 (v3.2): LibCST Pydantic v2 + forbidden-imports pipeline ──
+    # Runs BEFORE the existing AST validators so the debugger never
+    # observes a v1 import.  The 4-stage pipeline (regex prepass →
+    # LibCST → ruff --fix → bump-pydantic) handles what pure-AST
+    # enforcement can't: Config → ConfigDict conversion, validator
+    # decorator rewrites, method renames, stdlib-in-requirements.
+    try:
+        from belief.covenants import enforce_python_covenants_on_files
+
+        fixed_cov, applied = enforce_python_covenants_on_files(code_files)
+        if applied:
+            code_files = fixed_cov
+            result["code_files"] = fixed_cov
+            # Group by rule for a compact log line — one per build,
+            # not one per rewrite, so the logs stay readable.
+            from collections import Counter
+            rule_counts = Counter(a.rule for a in applied)
+            summary = ", ".join(
+                f"{rule}×{n}" for rule, n in rule_counts.most_common()
+            )
+            logger.info(
+                "Covenant pipeline (LibCST+ruff): %d rewrites across %d files — %s",
+                len(applied),
+                len({a.file for a in applied if a.file}),
+                summary,
+            )
+    except Exception as e:
+        logger.debug("LibCST covenant pipeline skipped: %s", e)
+
+    # ── Python covenants (existing AST validators — complement LibCST) ──
     try:
         from belief.validators import enforce_all
 

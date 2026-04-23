@@ -326,6 +326,31 @@ class BuilderAgent(BaseAgent):
             except Exception as e:
                 logger.debug(f"Language adapter failed for {file_spec.filename}: {e}")
 
+            # Session 2 (v3.2): inject Pydantic v2 cheatsheet when this
+            # file will touch pydantic/fastapi/langchain/BaseSettings.
+            # Append-only to preserve the Session 1 num_keep=512 prefix
+            # cache; ``_trigger_*`` checks live in prompts/cheatsheets.py.
+            try:
+                from belief.prompts.cheatsheets import (
+                    pydantic_v2_cheatsheet_for_file_spec,
+                )
+                cheatsheet = pydantic_v2_cheatsheet_for_file_spec(
+                    file_spec,
+                    user_goal=state.user_goal if state.user_goal else None,
+                )
+                if cheatsheet:
+                    system = f"{system}{cheatsheet}"
+                    logger.debug(
+                        "Builder: injected Pydantic v2 cheatsheet for %s",
+                        file_spec.filename,
+                    )
+            except Exception as e:  # pragma: no cover
+                logger.debug(
+                    "Pydantic v2 cheatsheet injection failed for %s: %s",
+                    file_spec.filename,
+                    e,
+                )
+
             # Inject protocol skeleton as reference for TypeScript builds
             if file_spec.filename.endswith((".ts", ".tsx")):
                 try:
