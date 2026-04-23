@@ -121,6 +121,7 @@ _SESSION1_OPTION_DEFAULTS: dict[str, Any] = {
     "num_batch": 256,  # batch size for prompt eval
     "num_keep": 512,  # KV-cache pin for system-prompt prefix
     "mirostat": 0,  # greedy sampling — predictable throughput
+    "seed": 42,  # deterministic output across runs (override per-call if needed)
     # repeat_penalty is set by local_models.py per model; 1.05 is the
     # session-1 default only when the model config doesn't specify one.
 }
