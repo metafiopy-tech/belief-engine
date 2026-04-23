@@ -51,6 +51,25 @@ dependencies = [
     "libcst>=1.8.6",
     "bump-pydantic==0.8.0",
     "ruff>=0.9.0",
+    # Session 3 (v3.2): layered package validator (slopsquatting defense).
+    # rapidfuzz is required for the Levenshtein fuzzy-match suggestion
+    # layer; guarddog + pip-audit are optional subprocess security
+    # checks (the executor tolerates them missing — fail-open for
+    # optional layers, fail-closed for authoritative ones).
+    "rapidfuzz>=3.0",
+    "guarddog>=0.2",
+    "pip-audit>=2.7",
+    # Session 4 (v3.2): synthesizer router uses radon for cyclomatic
+    # complexity.  Router tolerates radon missing (treats the signal
+    # as unknown), so this is a soft requirement — pinned here so the
+    # default install has it.
+    "radon>=6.0",
+    # Session 7 (v3.2): tree-sitter + PageRank repo-map.  Ported from
+    # Aider.  networkx needs scipy for its PageRank backend in 3.x.
+    "tree-sitter>=0.25",
+    "tree-sitter-python>=0.25",
+    "networkx>=3.0",
+    "scipy>=1.10",
 ]
 
 [project.urls]

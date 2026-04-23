@@ -651,10 +651,29 @@ class ExecutorAgent(BaseAgent):
     def _install_deps(self, tmp: Path) -> ExecutionResult:
         """Install requirements.txt in a venv after verifying packages exist.
 
-        Security: LLMs hallucinate package names at 5-21% rate (Spracklen et al.,
-        USENIX 2025). Attackers register these names with malicious code
-        ("slopsquatting"). We verify each package exists on PyPI before installing.
+        Session 3 (v3.2) rewrote the package-verification path to use
+        the 6-layer :class:`~belief.validators.package_validator.PackageValidator`.
+        The old path had two failure modes:
+          - False negative on ``pydantic-settings`` (PEP 503 normalization bug).
+          - False positive on hallucinated names (``settings_library``)
+            that burned ~150s on bad ``pip install`` attempts.
+        The new path: canonicalise → stdlib → hallucinations → top-15k
+        → PyPI Simple → fuzzy-match suggestion.  Rejection reason (and
+        layer) is logged so the debugger can surface a precise fix.
+
+        This method stays SYNCHRONOUS because it's invoked via
+        ``asyncio.to_thread`` from the async ``run()``.  The async
+        validator is driven inside a short-lived event loop via
+        ``asyncio.run`` so we can still reuse the async PyPI-lookup
+        path without forking a sync/async validator API.
+
+        After a successful pip install we run:
+          - ``guarddog pypi verify <pkg>`` (warn-only)
+          - ``pip-audit --strict -r requirements.txt`` (block on fail)
+        Both subprocesses — tolerate missing CLIs.
         """
+        import asyncio as _asyncio
+
         req_file = tmp / "requirements.txt"
         install_result = ExecutionResult(install_success=True)
         if not req_file.exists():
@@ -665,45 +684,73 @@ class ExecutorAgent(BaseAgent):
         if not deps:
             return install_result
 
-        # ── Verify packages exist before installing ──────────────────
-        verified_deps = []
-        for dep in deps:
-            # Extract package name (strip version specifiers)
-            pkg_name = dep.split(">=")[0].split("<=")[0].split("==")[0].split("~=")[0].split("[")[0].split("<")[0].split(">")[0].split("!=")[0].strip()
-            if not pkg_name:
-                continue
+        # ── Session 3: 6-layer validator ───────────────────────────────
+        try:
+            from belief.validators.package_validator import PackageValidator
+        except ImportError as e:  # pragma: no cover - shouldn't happen in v3.2
+            logger.warning("PackageValidator unavailable (%s); falling back to naive install", e)
+            verified_deps = list(deps)
+        else:
+            async def _validate_all(all_deps: list[str]) -> list[tuple[str, Any]]:
+                validator = PackageValidator()
+                pairs: list[tuple[str, Any]] = []
+                for dep in all_deps:
+                    pkg_name = (
+                        dep.split(">=")[0].split("<=")[0].split("==")[0]
+                        .split("~=")[0].split("[")[0].split("<")[0]
+                        .split(">")[0].split("!=")[0].strip()
+                    )
+                    if not pkg_name:
+                        continue
+                    result = await validator.validate(pkg_name)
+                    pairs.append((dep, result))
+                return pairs
 
-            # Known-safe packages (stdlib-adjacent, extremely common)
-            SAFE_PACKAGES = {
-                "pytest", "click", "flask", "fastapi", "uvicorn", "requests",
-                "httpx", "pydantic", "sqlalchemy", "alembic", "jinja2",
-                "starlette", "python-dotenv", "aiohttp", "aiofiles",
-                "rich", "typer", "celery", "redis", "pymongo", "psycopg2-binary",
-                "boto3", "pillow", "numpy", "pandas", "scipy", "matplotlib",
-                "cryptography", "bcrypt", "pyjwt", "python-jose", "passlib",
-                "gunicorn", "python-multipart", "email-validator", "orjson",
-                "websockets", "httptools", "watchfiles", "itsdangerous",
-                "werkzeug", "markupsafe", "certifi", "charset-normalizer",
-                "idna", "urllib3", "packaging", "setuptools", "wheel", "pip",
-                "toml", "tomli", "tomli-w", "pyyaml", "tomlkit",
-            }
-
-            if pkg_name.lower() in SAFE_PACKAGES:
-                verified_deps.append(dep)
-                continue
-
-            # Check PyPI for unknown packages
             try:
-                from belief.core.http import head_sync
-                url = f"https://pypi.org/pypi/{pkg_name}/json"
-                status = head_sync(url, timeout=5.0, headers={"User-Agent": "belief-engine/2.3"})
-                if status == 200:
-                    verified_deps.append(dep)
+                pair_results = _asyncio.run(_validate_all(deps))
+            except RuntimeError:
+                # asyncio.run fails if we're already in an event loop —
+                # unlikely because we're inside asyncio.to_thread, but
+                # handle it defensively by falling back to best-effort.
+                logger.warning(
+                    "PackageValidator could not run in this thread; "
+                    "accepting all declared deps without verification"
+                )
+                pair_results = [(d, None) for d in deps]
+
+            verified_deps: list[str] = []
+            for dep, result in pair_results:
+                if result is None or result.accepted:
+                    if result is not None:
+                        logger.info(
+                            "Executor: VERIFIED %s via %s (%s)",
+                            result.canonical_name, result.layer, result.reason,
+                        )
+                        # Use the canonical PyPI name in the install line
+                        # so pip resolves cleanly (and carry over any
+                        # user-supplied version specifier).
+                        pkg_name = (
+                            dep.split(">=")[0].split("<=")[0].split("==")[0]
+                            .split("~=")[0].split("[")[0].split("<")[0]
+                            .split(">")[0].split("!=")[0].strip()
+                        )
+                        specifier = dep[len(pkg_name):] if pkg_name else ""
+                        verified_deps.append(f"{result.canonical_name}{specifier}")
+                    else:
+                        verified_deps.append(dep)
                 else:
-                    logger.warning(f"Executor: BLOCKED unknown package '{pkg_name}' — not found on PyPI")
-            except Exception:
-                # Network error or package not found — skip it
-                logger.warning(f"Executor: BLOCKED unverified package '{pkg_name}' — PyPI check failed")
+                    pkg_name = (
+                        dep.split(">=")[0].split("<=")[0].split("==")[0]
+                        .split("~=")[0].split("[")[0].split("<")[0]
+                        .split(">")[0].split("!=")[0].strip()
+                    )
+                    msg = (
+                        f"Executor: BLOCKED '{pkg_name}' at layer={result.layer} — "
+                        f"{result.reason}"
+                    )
+                    if result.suggestion:
+                        msg += f" Did you mean '{result.suggestion}'?"
+                    logger.warning(msg)
 
         if len(verified_deps) < len(deps):
             blocked = len(deps) - len(verified_deps)
@@ -728,7 +775,90 @@ class ExecutorAgent(BaseAgent):
             install_result.install_success = False
             install_result.install_stderr = str(e)
 
+        # ── Session 3: post-install security net ─────────────────────────
+        # guarddog is noisy (typosquat heuristics fire on lots of legit
+        # packages), so we run it as a warning-only pass.  pip-audit is
+        # authoritative (OSV + PyPA advisory-db); a FAIL here blocks the
+        # install because the user asked for a vulnerable version.
+        if install_result.install_success:
+            self._post_install_guarddog(verified_deps)
+            audit_passed = self._post_install_pip_audit(req_file)
+            if not audit_passed:
+                install_result.install_success = False
+                install_result.install_stderr = (
+                    (install_result.install_stderr or "")
+                    + "\npip-audit: vulnerable dependencies detected (see log)"
+                )
+
         return install_result
+
+    def _post_install_guarddog(self, verified_deps: list[str]) -> None:
+        """Run ``guarddog pypi verify`` on each verified package.
+
+        Warning-only — typosquat-detection is heuristic and fires on
+        legitimate names too often to block on.  Output is logged at
+        WARNING so a human can notice but the build proceeds.  Missing
+        guarddog CLI → silently skipped.
+        """
+        import shutil as _shutil
+        guarddog = _shutil.which("guarddog")
+        if guarddog is None:
+            logger.debug("guarddog not on PATH; skipping typosquat check")
+            return
+        for dep in verified_deps:
+            pkg = (
+                dep.split(">=")[0].split("<=")[0].split("==")[0]
+                .split("~=")[0].split("[")[0].split("<")[0]
+                .split(">")[0].split("!=")[0].strip()
+            )
+            if not pkg:
+                continue
+            try:
+                proc = subprocess.run(
+                    [guarddog, "pypi", "verify", pkg],
+                    capture_output=True, text=True, timeout=30,
+                )
+            except (subprocess.TimeoutExpired, OSError) as e:
+                logger.debug("guarddog timed out/failed on %s: %s", pkg, e)
+                continue
+            # guarddog exits 0 even when findings exist; findings land
+            # on stdout as JSON.  We just surface non-empty output.
+            if (proc.stdout or "").strip():
+                logger.warning(
+                    "guarddog: potential typosquat signal on %s: %s",
+                    pkg, proc.stdout.strip()[:400],
+                )
+
+    def _post_install_pip_audit(self, req_file: Path) -> bool:
+        """Run ``pip-audit --strict -r requirements.txt``.
+
+        Returns True if no vulnerabilities found or pip-audit isn't
+        installed (no gate if the tool is missing — fail-open is the
+        right call for "extra" security layers).  Returns False only
+        when pip-audit finds a known CVE in a pinned dep.
+        """
+        import shutil as _shutil
+        pip_audit = _shutil.which("pip-audit")
+        if pip_audit is None:
+            logger.debug("pip-audit not on PATH; skipping CVE check")
+            return True
+        try:
+            proc = subprocess.run(
+                [pip_audit, "--strict", "-r", str(req_file)],
+                capture_output=True, text=True, timeout=60,
+            )
+        except (subprocess.TimeoutExpired, OSError) as e:
+            logger.warning("pip-audit timed out/failed: %s — continuing", e)
+            return True
+        if proc.returncode == 0:
+            logger.info("pip-audit: no known vulnerabilities in requirements.txt")
+            return True
+        # Non-zero exit → vulnerabilities found.  Log details and block.
+        logger.error(
+            "pip-audit BLOCKED install: vulnerabilities found — %s",
+            (proc.stdout + proc.stderr)[:800],
+        )
+        return False
 
     def _verify_typescript(self, tmp: Path, entry_points: list[str]) -> ExecutionResult:
         """Verify a TypeScript/Node.js project.
