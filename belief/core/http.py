@@ -62,6 +62,8 @@ DEFAULT_ALLOWED_DOMAINS: frozenset[str] = frozenset({
     # PyPI
     "pypi.org",
     "files.pythonhosted.org",
+    # Top-PyPI-packages corpus (hugovk, Apache 2.0 — weekly snapshot)
+    "hugovk.github.io",
     # Stack Exchange / Overflow
     "api.stackexchange.com",
     # Telegram (optional notifications)
@@ -331,6 +333,40 @@ def post_form_sync(
         return 0
 
 
+def get_bytes_sync(
+    url: str,
+    *,
+    timeout: float = 30.0,
+    headers: Optional[dict] = None,
+    allowed_domains: Optional[frozenset[str]] = None,
+) -> Optional[bytes]:
+    """Synchronous GET returning the response body as bytes, or None on error.
+
+    Used for one-shot corpus / blob downloads where the caller just wants
+    the raw bytes (e.g. package_validator refreshing the top-15k PyPI
+    corpus). Centralised here so one-shot fetch callers don't have to
+    construct their own ``httpx.Client`` and re-implement error handling.
+
+    Domain allowlist enforcement mirrors :class:`BreakerAsyncClient` —
+    pass ``allowed_domains=DEFAULT_ALLOWED_DOMAINS`` to block unexpected
+    outbound HTTP.  ``None`` (default) is unrestricted, matching the
+    other sync helpers.
+    """
+    if allowed_domains is not None:
+        host = (urlparse(url).hostname or "").lower().split(":")[0]
+        if host not in allowed_domains:
+            raise ValueError(
+                f"Outbound HTTP blocked: '{host}' is not in the allowed domain list."
+            )
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(url, headers=headers or {}, follow_redirects=True)
+            resp.raise_for_status()
+            return resp.content
+    except Exception:
+        return None
+
+
 __all__ = [
     "BreakerAsyncClient",
     "BreakerConfig",
@@ -338,6 +374,7 @@ __all__ = [
     "RetryConfig",
     "conditional_get",
     "get_async_client",
+    "get_bytes_sync",
     "head_sync",
     "post_form_sync",
 ]

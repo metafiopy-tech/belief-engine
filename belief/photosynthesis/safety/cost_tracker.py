@@ -1,15 +1,28 @@
 """SQLite-backed cost tracker + BreakerAnthropic wrapper.
 
-**Scope: Photosynthesis pipeline only.**
+**Scope: Photosynthesis daemon only.**
 
 This module is the spend-tracking and circuit-breaker layer for the
-*scheduled goal-synthesis* subsystem (belief/photosynthesis/).  It is
-NOT part of the build-pipeline LLM dispatcher.  Build-pipeline agents
-route all LLM calls through ``belief.llm.LLMClient`` + ``ModelRouter``.
+*scheduled goal-synthesis* subsystem (``belief/photosynthesis/``).  It
+is NOT the build-pipeline LLM dispatcher — main-pipeline agents route
+all LLM calls through :mod:`belief.llm`, which has its own retry and
+per-role budget semantics.
+
+**Why two LLM dispatchers** (as of 2026-04-23): photosynthesis runs as
+a background daemon with a hard daily-budget cap reconciled against
+Anthropic's Admin API, and its per-call cost metering has to be
+authoritative — any drift makes the cap meaningless.  The main
+pipeline's dispatcher optimises for per-role latency and graceful
+degradation instead.  The two paths are tracked for eventual
+consolidation — see ``docs/architecture/http_boundary.md``.
 
 ``BreakerAnthropic`` is structurally typed (``HasMessagesCreate`` Protocol)
-so tests can inject fakes without installing ``anthropic``.  If you see
-this being used outside ``belief/photosynthesis/``, that is a bug.
+so tests can inject fakes without installing ``anthropic``.  The class
+is **instantiated only** from ``belief/photosynthesis/`` (it is the
+daemon's dispatcher); it may be **passed through** to downstream
+helpers such as :func:`belief.memory.library_inductor.promote_eligible`
+when the daemon drives them.  Instantiating it from the main pipeline
+is a bug.
 
 Source of truth for Photosynthesis spend. Anthropic's Admin API is
 eventually consistent; this file is always current.

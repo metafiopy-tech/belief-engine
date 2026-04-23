@@ -117,7 +117,10 @@ photosynthesis = [
     "pybreaker>=1.0",
     # HTTP / feeds
     "feedparser>=6.0",
-    "arxiv>=2.0",
+    # Session 0.5 (2026-04-23): dropped `arxiv>=2.0`.  The package uses
+    # a private requests.Session with no injection hook, which bypassed
+    # belief.core.http's retry / breaker / allowlist.  Now hitting
+    # export.arxiv.org directly via the shared BreakerAsyncClient.
     # Filter cascade (stage 0/2/3)
     "pybloom-live>=4.0",
     "scikit-learn>=1.5",
@@ -152,12 +155,11 @@ full = [
     "gitpython>=3.1.0",
     "unidiff>=0.7.0",
     "pytest-testmon>=2.0.0",
-    # photosynthesis
+    # photosynthesis (arxiv dropped in Session 0.5 — see [photosynthesis] extra)
     "apscheduler>=3.11,<4.0",
     "tenacity>=9.0",
     "pybreaker>=1.0",
     "feedparser>=6.0",
-    "arxiv>=2.0",
     "pybloom-live>=4.0",
     "scikit-learn>=1.5",
     "sentence-transformers>=3.0",

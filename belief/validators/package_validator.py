@@ -56,8 +56,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-import httpx
+import httpx  # type retained for signatures (AsyncClient param); transport is core_http
 
+from belief.core.http import (
+    DEFAULT_ALLOWED_DOMAINS,
+    BreakerAsyncClient,
+    get_async_client,
+    get_bytes_sync,
+)
 from belief.validators.import_to_package import resolve_import_to_package
 
 logger = logging.getLogger("belief.validators.package_validator")
@@ -181,15 +187,21 @@ def refresh_top_packages(
         age = time.time() - path.stat().st_mtime
         if age < _TOP_PACKAGES_REFRESH_AFTER_S:
             return False
-    try:
-        with httpx.Client(timeout=timeout_s, headers={"User-Agent": _USER_AGENT}) as c:
-            resp = c.get(_TOP_PYPI_URL)
-            resp.raise_for_status()
-            path.write_bytes(resp.content)
-            return True
-    except Exception as e:  # pragma: no cover - network
-        logger.warning("top-15k refresh failed: %s (keeping stale corpus if any)", e)
+    # Session 0.5: route outbound HTTP through belief.core.http so the
+    # User-Agent, timeout, and domain-allowlist semantics match every
+    # other fetch in the engine.  hugovk.github.io is allow-listed in
+    # DEFAULT_ALLOWED_DOMAINS for the top-15k corpus specifically.
+    body = get_bytes_sync(
+        _TOP_PYPI_URL,
+        timeout=timeout_s,
+        headers={"User-Agent": _USER_AGENT},
+        allowed_domains=DEFAULT_ALLOWED_DOMAINS,
+    )
+    if body is None:
+        logger.warning("top-15k refresh failed (keeping stale corpus if any)")
         return False
+    path.write_bytes(body)
+    return True
 
 
 def _load_top_packages(path: Path | None = None) -> frozenset[str]:
@@ -278,7 +290,7 @@ class _LookupCache:
 async def pypi_simple_exists(
     canonical: str,
     *,
-    client: httpx.AsyncClient | None = None,
+    client: "BreakerAsyncClient | httpx.AsyncClient | None" = None,
     timeout_s: float = 10.0,
 ) -> bool:
     """Query PyPI's Simple JSON endpoint for a single name.
@@ -286,19 +298,29 @@ async def pypi_simple_exists(
     Returns True on HTTP 200 (package exists), False on 404, raises
     on transport errors.  Uses the ``.json``-style Accept header so
     the payload is small.
+
+    Session 0.5: when no client is supplied, a
+    :class:`belief.core.http.BreakerAsyncClient` is constructed so
+    retry / circuit-breaker / domain-allowlist semantics apply.
+    Tests can still pass a raw ``httpx.AsyncClient`` (same surface
+    for the methods used here) to keep mocking simple.
     """
     url = f"{_PYPI_SIMPLE_BASE}/{canonical}/"
     headers = {"Accept": _PYPI_SIMPLE_ACCEPT, "User-Agent": _USER_AGENT}
 
-    close_after = False
     if client is None:
-        client = httpx.AsyncClient(timeout=timeout_s, headers=headers)
-        close_after = True
-    try:
+        # Session 0.5: default path goes through BreakerAsyncClient so
+        # we inherit the allowlist + tenacity retry + pybreaker breaker.
+        async with get_async_client(
+            timeout=timeout_s,
+            headers=headers,
+            allowed_domains=DEFAULT_ALLOWED_DOMAINS,
+        ) as c:
+            resp = await c.get(url, headers=headers)
+    else:
+        # Caller-supplied client (httpx.AsyncClient or BreakerAsyncClient
+        # — both expose the .get / .request methods used here).
         resp = await client.get(url, headers=headers)
-    finally:
-        if close_after:
-            await client.aclose()
 
     if resp.status_code == 200:
         return True

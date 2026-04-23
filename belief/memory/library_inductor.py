@@ -13,8 +13,16 @@ with a list of candidate nutrient ids, respecting a cap of 3
 promotions per invocation.
 
 Design:
-  - LLM client is injectable. Production supplies a BreakerAnthropic
-    wrapper; tests pass a fake that returns canned JSON.
+  - LLM client is injectable. The function is dispatcher-agnostic:
+    any object matching
+    :class:`~belief.photosynthesis.safety.cost_tracker.HasMessagesCreate`
+    works. The photosynthesis daemon passes
+    :class:`~belief.photosynthesis.safety.cost_tracker.BreakerAnthropic`
+    (anthropic SDK wrapped with per-call cost metering); main-pipeline
+    callers pass :mod:`belief.llm`'s equivalent; tests pass a fake
+    that returns canned JSON.  See ``docs/architecture/http_boundary.md``
+    for why two LLM dispatchers coexist and when that's expected to
+    consolidate.
   - Naming output validated against a strict Pydantic schema. On
     validation failure we retry once, then give up.
   - Promotion is atomic: either the tool is registered AND the

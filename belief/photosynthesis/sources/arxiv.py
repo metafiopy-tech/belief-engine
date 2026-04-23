@@ -1,13 +1,20 @@
-"""arXiv cs.AI / cs.CL / cs.SE harvester via the `arxiv` pip package.
+"""arXiv cs.AI / cs.CL / cs.SE harvester over :mod:`belief.core.http`.
 
-Cadence: 6h. The pip package enforces a `delay_seconds` between API hits
-(default 3s per request). For a single category sweep we make ~1 call per
-cycle, so rate limits are easy.
+Cadence: 6h, one query per cycle.  All HTTP goes through the shared
+``BreakerAsyncClient`` passed in by the photosynthesis daemon, which
+gives us tenacity retry, pybreaker circuit-breaker, and the domain
+allowlist enforcement that :mod:`belief.core.http` provides.
 
-If `arxiv` isn't installed (e.g. the `photosynthesis-test` extra was used
-instead of the full `photosynthesis` extra), we fall back to hitting the
-arXiv API directly over HTTP. That's slower and slightly more error-prone
-but keeps the source usable.
+**Session 0.5 (2026-04-23)**: the ``arxiv`` pip package used to be the
+preferred path, with HTTP as a fallback.  The package exposes only a
+private ``_session: requests.Session`` attribute and offers no public
+injection hook, so every call via the package bypassed the shared
+retry / breaker / allowlist stack.  The package's features we actually
+used — pagination and a 3s politeness delay — aren't load-bearing at a
+6h cadence with one request per cycle, so the package path was removed.
+If you hit arXiv outside this module (*please don't*), note that
+``export.arxiv.org`` is in the default allowlist and 3s politeness is
+on you.
 """
 
 from __future__ import annotations
@@ -38,10 +45,7 @@ async def harvest(
     since = last_ts or int(time.time() - 2 * 86400)
 
     cat_query = " OR ".join(f"cat:{c}" for c in config.arxiv_categories)
-    # Try the arxiv pip package first — it handles pagination and retries.
     try:
-        hits = _fetch_via_arxiv_package(cat_query, since)
-    except ImportError:
         hits = await _fetch_via_http(client, cat_query, since)
     except Exception:
         hits = []
@@ -71,38 +75,10 @@ async def harvest(
     return new_seeds
 
 
-def _fetch_via_arxiv_package(cat_query: str, since: int) -> list[dict]:
-    """Use the arxiv pip package. Raises ImportError if not installed."""
-    import arxiv  # type: ignore[import-untyped]
-
-    client = arxiv.Client(page_size=50, delay_seconds=3.0, num_retries=3)
-    search = arxiv.Search(
-        query=cat_query,
-        max_results=50,
-        sort_by=arxiv.SortCriterion.SubmittedDate,
-        sort_order=arxiv.SortOrder.Descending,
-    )
-    out: list[dict] = []
-    for result in client.results(search):
-        published = getattr(result, "published", None)
-        published_ts = int(published.timestamp()) if published else 0
-        if published_ts and published_ts <= since:
-            break
-        out.append(
-            {
-                "id": getattr(result, "entry_id", "") or result.get_short_id(),
-                "title": getattr(result, "title", "") or "",
-                "summary": getattr(result, "summary", "") or "",
-                "published_ts": published_ts,
-            }
-        )
-    return out
-
-
 async def _fetch_via_http(
     client: "BreakerAsyncClient", cat_query: str, since: int
 ) -> list[dict]:
-    """HTTP fallback using the public arXiv query API (Atom)."""
+    """HTTP query against ``export.arxiv.org/api/query`` (Atom feed)."""
     params = {
         "search_query": cat_query,
         "start": "0",
