@@ -11,6 +11,7 @@ Source: forge/llm.py + belief_call.py covenant gate concept
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -23,9 +24,233 @@ from pydantic import BaseModel
 
 from belief.config.models import Backend, ModelRole, ModelRouter
 from belief.config.local_cost_tracker import LocalCostTracker
+from belief.llm_errors import (
+    OllamaContextExceeded,
+    OllamaError,
+    OllamaPermanentError,
+    OllamaStreamStall,
+    OllamaTransientError,
+)
 from belief.models.artifacts import TokenUsage, _cost_usd
 
 logger = logging.getLogger("belief.llm")
+
+# ---------------------------------------------------------------------------
+# Session 1 (v3.2): bulletproof Ollama — optional dependencies
+# ---------------------------------------------------------------------------
+# tenacity drives the retry loop; pybreaker drives the per-model circuit
+# breaker. Both are declared in pyproject.toml as hard deps in v3.2, but
+# we import them defensively so a v3.1 install that predates the upgrade
+# still boots (the fallback paths disable retry/breaker gracefully).
+try:  # pragma: no cover - import-time toggle
+    import tenacity  # type: ignore
+    from tenacity import (
+        AsyncRetrying,
+        retry_if_exception_type,
+        stop_after_attempt,
+        wait_exponential_jitter,
+    )
+    _TENACITY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _TENACITY_AVAILABLE = False
+
+try:  # pragma: no cover - import-time toggle
+    import pybreaker  # type: ignore
+    _PYBREAKER_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYBREAKER_AVAILABLE = False
+
+
+# ---------------------------------------------------------------------------
+# ROLE_BUDGETS — per-role wall-clock ceiling (seconds)
+# ---------------------------------------------------------------------------
+# Replaces the single 300s cap that crashed the architect overnight.  The
+# budget is a wall-clock watchdog applied with asyncio.wait_for *outside*
+# retry and streaming — it is the worst-case time this role may consume
+# before the caller gives up.  Separate from inactivity_s (30s per chunk)
+# and tenacity retry (3 attempts).
+ROLE_BUDGETS: dict[str, float] = {
+    "intake": 60.0,
+    "research": 180.0,
+    "planner": 120.0,
+    "architect": 600.0,   # largest — most complex output
+    "builder": 300.0,
+    "debugger": 180.0,
+    "tester": 120.0,
+    "gap_analyst": 90.0,
+    "synthesizer": 180.0,
+    "validator": 90.0,
+    "latios": 60.0,
+    "executor": 60.0,
+    "default": 180.0,
+}
+
+
+# ---------------------------------------------------------------------------
+# GRACEFUL_DEGRADATION_CASCADE — model fallback chain for local mode
+# ---------------------------------------------------------------------------
+# When the primary local model's circuit breaker is open or its call
+# stalls past inactivity_s, the AsyncOllamaClient transparently retries
+# against the next resident model.  The cloud-only tier is handled by
+# LLMClient._call_with_role (it already tracks the fallback counter).
+GRACEFUL_DEGRADATION_CASCADE: list[str] = [
+    "qwen2.5-coder:14b",   # primary
+    "qwen2.5-coder:7b",    # fallback_1 (resident per OLLAMA_MAX_LOADED_MODELS=2)
+    # fallback_2 is cloud Anthropic Haiku — LLMClient handles that path.
+]
+
+
+# ---------------------------------------------------------------------------
+# Per-request Ollama option defaults that are NOT tied to a specific model
+# ---------------------------------------------------------------------------
+# These are the session-1 "prefix-cache enables + throughput" defaults
+# from the research report.  Applied in AsyncOllamaClient.generate() AFTER
+# per-model config (local_models.py), so a model-specific setting wins
+# when it's provided.  Caller-supplied values (max_tokens, temperature)
+# override everything.
+#
+# num_keep=512 is the most important entry — it pins the system-prompt
+# KV cache across requests, which combined with a byte-stable system
+# prefix gives the ~18x TTFT speedup the research report describes.
+# DO NOT lower num_keep below the longest system prompt length in tokens.
+_SESSION1_OPTION_DEFAULTS: dict[str, Any] = {
+    "num_gpu": 99,           # offload all layers to GPU on Metal
+    "num_thread": 6,         # M2 Air has 4 perf + 4 efficiency cores
+    "num_batch": 256,        # batch size for prompt eval
+    "num_keep": 512,         # KV-cache pin for system-prompt prefix
+    "mirostat": 0,           # greedy sampling — predictable throughput
+    # repeat_penalty is set by local_models.py per model; 1.05 is the
+    # session-1 default only when the model config doesn't specify one.
+}
+
+
+# ---------------------------------------------------------------------------
+# Circuit breaker registry — one breaker per model name
+# ---------------------------------------------------------------------------
+# A wedged 14B instance tripping the breaker must not block a healthy
+# 7B instance, so we key by model name rather than by base_url.
+_MODEL_BREAKERS: dict[str, Any] = {}
+
+
+def _get_breaker(model: str) -> Any | None:
+    """Lazy-allocate a pybreaker.CircuitBreaker for ``model``.
+
+    fail_max=5, reset_timeout=60s.  OllamaPermanentError and subclasses
+    are excluded so context-length-exceeded (which will never succeed
+    on retry) doesn't count toward the 5-failure trip threshold.
+    """
+    if not _PYBREAKER_AVAILABLE:
+        return None
+    b = _MODEL_BREAKERS.get(model)
+    if b is None:
+        b = pybreaker.CircuitBreaker(  # type: ignore[attr-defined]
+            fail_max=5,
+            reset_timeout=60,
+            exclude=[OllamaPermanentError, OllamaContextExceeded],
+            name=f"ollama:{model}",
+        )
+        _MODEL_BREAKERS[model] = b
+    return b
+
+
+def _breaker_is_open(model: str) -> bool:
+    b = _MODEL_BREAKERS.get(model)
+    if b is None:
+        return False
+    try:
+        return bool(getattr(b, "current_state", "closed") == "open")
+    except Exception:
+        return False
+
+
+def _breaker_record(model: str, exc: BaseException | None) -> None:
+    """Feed pybreaker a synthetic call reflecting the outcome.
+
+    ``exc=None`` → success (resets failure count).
+    ``exc`` → failure (may trip the breaker after fail_max).
+    Permanent errors are ignored per the breaker's exclude list.
+
+    Lazy-allocates the breaker via :func:`_get_breaker` so the first
+    observed failure is actually recorded (previously callers only hit
+    ``_MODEL_BREAKERS.get(model)`` which returned ``None`` until
+    someone else had already called ``_get_breaker``).
+    """
+    b = _get_breaker(model)
+    if b is None:
+        return
+    if exc is None:
+        try:
+            b.call(lambda: None)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        return
+    if isinstance(exc, (OllamaPermanentError, OllamaContextExceeded)):
+        return
+
+    def _raiser():
+        raise exc  # type: ignore[misc]
+
+    try:
+        b.call(_raiser)  # type: ignore[attr-defined]
+    except Exception:
+        # pybreaker re-raises the underlying error; we only wanted the
+        # side-effect on the breaker's state counter.
+        pass
+
+
+# ---------------------------------------------------------------------------
+# 4xx error classification helper
+# ---------------------------------------------------------------------------
+_CONTEXT_EXCEEDED_PHRASES = (
+    "context length",
+    "context window",
+    "context size",
+    "exceeds the model's",
+    "input is too long",
+    "too many tokens",
+    "tokens exceed",
+)
+
+
+def _classify_ollama_error(status_code: int, body_text: str) -> OllamaError:
+    """Map an HTTP response from Ollama to the right exception class.
+
+    The overnight logs showed a 400 with ``"exceeds context length"`` in
+    the body being caught as a generic httpx.HTTPStatusError and then
+    retried 3 times.  Classifying it here as :class:`OllamaContextExceeded`
+    (a :class:`OllamaPermanentError` subclass) means tenacity's
+    ``retry_if_exception_type`` predicate will skip it.
+    """
+    lower = (body_text or "").lower()
+    if any(p in lower for p in _CONTEXT_EXCEEDED_PHRASES):
+        return OllamaContextExceeded(
+            f"Ollama rejected request (HTTP {status_code}): context length exceeded. "
+            f"Body: {body_text[:300]}"
+        )
+    if status_code in (400, 404, 422):
+        return OllamaPermanentError(
+            f"Ollama rejected request (HTTP {status_code}): {body_text[:300]}"
+        )
+    # 5xx, 429, etc. are transient — retry may succeed.
+    return OllamaTransientError(
+        f"Ollama transient error (HTTP {status_code}): {body_text[:300]}"
+    )
+
+
+async def health_ok(base_url: str = "http://localhost:11434", timeout_s: float = 5.0) -> bool:
+    """5s GET /api/tags preflight.
+
+    Called by the graceful-degradation logic before each agent session
+    so a dead Ollama yields a clean "skip and log" path instead of a
+    hanging 300s connect.  Kept as a module-level helper so callers
+    outside LLMClient (e.g., the ``belief models`` CLI) can reuse it.
+    """
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=timeout_s) as client:
+            r = await client.get("/api/tags")
+            return r.status_code == 200
+    except Exception:
+        return False
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -59,43 +284,72 @@ def _estimate_tokens(text: str) -> int:
 
 
 class AsyncOllamaClient:
-    """Async Ollama backend. Matches the path LLMClient already uses.
+    """Async Ollama backend — Session 1 (v3.2) hardened edition.
 
-    Session 6 Task 1 shows a sync OllamaClient — we keep the same public
-    surface (generate / is_available) but use httpx.AsyncClient because
-    the rest of belief.llm is already async. LLMClient._call_with_role
-    is the dispatch point.
+    Replaces the fragile single-timeout POST call that crashed the
+    architect with httpx.ReadTimeout overnight.  Public surface is
+    unchanged so LLMClient._call_with_role doesn't need to learn new
+    tricks: ``generate()``, ``is_available()``, ``close()``.
 
-    Validation-phase Session 1 additions:
-      - keep_alive: tell Ollama to keep the model resident between calls.
-        Avoids re-loading the 14B weights on every agent hop (saves
-        ~3-5s per call on MacBook Air M2).
-      - num_ctx: pin the context window so Ollama doesn't re-allocate
-        KV cache between calls with different prompt sizes.
-      - Identical system prompts across calls in a build get prefix-
-        cached by Ollama automatically; we make sure that actually
-        happens by keeping system/user separation stable.
+    Three principles from the research report drive the rearchitecture:
+
+    1. **Streaming with per-token inactivity watchdog.**  We POST to
+       ``/api/chat`` with ``stream=true`` and iterate NDJSON chunks,
+       wrapping each ``__anext__`` in ``asyncio.wait_for(inactivity_s)``.
+       A wedged runner that emits no chunks for ``inactivity_s`` raises
+       :class:`OllamaStreamStall` (transient → retryable) and POSTs
+       ``{"keep_alive": 0}`` to ``/api/generate`` to force-unload the
+       runner before the retry sees it.
+
+    2. **Error classification.**  4xx responses whose body mentions
+       "context length" or "exceeds" raise
+       :class:`OllamaContextExceeded` (permanent → not retried).  Other
+       4xx raise :class:`OllamaPermanentError`.  5xx/429 raise
+       :class:`OllamaTransientError`.  tenacity's retry predicate only
+       fires on transient errors.
+
+    3. **Per-role wall-clock ceiling.**  Instead of a single 300s cap
+       for all calls, each call selects a budget from
+       :data:`ROLE_BUDGETS` based on the ``role`` arg.  Architect gets
+       600s, executor gets 60s.  ``asyncio.wait_for`` is the outer gate
+       around retry + streaming.
+
+    Streaming graceful degradation
+    ------------------------------
+    If the underlying ``httpx.AsyncClient`` doesn't expose ``stream()``
+    (e.g., a test's monkeypatched fake that only supports ``post()``),
+    :meth:`generate` falls back to a non-streaming POST and returns
+    the same Anthropic-shaped dict.  This keeps the existing
+    tests/test_local_routing.py fakes working without changes.
 
     Env var overrides (read on construction):
-      BELIEF_OLLAMA_KEEP_ALIVE  — e.g. "30m", "1h", "-1" (forever).
-                                  Default: "30m".
-      BELIEF_OLLAMA_NUM_CTX     — integer token window. Default: 8192.
+      BELIEF_OLLAMA_KEEP_ALIVE     — "30m", "1h", "-1" (forever). Default: "30m".
+      BELIEF_OLLAMA_NUM_CTX        — integer token window.         Default: 8192.
+      BELIEF_OLLAMA_INACTIVITY_S   — per-chunk watchdog in seconds. Default: 30.
+      BELIEF_OLLAMA_STREAM         — "0" to force non-streaming.    Default: streaming.
     """
 
     _DEFAULT_KEEP_ALIVE = "30m"
     _DEFAULT_NUM_CTX = 8192
+    _DEFAULT_INACTIVITY_S = 30.0
 
     def __init__(
         self,
         *,
         model: str = "qwen2.5-coder:14b",
         base_url: str = "http://localhost:11434",
-        timeout: float = 300.0,
+        timeout: float | httpx.Timeout | None = None,
         keep_alive: str | None = None,
         num_ctx: int | None = None,
+        inactivity_s: float | None = None,
+        stream: bool | None = None,
     ) -> None:
         self.model = model
         self.base_url = base_url.rstrip("/")
+        # ``timeout=None`` → Session-1 default (connect=10, read=None, write=10,
+        # pool=10). read=None delegates stall detection to the per-chunk
+        # inactivity watchdog. Passing a float preserves back-compat with
+        # callers that want a hard read timeout.
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
@@ -129,6 +383,28 @@ class AsyncOllamaClient:
         else:
             self.num_ctx = int(model_config.get("num_ctx", self._DEFAULT_NUM_CTX))
 
+        # Inactivity watchdog — per-chunk timeout inside the streaming loop.
+        env_inactivity = os.environ.get("BELIEF_OLLAMA_INACTIVITY_S", "").strip()
+        if inactivity_s is not None:
+            self.inactivity_s = float(inactivity_s)
+        elif env_inactivity:
+            try:
+                self.inactivity_s = float(env_inactivity)
+            except ValueError:
+                self.inactivity_s = self._DEFAULT_INACTIVITY_S
+        else:
+            self.inactivity_s = self._DEFAULT_INACTIVITY_S
+
+        # Stream toggle — env var BELIEF_OLLAMA_STREAM=0 disables streaming
+        # entirely (useful on networks where chunked transfer is flaky).
+        env_stream = os.environ.get("BELIEF_OLLAMA_STREAM", "").strip()
+        if stream is not None:
+            self._stream = bool(stream)
+        elif env_stream in {"0", "false", "False", "no"}:
+            self._stream = False
+        else:
+            self._stream = True
+
         # Additional sampling defaults from the model config — applied
         # in generate() below as Ollama `options`.
         self._default_num_predict = int(model_config.get("num_predict", 4096))
@@ -137,14 +413,27 @@ class AsyncOllamaClient:
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
+            if self._timeout is None:
+                # Session-1 default: unbounded read so the per-chunk
+                # watchdog owns stall detection; short connect/write
+                # so a dead Ollama fails in <10s instead of 300.
+                timeout_arg: Any = httpx.Timeout(
+                    connect=10.0, read=None, write=10.0, pool=10.0
+                )
+            else:
+                timeout_arg = self._timeout
             self._client = httpx.AsyncClient(
-                base_url=self.base_url, timeout=self._timeout
+                base_url=self.base_url, timeout=timeout_arg
             )
         return self._client
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def generate(
         self,
@@ -154,53 +443,223 @@ class AsyncOllamaClient:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         model: str | None = None,
+        role: str = "default",
+        budget_s: float | None = None,
     ) -> dict[str, Any]:
-        """POST /api/chat. Returns an Anthropic-shaped response dict.
+        """POST /api/chat with streaming + watchdog + retry + breaker.
 
-        Shape matches what LLMClient._call returns, so
-        generate_text / generate_structured can unwrap uniformly:
+        Returns an Anthropic-shaped response dict identical in shape to
+        the v3.1 implementation so LLMClient doesn't need to learn new
+        tricks::
 
-          {"content": [{"text": "..."}],
+          {"content": [{"type": "text", "text": "..."}],
            "usage": {"input_tokens": int, "output_tokens": int,
                      "cache_read_input_tokens": 0,
-                     "cache_creation_input_tokens": 0}}
+                     "cache_creation_input_tokens": 0},
+           "_backend": "ollama"}
+
+        Args:
+            system:        system prompt (kept byte-stable for prefix cache)
+            user:          user message
+            max_tokens:    maps to Ollama ``num_predict``
+            temperature:   sampling temperature
+            model:         override default model for this call
+            role:          selects budget from :data:`ROLE_BUDGETS`
+            budget_s:      explicit wall-clock ceiling (overrides role lookup)
+        """
+        # Wall-clock budget — outer gate.  Per-role defaults via
+        # ROLE_BUDGETS; callers may pass an explicit budget_s override.
+        if budget_s is None:
+            budget_s = ROLE_BUDGETS.get(role, ROLE_BUDGETS["default"])
+
+        target_model = model or self.model
+
+        # Fail fast if the breaker is already open for this model.
+        if _breaker_is_open(target_model):
+            raise OllamaTransientError(
+                f"circuit breaker open for {target_model} (>=5 recent failures)"
+            )
+
+        async def _one_attempt() -> dict[str, Any]:
+            return await self._generate_once(
+                system=system,
+                user=user,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                target_model=target_model,
+            )
+
+        async def _retry_wrapper() -> dict[str, Any]:
+            if not _TENACITY_AVAILABLE:
+                # No tenacity — single attempt, with breaker accounting.
+                try:
+                    out = await _one_attempt()
+                    _breaker_record(target_model, None)
+                    return out
+                except Exception as e:
+                    _breaker_record(target_model, e)
+                    raise
+
+            # tenacity: retry transient + httpx read/connect errors only.
+            retry_predicate = retry_if_exception_type(
+                (OllamaTransientError, httpx.ReadError, httpx.ConnectError)
+            )
+            async_retrying = AsyncRetrying(
+                stop=stop_after_attempt(3),
+                wait=wait_exponential_jitter(initial=1, max=20),
+                retry=retry_predicate,
+                reraise=True,
+            )
+            last_exc: BaseException | None = None
+            try:
+                async for attempt in async_retrying:
+                    with attempt:
+                        try:
+                            result = await _one_attempt()
+                            _breaker_record(target_model, None)
+                            return result
+                        except Exception as e:
+                            last_exc = e
+                            _breaker_record(target_model, e)
+                            raise
+            except tenacity.RetryError as re:  # type: ignore[attr-defined]
+                # Shouldn't hit this because reraise=True, but guard anyway.
+                if last_exc is not None:
+                    raise last_exc
+                raise OllamaTransientError("retries exhausted") from re
+            # Unreachable; tenacity returns via the attempt block above.
+            raise OllamaTransientError("retries exhausted")
+
+        try:
+            return await asyncio.wait_for(_retry_wrapper(), timeout=budget_s)
+        except asyncio.TimeoutError as e:
+            _breaker_record(target_model, OllamaTransientError("role budget exceeded"))
+            raise OllamaTransientError(
+                f"role={role} budget of {budget_s}s exhausted on model={target_model}"
+            ) from e
+
+    async def is_available(self) -> bool:
+        """True iff Ollama's HTTP endpoint responds to /api/tags.
+
+        Tolerant of the monkeypatched fakes used in tests/test_local_routing.py:
+        we only use ``client.get`` which every fake supports.
+        """
+        try:
+            client = self._get_client()
+            r = await client.get("/api/tags")
+            return r.status_code == 200
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
+            return False
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Internal — one-attempt call, streams when possible
+    # ------------------------------------------------------------------
+
+    async def _generate_once(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int,
+        temperature: float,
+        target_model: str,
+    ) -> dict[str, Any]:
+        """A single /api/chat call, chosen to stream or POST.
+
+        This is the body of one tenacity attempt.  Raises
+        :class:`OllamaTransientError` / :class:`OllamaPermanentError` /
+        :class:`OllamaStreamStall` / :class:`OllamaContextExceeded` —
+        tenacity's retry predicate decides which propagate.
         """
         client = self._get_client()
-        options: dict[str, Any] = {
-            "temperature": float(temperature),
-            "num_predict": int(max_tokens),
-            # Pinning num_ctx stabilises Ollama's KV-cache so the
-            # system-prompt prefix is reused across calls in a build.
-            "num_ctx": int(self.num_ctx),
-        }
-        # repeat_penalty is opt-in per model (14B wants 1.1; 7B leaves
-        # it at Ollama's default). Only inject when the model config
-        # specifies one.
+
+        # Build options, layering: session-1 defaults → model config → per-call.
+        # Caller's max_tokens and temperature always win.
+        options: dict[str, Any] = dict(_SESSION1_OPTION_DEFAULTS)
+        options["num_ctx"] = int(self.num_ctx)
+        options["num_predict"] = int(max_tokens)
+        options["temperature"] = float(temperature)
         if self._default_repeat_penalty is not None:
             options["repeat_penalty"] = float(self._default_repeat_penalty)
+        else:
+            options.setdefault("repeat_penalty", 1.05)
 
+        payload_messages = [
+            {"role": "system", "content": system or ""},
+            {"role": "user", "content": user},
+        ]
+
+        # Stream-capable httpx.AsyncClient has .stream(); FakeClient in the
+        # existing hermetic tests doesn't.  Fall back to .post() when stream
+        # is disabled or unavailable.
+        use_stream = self._stream and hasattr(client, "stream")
+        if not use_stream:
+            return await self._generate_post(
+                client, target_model, payload_messages, options
+            )
+
+        return await self._generate_stream(
+            client, target_model, payload_messages, options
+        )
+
+    async def _generate_post(
+        self,
+        client: Any,
+        target_model: str,
+        messages: list[dict[str, str]],
+        options: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Non-streaming POST path — used when streaming is disabled or
+        the client (a test fake) doesn't expose ``.stream()``.
+
+        Keeps byte-for-byte compatibility with the v3.1 response shape.
+        """
         payload = {
-            "model": model or self.model,
-            "messages": [
-                {"role": "system", "content": system or ""},
-                {"role": "user", "content": user},
-            ],
+            "model": target_model,
+            "messages": messages,
             "stream": False,
-            # keep_alive keeps the model resident between calls within a
-            # build — same 14B weights across PLAN/BUILD/DEBUG instead of
-            # a cold reload each time.
             "keep_alive": self.keep_alive,
             "options": options,
         }
-        resp = await client.post("/api/chat", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        # Ollama returns {"message": {"role": "assistant", "content": "..."}}
-        text = (data.get("message") or {}).get("content", "") or ""
+        try:
+            resp = await client.post("/api/chat", json=payload)
+        except (httpx.ReadError, httpx.ConnectError) as e:
+            # Transient network error — let tenacity retry.
+            raise OllamaTransientError(f"network error: {e}") from e
+        except httpx.TimeoutException as e:
+            raise OllamaTransientError(f"timeout: {e}") from e
 
-        # Ollama sends prompt_eval_count + eval_count when available; fall
-        # back to character-based estimates.
-        in_tokens = int(data.get("prompt_eval_count") or _estimate_tokens(f"{system} {user}"))
+        # Classify HTTP status before trusting the JSON body.
+        status_code = getattr(resp, "status_code", 200)
+        if 400 <= status_code < 600:
+            body_text = ""
+            try:
+                body_text = resp.text if hasattr(resp, "text") else ""
+            except Exception:
+                body_text = ""
+            raise _classify_ollama_error(status_code, body_text)
+
+        # raise_for_status on fakes is a no-op; on real httpx it's safe
+        # because we already handled 4xx/5xx above.
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            body = getattr(e.response, "text", "") if hasattr(e, "response") else ""
+            raise _classify_ollama_error(status_code, body) from e
+
+        data = resp.json()
+        text = (data.get("message") or {}).get("content", "") or ""
+        system_txt = next(
+            (m["content"] for m in messages if m.get("role") == "system"), ""
+        )
+        user_txt = next(
+            (m["content"] for m in messages if m.get("role") == "user"), ""
+        )
+        in_tokens = int(
+            data.get("prompt_eval_count") or _estimate_tokens(f"{system_txt} {user_txt}")
+        )
         out_tokens = int(data.get("eval_count") or _estimate_tokens(text))
         return {
             "content": [{"type": "text", "text": text}],
@@ -213,16 +672,182 @@ class AsyncOllamaClient:
             "_backend": "ollama",
         }
 
-    async def is_available(self) -> bool:
-        """True iff Ollama's HTTP endpoint responds to /api/tags."""
+    async def _generate_stream(
+        self,
+        client: Any,
+        target_model: str,
+        messages: list[dict[str, str]],
+        options: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Streaming NDJSON path with per-chunk inactivity watchdog.
+
+        Ollama's /api/chat with ``stream=true`` emits a stream of
+        NDJSON objects.  Each one has ``message.content`` (partial
+        delta) plus a ``done: true`` terminator object carrying the
+        final token counts.
+
+        We wrap each ``aiter.__anext__()`` in ``asyncio.wait_for`` with
+        ``self.inactivity_s`` so a wedged runner that sends no chunks
+        for 30 seconds raises :class:`OllamaStreamStall` instead of
+        hanging for 300.  On stall we POST ``{"keep_alive": 0}`` to
+        ``/api/generate`` with the same model name — that forces Ollama
+        to unload the wedged runner so the next retry hits a fresh one.
+        """
+        payload = {
+            "model": target_model,
+            "messages": messages,
+            "stream": True,
+            "keep_alive": self.keep_alive,
+            "options": options,
+        }
+
+        chunks: list[str] = []
+        prompt_eval_count = 0
+        eval_count = 0
+
         try:
-            client = self._get_client()
-            r = await client.get("/api/tags")
-            return r.status_code == 200
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
-            return False
-        except Exception:
-            return False
+            async with client.stream(
+                "POST", "/api/chat", json=payload
+            ) as response:
+                status_code = response.status_code
+                if 400 <= status_code < 600:
+                    # Read the body so we can classify it.
+                    body_bytes = b""
+                    try:
+                        async for chunk in response.aiter_bytes():
+                            body_bytes += chunk
+                            if len(body_bytes) > 4096:
+                                break
+                    except Exception:
+                        pass
+                    raise _classify_ollama_error(
+                        status_code, body_bytes.decode(errors="replace")
+                    )
+
+                aiter = response.aiter_lines()
+                while True:
+                    try:
+                        line = await asyncio.wait_for(
+                            aiter.__anext__(),
+                            timeout=self.inactivity_s,
+                        )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError as e:
+                        logger.warning(
+                            "Ollama stream stalled after %.0fs on %s — "
+                            "requesting runner unload",
+                            self.inactivity_s,
+                            target_model,
+                        )
+                        # Best-effort runner unload.  We don't let this
+                        # block the stall propagation.
+                        try:
+                            await asyncio.wait_for(
+                                client.post(
+                                    "/api/generate",
+                                    json={"model": target_model, "keep_alive": 0},
+                                ),
+                                timeout=5.0,
+                            )
+                        except Exception as unload_err:
+                            logger.debug("keep_alive=0 unload failed: %s", unload_err)
+                        raise OllamaStreamStall(
+                            f"no chunks from {target_model} in {self.inactivity_s}s",
+                            inactivity_s=self.inactivity_s,
+                            model=target_model,
+                        ) from e
+
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        logger.debug("skipping non-JSON stream line: %r", line[:80])
+                        continue
+                    msg = obj.get("message") or {}
+                    if msg.get("content"):
+                        chunks.append(msg["content"])
+                    if obj.get("done"):
+                        prompt_eval_count = int(obj.get("prompt_eval_count") or 0)
+                        eval_count = int(obj.get("eval_count") or 0)
+                        break
+        except (httpx.ReadError, httpx.ConnectError) as e:
+            raise OllamaTransientError(f"network error during stream: {e}") from e
+        except httpx.TimeoutException as e:
+            raise OllamaTransientError(f"timeout during stream: {e}") from e
+
+        text = "".join(chunks)
+        system_txt = next(
+            (m["content"] for m in messages if m.get("role") == "system"), ""
+        )
+        user_txt = next(
+            (m["content"] for m in messages if m.get("role") == "user"), ""
+        )
+        in_tokens = prompt_eval_count or _estimate_tokens(f"{system_txt} {user_txt}")
+        out_tokens = eval_count or _estimate_tokens(text)
+        return {
+            "content": [{"type": "text", "text": text}],
+            "usage": {
+                "input_tokens": int(in_tokens),
+                "output_tokens": int(out_tokens),
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            },
+            "_backend": "ollama",
+        }
+
+
+# ---------------------------------------------------------------------------
+# Graceful degradation helper
+# ---------------------------------------------------------------------------
+
+
+async def graceful_degradation_cascade(
+    *,
+    system: str,
+    user: str,
+    max_tokens: int,
+    temperature: float,
+    role: str,
+    base_url: str = "http://localhost:11434",
+    cascade: list[str] | None = None,
+) -> tuple[dict[str, Any], str]:
+    """Try models in :data:`GRACEFUL_DEGRADATION_CASCADE` until one works.
+
+    Returns ``(response_dict, model_used)``.  Raises :class:`OllamaError`
+    if every model in the cascade fails.  The cloud-Anthropic tier is
+    NOT exercised here — that's :class:`LLMClient._call_with_role`'s
+    responsibility because only it has access to the router state.
+    """
+    models = cascade if cascade is not None else GRACEFUL_DEGRADATION_CASCADE
+    last_err: BaseException | None = None
+    for m in models:
+        client = AsyncOllamaClient(model=m, base_url=base_url)
+        try:
+            out = await client.generate(
+                system=system,
+                user=user,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                role=role,
+            )
+            await client.close()
+            return out, m
+        except OllamaError as e:
+            logger.warning(
+                "graceful_degradation_cascade: %s failed (%s); advancing",
+                m,
+                type(e).__name__,
+            )
+            last_err = e
+            try:
+                await client.close()
+            except Exception:
+                pass
+    if last_err is not None:
+        raise last_err
+    raise OllamaError("graceful_degradation_cascade: empty cascade")
 
 
 class LLMClient:
@@ -313,20 +938,48 @@ class LLMClient:
                     if msg.get("role") == "user":
                         user_prompt = msg.get("content", "")
                         break
-                data = await ollama.generate(
-                    system=system,
-                    user=user_prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
-                usage = data.get("usage", {})
-                LOCAL_TRACKER.record_call(
-                    model=self.router.local_model,
-                    prompt_tokens=int(usage.get("input_tokens", 0)),
-                    completion_tokens=int(usage.get("output_tokens", 0)),
-                    role=role_str,
-                )
-                return data, self.router.local_model, "local"
+                try:
+                    data = await ollama.generate(
+                        system=system,
+                        user=user_prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        # Session 1: thread the role through so the
+                        # per-role budget (ROLE_BUDGETS) fires instead
+                        # of the single 300s cap that crashed the
+                        # architect overnight.
+                        role=role_str,
+                    )
+                except OllamaError as e:
+                    # Classified Ollama failure — log, bump the
+                    # fallback counter, and let the cloud path take
+                    # over.  Permanent errors (context exceeded) are
+                    # logged at WARNING because the cloud call is
+                    # unlikely to succeed either, but we still try.
+                    log_level = (
+                        logging.ERROR
+                        if isinstance(e, OllamaPermanentError)
+                        else logging.WARNING
+                    )
+                    logger.log(
+                        log_level,
+                        "Ollama %s on role=%s: %s; falling back to cloud",
+                        type(e).__name__,
+                        role_str,
+                        e,
+                    )
+                    self.router.record_fallback()
+                    LOCAL_TRACKER.record_fallback()
+                    backend = Backend.CLOUD
+                else:
+                    usage = data.get("usage", {})
+                    LOCAL_TRACKER.record_call(
+                        model=self.router.local_model,
+                        prompt_tokens=int(usage.get("input_tokens", 0)),
+                        completion_tokens=int(usage.get("output_tokens", 0)),
+                        role=role_str,
+                    )
+                    return data, self.router.local_model, "local"
 
         # Cloud path (default or fallback)
         data = await self._call(

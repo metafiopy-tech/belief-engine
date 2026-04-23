@@ -23,6 +23,7 @@ from belief.config.models import ModelRole, ModelRouter
 from belief.llm import _usage_ctx
 from belief.models.artifacts import TokenUsage
 from belief.models.state import Phase, UnifiedState
+from belief.thermal import async_thermal_gate
 
 logger = logging.getLogger("belief.agents")
 
@@ -65,7 +66,19 @@ class BaseAgent(ABC):
 
         Wraps run() with state hydration, timing, cost tracking,
         polarity updates, and crash protection.
+
+        Session 1 (v3.2): a thermal-gate preflight sleeps proportionally
+        to macOS thermal pressure before the agent starts.  No-op on
+        non-macOS.  The sleep is NOT attributed to the agent's timing
+        because the gate runs before ``_t0`` — it's system-level
+        overhead, not agent work.
         """
+        # Thermal gate — never allow this to fail the agent.
+        try:
+            await async_thermal_gate()
+        except Exception as thermal_err:  # pragma: no cover
+            logger.debug("thermal_gate skipped: %s", thermal_err)
+
         _t0 = time.monotonic()
         agent_log = logging.getLogger(f"belief.agents.{self.name.lower()}")
 
