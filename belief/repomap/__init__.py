@@ -60,6 +60,20 @@ _DEFAULT_CACHE_DIR = Path.home() / ".belief-engine" / "treesitter_cache"
 _CHARS_PER_TOKEN_APPROX = 4
 
 
+def _canonical_fname(path: Path, root: Path) -> str:
+    """Relative-to-root fname, resilient to macOS /private/var vs /var
+    symlink expansion.  Falls back to the absolute resolved path.
+    """
+    import os
+    rp = os.path.realpath(str(path))
+    rr = os.path.realpath(str(root))
+    if rp.startswith(rr + os.sep):
+        return rp[len(rr) + 1:]
+    if rp == rr:
+        return ''
+    return rp
+
+
 # ---------------------------------------------------------------------------
 # Parsed symbol record
 # ---------------------------------------------------------------------------
@@ -155,7 +169,7 @@ class RepoMap:
             logger.debug("tree-sitter parse failed for %s: %s", path, e)
             return
 
-        fname = str(path.relative_to(self.root) if path.is_relative_to(self.root) else path)
+        fname = _canonical_fname(path, self.root)
 
         def _line_text(byte_start: int) -> str:
             # Find the line boundaries around byte_start.
@@ -277,7 +291,7 @@ class RepoMap:
         G: Any = nx.DiGraph()
         # Every file is a node.
         for p in files:
-            fname = str(p.relative_to(self.root) if p.is_relative_to(self.root) else p)
+            fname = _canonical_fname(p, self.root)
             G.add_node(fname)
         # Every ref adds a weighted edge from the ref's file to each
         # file that defines a symbol of that name.
