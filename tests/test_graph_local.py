@@ -86,11 +86,33 @@ def test_cloud_pipeline_unaffected():
     assert not ({"research", "tester", "gap_analyst", "polarity_check", "decomposer"} & local_nodes)
 
 
-def test_route_after_executor_success_goes_to_synthesizer():
+def test_route_after_executor_success_goes_to_synthesizer(monkeypatch):
+    """Session 4 (v3.2): on success, the router decides polish vs skip.
+
+    With SYNTHESIZER_ROUTE_ENABLED=0 (router disabled — the opt-out
+    that matches pre-session-4 behaviour), success still routes to
+    synthesizer unconditionally.  With the router ENABLED (default)
+    and no polish triggers firing, success routes directly to
+    validator.  Both are valid; this test pins both.
+    """
     from belief.graph_local import _route_after_executor
 
+    # Router disabled → original behaviour.
+    monkeypatch.setenv("SYNTHESIZER_ROUTE_ENABLED", "0")
     state = {"execution_result": {"success": True}, "iteration": 0}
     assert _route_after_executor(state) == "synthesizer"
+
+    # Router enabled (default) on a clean state → skip to validator.
+    monkeypatch.setenv("SYNTHESIZER_ROUTE_ENABLED", "1")
+    state = {
+        "execution_result": {"success": True, "tests_failed": 0},
+        "iteration": 0,
+        "code_files": {"main.py": "print('ok')\n"},
+        "agent_timings": {"builder": 30.0},
+    }
+    # With no triggers firing (no tests failed, trivial code, under
+    # budget), the router sends success to validator and skips polish.
+    assert _route_after_executor(state) == "validator"
 
 
 def test_route_after_executor_failure_debugs():

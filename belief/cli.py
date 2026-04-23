@@ -436,6 +436,16 @@ async def run(
                     f"Deferred decomposer failed (non-fatal): {_decomposer_err}"
                 )
 
+        # ── Session 6 (v3.2): persist a BuildOutcome to the agent archive ─
+        # Fires for both successful and fail_fixable builds; hard failures
+        # are still recorded but filtered out on retrieval.  Never blocks
+        # the user — the call is wrapped in its own try/except internally.
+        try:
+            from belief.archive.persist import persist_build_outcome
+            persist_build_outcome(final_state)
+        except Exception as _archive_err:
+            logger.debug("archive persist top-level error: %s", _archive_err)
+
     else:
         print(f"\n  BUILD FAILED — no code files produced after {elapsed:.1f}s")
         for e in final_state.get("errors", []):
@@ -1068,8 +1078,70 @@ def _run_experiment_cmd(args) -> None:
         print(comparison_table(experiment_id))
         return
 
+    if action == "ablation-synth":
+        # Session 4: delegate to scripts/synthesizer_ablation.py via
+        # subprocess so the harness's env-var manipulation of the
+        # build pipeline is cleanly isolated from this CLI process.
+        import subprocess as _sp
+        import sys as _sys
+        from pathlib import Path as _Path
+        script = _Path(__file__).resolve().parent.parent / "scripts" / "synthesizer_ablation.py"
+        cmd: list[str] = [_sys.executable, str(script)]
+        if getattr(args, "report", False):
+            cmd.append("--report")
+        else:
+            cmd.extend(["--n", str(getattr(args, "n", 3))])
+            chs = getattr(args, "challenges", None)
+            if chs:
+                cmd.extend(["--challenges", *chs])
+        _sp.run(cmd, check=False)
+        return
+
     print(f"Unknown experiment action: {action!r}")
-    print("Try: belief experiment run | quick | report | longitudinal")
+    print("Try: belief experiment run | quick | report | longitudinal | ablation-synth")
+
+
+def _run_validator_cmd(args) -> None:
+    """Dispatch ``belief validator …`` sub-commands (Session 3/4)."""
+    action = getattr(args, "validator_action", None)
+    if action == "add-hallucination":
+        from belief.validators.package_validator import PackageValidator
+        validator = PackageValidator()
+        name = args.name
+        validator.add_hallucination(name)
+        print(f"Added '{name}' to the hallucination blocklist.")
+        return
+    print("Usage: belief validator add-hallucination <name>")
+
+
+def _run_archive_cmd(args) -> None:
+    """Dispatch ``belief archive …`` sub-commands (Session 6)."""
+    action = getattr(args, "archive_action", None)
+    if action == "inspect":
+        from belief.archive import AgentArchive
+        archive = AgentArchive()
+        size = archive.size()
+        print(f"Agent archive size: {size} builds")
+        if size == 0:
+            return
+        goal = getattr(args, "goal", None) or ""
+        top = int(getattr(args, "top", 5))
+        hits = archive.query_by_goal(goal or "build", k=top, verdicts=None)
+        print(f"Top {len(hits)} results"
+              + (f" for goal={goal!r}" if goal else " (ordered by semantic match to 'build')"))
+        for i, hit in enumerate(hits, start=1):
+            meta = hit.get("metadata") or {}
+            print(
+                f"  {i}. {hit['id']}  "
+                f"verdict={meta.get('verdict')}  "
+                f"score={float(meta.get('weighted_score') or 0):.2f}  "
+                f"U={float(meta.get('utility_score') or 0):.3f}"
+            )
+            g = (meta.get("goal") or "")[:120]
+            if g:
+                print(f"       goal: {g}")
+        return
+    print("Usage: belief archive inspect [--goal <goal>] [--top N]")
 
 
 def app():
@@ -1226,6 +1298,83 @@ def app():
         help="Show how performance changes over time as soil grows",
     )
 
+    # Session 4 (v3.2): synthesizer ablation harness
+    exp_ablate = exp_sub.add_parser(
+        "ablation-synth",
+        help="Run synthesizer A/B ablation (builder_only vs builder_plus_synth vs router)",
+    )
+    exp_ablate.add_argument(
+        "--n", type=int, default=3,
+        help="Runs per (challenge, condition) (default: 3)",
+    )
+    exp_ablate.add_argument(
+        "--challenges", nargs="*",
+        help="Challenge IDs (default: 10 tier-1/2 challenges)",
+    )
+    exp_ablate.add_argument(
+        "--report", action="store_true",
+        help="Print summary of existing runs and exit (no new builds)",
+    )
+
+    # Session 3 (v3.2) follow-up: validator CLI
+    validator_parser = subparsers.add_parser(
+        "validator",
+        help="Package validator utilities (hallucination blocklist, etc.)",
+    )
+    validator_sub = validator_parser.add_subparsers(dest="validator_action")
+    validator_add = validator_sub.add_parser(
+        "add-hallucination",
+        help="Append a package name to the known-hallucination blocklist",
+    )
+    validator_add.add_argument("name", help="Package name (will be canonicalised)")
+
+    # Session 6 (v3.2): agent archive inspection CLI
+    archive_parser = subparsers.add_parser(
+        "archive",
+        help="Inspect the DGM-style agent archive of past build outcomes",
+    )
+    archive_sub = archive_parser.add_subparsers(dest="archive_action")
+    archive_inspect = archive_sub.add_parser(
+        "inspect",
+        help="Show top-N highest-utility prior configurations for a goal",
+    )
+    archive_inspect.add_argument(
+        "--goal", help="Goal to query the archive for (omit for global top-N)",
+    )
+    archive_inspect.add_argument("--top", type=int, default=5)
+
+    # Session 7 (v3.2): tree-sitter + PageRank repo-map CLI
+    repomap_parser = subparsers.add_parser(
+        "repomap",
+        help="Print a PageRank-ranked symbol map of the project",
+    )
+    repomap_parser.add_argument(
+        "--root", default=".", help="Directory to walk (default: current dir)",
+    )
+    repomap_parser.add_argument(
+        "--query", help="Boost symbols containing this identifier in the ranking",
+    )
+    repomap_parser.add_argument("--top", type=int, default=2000,
+                                help="Max tokens to emit (default: 2000)")
+
+    # Session 8 (v3.2): covenant proposer review CLI
+    cov_parser = subparsers.add_parser(
+        "covenants",
+        help="Review / approve / reject auto-proposed covenant rules",
+    )
+    cov_sub = cov_parser.add_subparsers(dest="covenants_action")
+    cov_review = cov_sub.add_parser("review", help="List pending proposals")
+    cov_review.add_argument(
+        "--status", choices=["auto_pass", "auto_fail", "approved", "rejected", "all"],
+        default="all",
+    )
+    cov_approve = cov_sub.add_parser("approve", help="Promote a proposal to an auto-generated covenant")
+    cov_approve.add_argument("proposal_id")
+    cov_reject = cov_sub.add_parser("reject", help="Mark a proposal as rejected")
+    cov_reject.add_argument("proposal_id")
+    cov_reject.add_argument("--reason", default="")
+    cov_sub.add_parser("run-proposer", help="Run the proposer on the current archive")
+
     # Session 6: model-routing flags (set env before ModelRouter loads).
     # Applied to every subcommand; equivalent to exporting the env vars.
     parser.add_argument(
@@ -1373,6 +1522,34 @@ def app():
         sys.exit(0)
     elif args.command == "experiment":
         _run_experiment_cmd(args)
+        sys.exit(0)
+    elif args.command == "validator":
+        _run_validator_cmd(args)
+        sys.exit(0)
+    elif args.command == "archive":
+        _run_archive_cmd(args)
+        sys.exit(0)
+    elif args.command == "repomap":
+        from belief.repomap import RepoMap
+        mentioned_idents = [args.query] if getattr(args, "query", None) else []
+        rm = RepoMap(root=args.root)
+        print(rm.get_ranked_tags_map(
+            mentioned_idents=mentioned_idents, max_tokens=args.top,
+        ))
+        sys.exit(0)
+    elif args.command == "covenants":
+        from belief.covenants.review_cli import cmd_approve, cmd_reject, cmd_review
+        action = getattr(args, "covenants_action", None)
+        if action == "review":
+            cmd_review(status_filter=args.status)
+        elif action == "approve":
+            cmd_approve(args.proposal_id)
+        elif action == "reject":
+            cmd_reject(args.proposal_id, reason=args.reason)
+        elif action == "run-proposer":
+            print("run-proposer: not yet wired — run on Mac via scripts/run_proposer.py")
+        else:
+            print("Usage: belief covenants {review|approve|reject|run-proposer}")
         sys.exit(0)
     elif args.command == "build" or args.goal:
         goal = getattr(args, "goal", None)
