@@ -359,17 +359,35 @@ class PhotosynthesisDaemon:
     def _budget_reconcile(self) -> None:
         """Spec: hit Anthropic Admin /cost_report; compare to CostTracker.
 
-        The real Admin API call needs ADMIN_API_KEY. Session 5 ships
-        the scheduler hook; the actual HTTP call is a follow-up when
-        ops grants the admin scope. Until then, log the local total.
+        Session 8.5b (2026-04-23): the real Admin API call needs an
+        ``ADMIN_API_KEY`` that ops hasn't granted yet, and the Admin
+        API's usage-reporting surface isn't yet exposed in a form that
+        matches CostTracker's schema.  Rather than silently logging the
+        local-only total as if this were a successful reconcile, this
+        job is now explicitly **stubbed** — surfaced in the daemon's
+        ``_job_health`` map so operators can see it's disabled.  The
+        local 24h total is still logged for visibility.
+
+        To re-enable: set ``ADMIN_API_KEY`` in the environment and
+        flip this method to call the real Admin endpoint via
+        :mod:`belief.core.http`.
         """
         try:
             from belief.photosynthesis.safety.cost_tracker import CostTracker
 
             local = CostTracker().spent("1 day")
-            logger.info("budget_reconcile: local_24h=$%.4f (Admin API not wired)", local)
+            logger.info(
+                "budget_reconcile: local_24h=$%.4f (Admin API reconcile disabled)",
+                local,
+            )
         except Exception:
-            logger.exception("budget_reconcile failed")
+            logger.exception("budget_reconcile: local cost read failed")
+        # Mark the job as stubbed regardless of whether the local read
+        # succeeded — the reconcile itself is not happening.
+        self._set_stub(
+            "budget_reconcile",
+            "ADMIN_API_KEY not set; Admin API reconcile disabled pending ops grant",
+        )
 
     def _domain_profile_rebuild(self) -> None:
         """Spec: k-means recompute over the last week of promoted goals."""

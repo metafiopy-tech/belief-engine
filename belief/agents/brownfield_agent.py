@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -167,13 +168,37 @@ async def fix_issue(
                 f"({result.tests_passed}/{result.tests_total} tests)"
             )
 
-        # Step 5: Escalation (if Agentless failed)
+        # Step 5: Escalation (if Agentless failed).  Session 8.5b:
+        # agentic mode is deferred work.  Gate it behind the explicit
+        # env var BELIEF_BROWNFIELD_AGENTIC so we never silently enter
+        # a half-implemented code path in production.  Default: off.
+        # When on, the current implementation still just logs + marks
+        # skipped — the env-var gate's job is to make "not-implemented"
+        # loud rather than accidentally-reachable.
         if not result.success and escalate_to_agentic:
-            logger.info("Brownfield: Agentless exhausted — escalating to agentic mode")
-            # TODO: Implement agentic mode with full tool access
-            # For now, log the escalation attempt
-            result.method = "agentic_skipped"
-            result.error = "Agentic mode not yet implemented — Agentless exhausted"
+            agentic_enabled = os.environ.get("BELIEF_BROWNFIELD_AGENTIC", "0").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            if not agentic_enabled:
+                logger.info(
+                    "Brownfield: Agentless exhausted; agentic escalation disabled "
+                    "(set BELIEF_BROWNFIELD_AGENTIC=1 to opt in once implemented)"
+                )
+                result.method = "agentic_disabled"
+                result.error = "Agentic mode gated by BELIEF_BROWNFIELD_AGENTIC env var; not set"
+            else:
+                logger.info("Brownfield: Agentless exhausted — escalating to agentic mode")
+                # Agentic mode implementation is still pending (tracked
+                # as a follow-up, not a silent stub — the env-var
+                # contract above makes that visible to the operator).
+                result.method = "agentic_unimplemented"
+                result.error = (
+                    "BELIEF_BROWNFIELD_AGENTIC=1 requested but agentic mode "
+                    "is not yet implemented in this version."
+                )
 
     except Exception as e:
         result.error = str(e)

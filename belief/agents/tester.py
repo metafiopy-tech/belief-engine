@@ -433,12 +433,16 @@ class TesterAgent(BaseAgent):
                         ]
                     )
                 else:
+                    # Session 8.5b: emit pytest.skip rather than
+                    # `yield None  # TODO`.  A None-yielding fixture
+                    # lets dependent tests enter bodies that then fail
+                    # on attribute access (NoneType.query, …).  pytest.skip
+                    # fails cleanly and the TODO-in-output covenant stays happy.
                     lines.extend(
                         [
                             "@pytest.fixture",
                             f"def {fixture}():",
-                            '    """Database session stub."""',
-                            "    yield None  # TODO: implement with real DB session",
+                            f'    pytest.skip("fixture {fixture!r} needs a real DB session — implement manually")',
                             "",
                         ]
                     )
@@ -460,8 +464,7 @@ class TesterAgent(BaseAgent):
                         [
                             "@pytest.fixture",
                             f"def {fixture}():",
-                            '    """Test client stub."""',
-                            "    yield None  # TODO: implement",
+                            f'    pytest.skip("fixture {fixture!r} needs a real test client — implement manually")',
                             "",
                         ]
                     )
@@ -482,8 +485,7 @@ class TesterAgent(BaseAgent):
                         [
                             "@pytest.fixture",
                             f"def {fixture}():",
-                            '    """App instance stub."""',
-                            "    yield None  # TODO: implement",
+                            f'    pytest.skip("fixture {fixture!r} needs a real app instance — implement manually")',
                             "",
                         ]
                     )
@@ -504,19 +506,20 @@ class TesterAgent(BaseAgent):
                         [
                             "@pytest.fixture",
                             f"def {fixture}():",
-                            '    """CLI fixture stub."""',
-                            "    yield None  # TODO: implement",
+                            f'    pytest.skip("fixture {fixture!r} needs a real CLI runner — implement manually")',
                             "",
                         ]
                     )
             else:
-                # Generic stub — at least yield something non-None
+                # Generic stub: skip rather than silently yield an
+                # empty dict.  Downstream tests that need real data
+                # will be reported as skipped (not silently pass with
+                # fake data).
                 lines.extend(
                     [
                         "@pytest.fixture",
                         f"def {fixture}():",
-                        f'    """Auto-generated fixture for {fixture}."""',
-                        "    yield {}  # TODO: implement with real test data",
+                        f'    pytest.skip("fixture {fixture!r} needs real test data — implement manually")',
                         "",
                     ]
                 )

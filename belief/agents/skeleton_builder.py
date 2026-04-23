@@ -288,8 +288,12 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
             if uses_sqlalchemy and "Base" in unresolved:
                 lines.append("from database import Base")
                 unresolved.discard("Base")
-            for name in sorted(unresolved):
-                lines.append(f"# TODO: Import external base: {name}")
+            # Session 8.5b: no longer emits a TODO comment per unresolved
+            # name.  The warning above (logger.warning with the full set)
+            # surfaces the issue to the operator; Pass 2 is responsible
+            # for resolving the import at LLM-generation time.  Emitting
+            # a TODO comment would only defer the error to the debugger
+            # and trigger the Session 8.5b no-TODO covenant.
         lines.append("")
 
     # Track whether any ORM (non-pydantic) class appears in this file so
@@ -369,11 +373,17 @@ def _generate_model_chain_code(skeleton: SkeletonArtifact, file_path: str) -> st
                 else:
                     lines.append(f"    {f.name}: {f.type_annotation}")
 
-        # Validator stubs
+        # Validator stubs.  Session 8.5b: raise NotImplementedError
+        # rather than emit `pass  # TODO: implement validator`.  Pass 2
+        # (LLM generation) rewrites these bodies; if anyone calls the
+        # validator on a skeleton-only build, we want a loud error, not
+        # a silent no-op pass.
         for v in model.validators:
             lines.append("")
             lines.append(f"    def {v}(self):")
-            lines.append("        pass  # TODO: implement validator")
+            lines.append(
+                f'        raise NotImplementedError("validator {v!r} body deferred to Pass 2")'
+            )
 
         lines.append("")
 
@@ -433,7 +443,12 @@ def _generate_abc_code(skeleton: SkeletonArtifact, file_path: str) -> str | None
             lines.append(f"    {prefix} {method.name}({method.params}) -> {method.return_type}:")
             if method.docstring:
                 lines.append(f'        """{method.docstring}"""')
-            lines.append(f"        ...  # TODO: implement {method.name}")
+            # Session 8.5b: raise rather than `...  # TODO`.  Same
+            # rationale as the validator-stubs site above — keeps the
+            # skeleton parseable + fails loudly if called pre-Pass-2.
+            lines.append(
+                f'        raise NotImplementedError("ABC method {method.name!r} body deferred to Pass 2")'
+            )
             lines.append("")
 
         lines.append("")

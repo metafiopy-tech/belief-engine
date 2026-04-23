@@ -539,14 +539,36 @@ def _enforce_no_bare_except(fname: str, code: str, uses_sqlalchemy: bool) -> lis
                     )
                 )
 
-            # except ...: pass (swallows error silently)
+            # except ...: pass (swallows error silently).  Session 8.5b:
+            # rewrite the `pass` to a logger.exception call that names
+            # the offending line, instead of injecting a `# TODO` comment
+            # (which would violate the no-TODO-in-output covenant).  The
+            # logger.exception is a safer default: dependencies can fail
+            # loudly in the logs instead of silently; the developer still
+            # sees the violation in the returned Violation list.
             if node.body and len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
                 pass_line_idx = node.body[0].lineno - 1
                 if pass_line_idx < len(lines):
                     indent = len(lines[pass_line_idx]) - len(lines[pass_line_idx].lstrip())
                     spaces = " " * indent
-                    lines[pass_line_idx] = f"{spaces}pass  # TODO: handle error appropriately"
+                    lines[pass_line_idx] = (
+                        f"{spaces}logger.exception("
+                        f'"covenant-patched silent except at line {node.body[0].lineno}")'
+                    )
                     modified = True
+                    violations.append(
+                        Violation(
+                            covenant="no_bare_except",
+                            file=fname,
+                            line=node.body[0].lineno,
+                            message=(
+                                "Replaced silent 'pass' in except with "
+                                "logger.exception; caller should implement "
+                                "proper error handling."
+                            ),
+                            severity="warning",
+                        )
+                    )
 
     if modified:
         fixed = "\n".join(lines)

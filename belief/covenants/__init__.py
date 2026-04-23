@@ -53,6 +53,9 @@ from pathlib import Path
 from belief.covenants.forbidden_imports import (
     apply_forbidden_imports_covenant,
 )
+from belief.covenants.no_todo import (
+    apply_no_todo_covenant,
+)
 from belief.covenants.pydantic_v2 import (
     CovenantApplied as _PydanticCovenantApplied,
     apply_pydantic_v2_covenant,
@@ -239,11 +242,20 @@ def enforce_python_covenants(
         applied.extend(reqs_applied)
         return new_source, applied
 
-    # Python source path.  Stage 1 — prepass:
+    # Python source path.  Stage 0 — no-TODO sweep runs on every
+    # Python file, regardless of whether pydantic is imported.  TODO /
+    # FIXME / XXX markers in generated code are a recurring failure
+    # mode independent of the pydantic rewrites.
     if not filename.endswith(".py") and filename:
         return source, []
+
+    stage0_source, stage0_applied = apply_no_todo_covenant(source, filename=filename or None)
+    applied.extend(stage0_applied)
+    source = stage0_source
+
+    # Stage 1 — prepass:
     if not _prepass_should_run_pydantic(source):
-        return source, []
+        return source, applied
 
     # Stage 2 — LibCST PydanticV2Covenant
     new_source = source
