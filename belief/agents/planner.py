@@ -26,6 +26,20 @@ class PlannerAgent(BaseAgent):
             state.phase = Phase.ARCHITECTING
             return state
 
+        # Session 6 (v3.2): inject top-3 similar-goal priors from the
+        # agent archive.  Append-only so the session-1 num_keep=512
+        # prefix cache still hits on the leading bytes of PLANNER_SYSTEM.
+        system_prompt = PLANNER_SYSTEM
+        try:
+            from belief.archive.priors import format_priors_block
+            priors_block = format_priors_block(spec.goal, k=3)
+            if priors_block:
+                system_prompt = f"{PLANNER_SYSTEM}{priors_block}"
+                logger.info("Planner: injected %d prior(s) from agent archive",
+                            priors_block.count("### Prior "))
+        except Exception as e:  # pragma: no cover
+            logger.debug("Planner prior injection skipped: %s", e)
+
         llm = LLMClient(self.router)
         try:
             prompt = PLANNER_PROMPT.format(
@@ -43,7 +57,7 @@ class PlannerAgent(BaseAgent):
                 ) or "  none found",
             )
             plan = await llm.generate_structured(
-                role=self.role, system=PLANNER_SYSTEM, prompt=prompt,
+                role=self.role, system=system_prompt, prompt=prompt,
                 response_schema=ImplementationPlan, temperature=0.3,
                 complexity=state.complexity_score,
             )
