@@ -32,6 +32,36 @@ Tier 5 (complex systems): 4/4
 
 The engine builds complex systems (workflow engines, inventory managers, quiz platforms) more reliably than simple scripts. Tier 5 has been at 100% for three consecutive benchmark runs.
 
+## Validation: Does accumulated knowledge help a local model?
+
+**Research question.** The engine stores patterns, antipatterns, covenants, and skeletons in ChromaDB soil after every build. Does that accumulated knowledge cause a measurable quality lift when the engine is paired with a local model — or is the lift just noise from running more computation against the same weights?
+
+**Protocol.** Four paired A/B runs over 2026-04-22. Same model (qwen2.5-coder:14b, Q4_K_M), same hardware (MacBook Air M2 16GB), same challenge set (five tier-1/tier-2 problems rotating between runs). The only variable between the two arms: whether the engine's ChromaDB soil, covenants, and debug memory are connected to the model on inference.
+
+**Results.**
+
+| Run (timestamp)     | Engine + local | Raw local | Δ   |
+|---------------------|----------------|-----------|-----|
+| 02:46               | 5 / 5          | 2 / 5     | +60% |
+| 07:03               | 5 / 5          | 2 / 5     | +60% |
+| 08:03               | 5 / 5          | 3 / 5     | +40% |
+| 08:52               | 5 / 5          | 4 / 5     | +20% |
+| **Cumulative n=20** | **20 / 20**    | **11 / 20** | **+45%** |
+
+Fisher's exact test on the paired n=20 gives **p < 0.001**.
+
+A fifth run the next morning on a fresh three-challenge sample reproduced the pattern: engine 3/3 vs raw 1/3, +66.7% lift. By the end of the experiment window the archive held 424 builds, 37 covenants, and had extracted ~100 new nutrients in the previous 24 hours.
+
+**What this means.** For *this* local model, on *this* paired benchmark, a ChromaDB-backed context layer with FSRS-decayed nutrients and AST-enforced covenants produces a statistically significant quality lift. The local-14B pipeline solved problems it could not solve without the engine's accumulated knowledge.
+
+**Honest limitations.**
+- n=20 is below publication-grade for a strong claim across all 20 benchmark challenges; the next milestone is n=50 paired with per-domain analysis.
+- Challenges rotate, so the raw-local scores drift between runs (easier challenges rotate in as the engine's coverage grows).
+- Engine wall clock is 10-15× slower per build (~255-900s vs ~30-70s raw). Quality/time tradeoff, not a free lunch.
+- Factorial ablation (soil × covenants × debug × skeleton) is needed to attribute the lift — which subsystem is load-bearing is still an open question.
+
+**Reproducibility.** Raw data: `~/.belief-engine/experiments.db`. Methodology and statistical protocol: `docs/validation/v3.1.0-consistency-results.md`.
+
 ## How It Works
 
 ```
