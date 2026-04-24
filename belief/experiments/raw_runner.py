@@ -108,7 +108,16 @@ async def run_raw(
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": goal},
                     ],
-                    "options": {"temperature": 0.0, "num_predict": 4096},
+                    "options": {
+                        "temperature": 0.0,
+                        "num_predict": 4096,
+                        "seed": 42,  # determinism (matches engine)
+                        "num_gpu": 99,  # full Metal offload (matches engine)
+                        "num_thread": 6,  # matches engine
+                        "num_batch": 256,  # matches engine
+                        "num_keep": 512,  # KV-cache pinning (matches engine)
+                        "mirostat": 0,  # greedy sampling (matches engine)
+                    },
                 },
             )
             resp.raise_for_status()
