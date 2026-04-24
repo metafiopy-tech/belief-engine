@@ -1,0 +1,22 @@
+[
+  {
+    "problem": "def has_close_elements(numbers: list, threshold: float) -> b...",
+    "completion_preview": "```python\nfor i in range(len(numbers)):\n    for j in range(i + 1, len(numbers)):\n        if abs(numbers[i] - numbers[j]) < threshold:\n            return True\nreturn False\n```"
+  },
+  {
+    "problem": "def separate_paren_groups(paren_string: str) -> list:\n    \"\"...",
+    "completion_preview": "```python\n    result = []\n    current_group = []\n    depth = 0\n\n    for char in paren_string:\n        if char == '(':\n            depth += 1\n            current_group.append(char)\n        elif char =="
+  },
+  {
+    "problem": "def truncate_number(number: float) -> float:\n    \"\"\"Return t...",
+    "completion_preview": "```python\n    return number - int(number)\n```"
+  },
+  {
+    "problem": "def below_zero(operations: list) -> bool:\n    \"\"\"Return True...",
+    "completion_preview": "```python\nbalance = 0\nfor operation in operations:\n    balance += operation\n    if balance < 0:\n        return True\nreturn False\n```"
+  },
+  {
+    "problem": "def mean_absolute_deviation(numbers: list) -> float:\n    \"\"\"...",
+    "completion_preview": "```python\n    mean = sum(numbers) / len(numbers)\n    deviations = [abs(x - mean) for x in numbers]\n    return sum(deviations) / len(deviations)\n```"
+  }
+]

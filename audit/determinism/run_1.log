@@ -1,0 +1,77 @@
+/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/langchain_core/_api/deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m Model mode: LOCAL (Ollama) — no Anthropic API calls will be made
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m Starting build: Build a Python function that returns the Nth Fibonacci number using iteration. I
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m Run ID: belief-8305048d
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m Budget: $10.00 | Max iterations: 3
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m Build memory: 431 prior build(s)
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m Found 3 similar prior build(s):
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m   - Build a Python function that returns the Nth Fibonacci numbe (verdict=pass)
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m   - Build a Python function that returns the Nth Fibonacci numbe (verdict=pass)
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m   - Build a Python function that returns the Nth Fibonacci numbe (verdict=pass)
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.daemons              [0m Health daemon started
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m CLI: local mode — using keyword classifier (multi_service=False, 0 LLM cost)
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.cli                  [0m CLI: local mode + single-service — using collapsed graph_local pipeline
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.memory.recomposer    [0m Recomposer: injected 15 nutrients (cov=8, anti=3, pat=3, skel=1, 2958 chars)
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.memory.recomposer    [0m Recomposer: dropping self-authored tool block in local mode (would overflow 3KB cap)
+[90m18:58:40[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m18:58:42[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=intake backend=local mode=local
+[90m18:59:20[0m [36mINFO    [0m [90mbelief.agents.intake        [0m Intake: 3 criteria, complexity=2
+[90m18:59:20[0m [36mINFO    [0m [90mbelief.agents.intake        [0m Intake completed in 37.5s
+[90m18:59:20[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m18:59:22[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=planner backend=local mode=local
+[90m19:00:05[0m [36mINFO    [0m [90mbelief.agents.planner       [0m Planner: 5 steps, strategy=generate_fresh
+[90m19:00:05[0m [36mINFO    [0m [90mbelief.agents.planner       [0m Planner completed in 43.0s
+[90m19:00:05[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m19:00:07[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=architect backend=local mode=local
+[90m19:00:54[0m [36mINFO    [0m [90mbelief.agents.architect     [0m Architect: SkeletonArtifact — 2 files, 0 chains, 0 ABCs
+[90m19:00:54[0m [36mINFO    [0m [90mbelief.agents.architect     [0m Architect completed in 47.1s
+[90m19:00:54[0m [36mINFO    [0m [90mbelief.agents.skeleton_pass1[0m SkeletonPass1: build plan — 0 skeleton + 2 impl, 1 parallel levels, max parallelism: 2
+[90m19:00:54[0m [36mINFO    [0m [90mbelief.agents.skeleton_pass1[0m SkeletonPass1: cache HIT — 0 skeleton files (0 registry entries)
+[90m19:00:54[0m [36mINFO    [0m [90mbelief.agents.skeleton_pass1[0m SkeletonPass1 complete: 0 skeleton files, 0 registry entries
+[90m19:00:54[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=moderate sleeping=10s
+[90m19:01:04[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder: injected 1 covenants into system prompt
+[90m19:01:04[0m [36mINFO    [0m [90mbelief.agents.parallel_planner[0m BuildPlan: 2 files across 2 levels, max parallelism: 1
+[90m19:01:04[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder: DAG ordering — 2 levels, 2 files
+[90m19:01:04[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=builder backend=local mode=local
+[90m19:01:31[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder: wrote fibonacci.py (625 chars)
+[90m19:01:31[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=builder backend=local mode=local
+[90m19:02:07[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder: wrote test_fibonacci.py (897 chars)
+[90m19:02:07[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder completed in 62.6s
+[90m19:02:07[0m [36mINFO    [0m [90mbelief.validators           [0m Covenant enforcer: 1 fixes applied across 1 files
+[90m19:02:07[0m [36mINFO    [0m [90mbelief.graph                [0m Covenant enforcer (Python): 1 fixes across 1 files
+[90m19:02:07[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=heavy sleeping=30s
+[90m19:02:37[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: auto-created 1 __init__.py file(s)
+[90m19:02:37[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: pytest 6/6 passed (0.52s)
+[90m19:02:38[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Smoke test PASSED: imports=1/1, entry=pass
+[90m19:02:38[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: smoke test passed — imports=1/1, entry=pass
+[90m19:02:38[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: success in 0.5s
+[90m19:02:38[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor completed in 0.6s
+[90m19:02:38[0m [36mINFO    [0m [90mbelief.graph_local          [0m synthesizer router: skip-polish: wallclock=191s ≥ budget=180s (over budget, polish cost outweighs expected benefit) → validator
+[90m19:02:38[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=moderate sleeping=10s
+[90m19:02:49[0m [36mINFO    [0m [90mbelief.agents.validator     [0m Validator: pass, 9/9 tests, weighted=1.00
+[90m19:02:49[0m [36mINFO    [0m [90mbelief.agents.validator     [0m Validator completed in 1.1s
+[90m19:02:49[0m [36mINFO    [0m [90mbelief.memory               [0m Build stored: belief-8305048d (Build a Python function that returns the Nth Fibon)
+[90m19:02:49[0m [36mINFO    [0m [90mbelief.cli                  [0m Build stored in memory (total: 432)
+[90m19:02:53[0m [36mINFO    [0m [90mbelief.cli                  [0m Decomposer: deferred post-print execution starting
+[90m19:02:53[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=decomposer backend=local mode=local
+[90m19:03:31[0m [36mINFO    [0m [90mbelief.memory.soil          [0m Soil: reinforced existing n-be1c2f2d7187 (sim=1.000, type=pattern)
+[90m19:03:31[0m [36mINFO    [0m [90mbelief.memory.soil          [0m Soil: deposited n-2e35f175adab (type=pattern, tier=2)
+[90m19:03:31[0m [36mINFO    [0m [90mbelief.memory.soil          [0m Soil: reinforced existing n-fc17e370611f (sim=0.962, type=pattern)
+[90m19:03:31[0m [36mINFO    [0m [90mbelief.memory.decomposer    [0m Decomposer: extracted 3 nutrients (pattern, pattern, pattern)
+[90m19:03:31[0m [36mINFO    [0m [90mbelief.cli                  [0m Decomposer: deferred execution finished in 38.9s
+[90m19:03:32[0m [36mINFO    [0m [90mbelief.archive.store        [0m AgentArchive: persisted belief-8305048d (verdict=ValidationVerdict.PASS, score=1.00, U=0.952)
+
+════════════════════════════════════════════════════════════
+  BUILD COMPLETE — 248.7s
+════════════════════════════════════════════════════════════
+
+  Output: output/belief-8305048d/
+  Files:
+    fibonacci.py  (625 chars)
+    requirements.txt  (27 chars)
+    test_fibonacci.py  (897 chars)
+  Verdict: pass
+  Build memory: 432 total builds stored
+  Similar prior builds: 3
+

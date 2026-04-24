@@ -1,3 +1,5 @@
+exclude: '^audit/'
+
 # Pre-commit hooks — Session 8.5a (v3.2).
 #
 # Guards against the 108-ruff-error drift that prompted this cleanup.
