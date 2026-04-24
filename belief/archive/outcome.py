@@ -44,6 +44,10 @@ class BuildOutcome:
     debug_iterations: int = 0
     agent_configurations: dict[str, AgentConfiguration] = field(default_factory=dict)
     trajectory_signature: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    n_llm_calls: int = 0
+    tokens_by_role: dict[str, int] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
     # Serialization

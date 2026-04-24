@@ -78,6 +78,13 @@ async def run(
 
     project_root = _get_project_root()
     run_id = f"belief-{uuid.uuid4().hex[:8]}"
+
+    # Reset per-build token tracker (Gate 4 instrumentation).
+    from belief.llm import LOCAL_TRACKER
+
+    LOCAL_TRACKER.records.clear()
+    LOCAL_TRACKER.fallback_count = 0
+
     logger.info(f"Starting build: {goal[:80]}")
     logger.info(f"Run ID: {run_id}")
     logger.info(f"Budget: ${max_cost:.2f} | Max iterations: {max_iterations}")

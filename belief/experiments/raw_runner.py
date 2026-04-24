@@ -69,6 +69,9 @@ class RawRunResult:
     weighted_score: float = 0.0
     time_seconds: float = 0.0
     error: Optional[str] = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    n_llm_calls: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -121,13 +124,17 @@ async def run_raw(
                 },
             )
             resp.raise_for_status()
-            raw_output = resp.json()["message"]["content"]
+            resp_json = resp.json()
+            raw_output = resp_json["message"]["content"]
+            prompt_tokens = int(resp_json.get("prompt_eval_count", 0))
+            completion_tokens = int(resp_json.get("eval_count", 0))
     except Exception as exc:
         return RawRunResult(
             goal=goal,
             model=model,
             time_seconds=time.time() - start,
             error=f"Model call failed: {exc}",
+            n_llm_calls=0,
         )
 
     # 2. Parse file blocks from response
@@ -139,6 +146,9 @@ async def run_raw(
             code_files={},
             time_seconds=time.time() - start,
             error="No ### FILE: blocks found in model output",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            n_llm_calls=1,
         )
 
     # 3. Write files to temp dir and run tests
@@ -193,6 +203,9 @@ async def run_raw(
         weighted_score=weighted,
         time_seconds=time.time() - start,
         error=run_error,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        n_llm_calls=1,
     )
 
 

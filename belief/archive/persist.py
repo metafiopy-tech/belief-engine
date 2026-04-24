@@ -116,6 +116,25 @@ def _build_outcome_from_state(final_state: dict[str, Any]) -> BuildOutcome | Non
 
     covenant_violations = _extract_covenant_violations(final_state)
 
+    # Snapshot per-build local-call ledger (Gate 4 instrumentation).
+    prompt_tokens = 0
+    completion_tokens = 0
+    n_llm_calls = 0
+    tokens_by_role: dict[str, int] = {}
+    try:
+        from belief.llm import LOCAL_TRACKER
+
+        n_llm_calls = LOCAL_TRACKER.total_calls()
+        by_role = LOCAL_TRACKER.by_role()
+        for role, bucket in by_role.items():
+            prompt_tokens += int(bucket.get("prompt_tokens", 0))
+            completion_tokens += int(bucket.get("completion_tokens", 0))
+            tokens_by_role[role] = int(
+                bucket.get("prompt_tokens", 0) + bucket.get("completion_tokens", 0)
+            )
+    except Exception as e:
+        logger.debug("LOCAL_TRACKER snapshot failed (%s); zeros recorded", e)
+
     outcome = BuildOutcome(
         run_id=run_id,
         goal=goal,
@@ -128,6 +147,10 @@ def _build_outcome_from_state(final_state: dict[str, Any]) -> BuildOutcome | Non
         covenant_violations=covenant_violations,
         debug_iterations=debug_iter,
         agent_configurations=configs,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        n_llm_calls=n_llm_calls,
+        tokens_by_role=tokens_by_role,
     )
     # Trajectory signature — stable hash of agent_timings keys + verdict.
     agent_sequence = list(timings.keys()) if isinstance(timings, dict) else []
