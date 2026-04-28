@@ -1,0 +1,78 @@
+Starting Gate 6 mini-eval: 10 tasks × 2 conditions × 2 seeds = 40 runs
+Estimated wall-clock: 3 hours (at ~5 min/run average)
+
+[1/40] SKIP  a1-fizzbuzz engine_local seed=42 (already done)
+[2/40] SKIP  a1-fizzbuzz engine_local seed=1337 (already done)
+[3/40] SKIP  a1-fizzbuzz raw_local seed=42 (already done)
+[4/40] SKIP  a1-fizzbuzz raw_local seed=1337 (already done)
+[5/40] SKIP  a2-palindrome engine_local seed=42 (already done)
+[6/40] SKIP  a2-palindrome engine_local seed=1337 (already done)
+[7/40] SKIP  a2-palindrome raw_local seed=42 (already done)
+[8/40] SKIP  a2-palindrome raw_local seed=1337 (already done)
+[9/40] RUN   a3-word-count engine_local seed=42 at 15:54:58
+              → PASS score=0.00 time=335s tokens=0
+[10/40] RUN   a3-word-count engine_local seed=1337 at 16:00:34
+              → PASS score=0.00 time=388s tokens=0
+[11/40] RUN   a3-word-count raw_local seed=42 at 16:07:02
+              → PASS score=0.67 time=69s tokens=742
+[12/40] RUN   a3-word-count raw_local seed=1337 at 16:08:11
+              → PASS score=0.75 time=51s tokens=607
+[13/40] RUN   b1-click-todo engine_local seed=42 at 16:09:02
+              → PASS score=0.00 time=666s tokens=0
+[14/40] RUN   b1-click-todo engine_local seed=1337 at 16:20:08
+              → PASS score=0.00 time=857s tokens=0
+[15/40] RUN   b1-click-todo raw_local seed=42 at 16:34:25
+              → FAIL score=0.00 time=83s tokens=897
+[16/40] RUN   b1-click-todo raw_local seed=1337 at 16:35:48
+              → FAIL score=0.00 time=90s tokens=897
+[17/40] RUN   b2-async-retry-client engine_local seed=42 at 16:37:19
+              → PASS score=0.00 time=491s tokens=0
+[18/40] RUN   b2-async-retry-client engine_local seed=1337 at 16:45:29
+              → FAIL score=0.00 time=920s tokens=0
+[19/40] RUN   b2-async-retry-client raw_local seed=42 at 17:00:49
+              → FAIL score=0.00 time=79s tokens=756
+[20/40] RUN   b2-async-retry-client raw_local seed=1337 at 17:02:08
+              → FAIL score=0.00 time=69s tokens=756
+[21/40] RUN   b3-config-yaml-env engine_local seed=42 at 17:03:17
+              → PASS score=0.00 time=465s tokens=0
+[22/40] RUN   b3-config-yaml-env engine_local seed=1337 at 17:11:02
+              → FAIL score=0.00 time=687s tokens=0
+[23/40] RUN   b3-config-yaml-env raw_local seed=42 at 17:22:29
+              → FAIL score=0.25 time=104s tokens=960
+[24/40] RUN   b3-config-yaml-env raw_local seed=1337 at 17:24:13
+              → FAIL score=0.25 time=98s tokens=960
+[25/40] RUN   b4-json-diff engine_local seed=42 at 17:25:51
+              → PASS score=0.00 time=741s tokens=0
+[26/40] RUN   b4-json-diff engine_local seed=1337 at 17:38:11
+              → PASS score=0.00 time=787s tokens=0
+[27/40] RUN   b4-json-diff raw_local seed=42 at 17:51:18
+              → PASS score=1.00 time=92s tokens=891
+[28/40] RUN   b4-json-diff raw_local seed=1337 at 17:52:50
+              → PASS score=1.00 time=92s tokens=891
+[29/40] RUN   c1-fastapi-pydantic-v2 engine_local seed=42 at 17:54:22
+              → FAIL score=0.00 time=948s tokens=0
+[30/40] RUN   c1-fastapi-pydantic-v2 engine_local seed=1337 at 18:10:10
+              → FAIL score=0.00 time=835s tokens=0
+[31/40] RUN   c1-fastapi-pydantic-v2 raw_local seed=42 at 18:24:05
+              → FAIL score=0.00 time=125s tokens=1369
+[32/40] RUN   c1-fastapi-pydantic-v2 raw_local seed=1337 at 18:26:09
+              → FAIL score=0.00 time=155s tokens=1369
+[33/40] RUN   c2-sqlalchemy-2-mapped engine_local seed=42 at 18:28:44
+              → FAIL score=0.00 time=0s tokens=0
+[34/40] RUN   c2-sqlalchemy-2-mapped engine_local seed=1337 at 18:28:44
+              → FAIL score=0.00 time=0s tokens=0
+[35/40] RUN   c2-sqlalchemy-2-mapped raw_local seed=42 at 18:28:44
+              → FAIL score=0.00 time=89s tokens=764
+[36/40] RUN   c2-sqlalchemy-2-mapped raw_local seed=1337 at 18:30:13
+              → FAIL score=0.00 time=62s tokens=764
+[37/40] RUN   c3-fastapi-settings-yaml engine_local seed=42 at 18:31:15
+              → FAIL score=0.00 time=0s tokens=0
+[38/40] RUN   c3-fastapi-settings-yaml engine_local seed=1337 at 18:31:15
+              → FAIL score=0.00 time=0s tokens=0
+[39/40] RUN   c3-fastapi-settings-yaml raw_local seed=42 at 18:31:15
+              → FAIL score=0.00 time=70s tokens=760
+[40/40] RUN   c3-fastapi-settings-yaml raw_local seed=1337 at 18:32:25
+              → FAIL score=0.00 time=71s tokens=760
+
+=== COMPLETE ===
+Total finished runs in DB: 40

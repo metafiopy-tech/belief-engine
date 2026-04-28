@@ -1,0 +1,12 @@
+Starting Gate 6 mini-eval: 10 tasks × 2 conditions × 2 seeds = 40 runs
+Estimated wall-clock: 3 hours (at ~5 min/run average)
+
+[1/40] SKIP  a1-fizzbuzz engine_local seed=42 (already done)
+[2/40] SKIP  a1-fizzbuzz engine_local seed=1337 (already done)
+[3/40] SKIP  a1-fizzbuzz raw_local seed=42 (already done)
+[4/40] SKIP  a1-fizzbuzz raw_local seed=1337 (already done)
+[5/40] SKIP  a2-palindrome engine_local seed=42 (already done)
+[6/40] SKIP  a2-palindrome engine_local seed=1337 (already done)
+[7/40] SKIP  a2-palindrome raw_local seed=42 (already done)
+[8/40] SKIP  a2-palindrome raw_local seed=1337 (already done)
+[9/40] RUN   a3-word-count engine_local seed=42 at 08:54:55

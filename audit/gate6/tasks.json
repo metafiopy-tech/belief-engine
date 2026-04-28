@@ -1,0 +1,58 @@
+{
+  "tier_A_trivial": [
+    {
+      "id": "a1-fizzbuzz",
+      "goal": "Build a Python script that prints FizzBuzz from 1 to 100. Fizz for multiples of 3, Buzz for multiples of 5, FizzBuzz for both.",
+      "rationale": "Classic trivial task. Should be 100% on both raw and engine."
+    },
+    {
+      "id": "a2-palindrome",
+      "goal": "Build a Python function that returns True if a string is a palindrome (case-insensitive, ignoring non-alphanumeric characters). Include a test file with 5 test cases.",
+      "rationale": "Trivial single-function task. Baseline should pass cleanly."
+    },
+    {
+      "id": "a3-word-count",
+      "goal": "Build a CLI Python script that reads a text file from stdin and prints the top 10 most frequent words, case-insensitive, excluding English stopwords (a, the, and, is, of, in, to, it, that, for).",
+      "rationale": "Tier A boundary - simple but requires file I/O and basic data processing."
+    }
+  ],
+  "tier_B_multi_concept": [
+    {
+      "id": "b1-click-todo",
+      "goal": "Build a CLI todo app using Click. Commands: add <text>, list, complete <id>, delete <id>. Persist to a JSON file. Include pytest tests for each command using Click's CliRunner.",
+      "rationale": "Multi-command CLI + persistence + testing harness. Qwen's overnight logs show it handles this at ~60%."
+    },
+    {
+      "id": "b2-async-retry-client",
+      "goal": "Build an async Python HTTP client that fetches a URL with exponential backoff retry (3 attempts, doubling delay from 1s). Use httpx. Include tests that mock httpx and verify retry behavior.",
+      "rationale": "Multi-concept: async, retry logic, mocking. Overnight showed this class at ~50%."
+    },
+    {
+      "id": "b3-config-yaml-env",
+      "goal": "Build a Python configuration loader that reads settings.yaml, overrides from environment variables with PREFIX_ prefix, and exposes a typed config object. Include tests.",
+      "rationale": "Env+YAML merge logic. Raw Qwen historically confuses the precedence."
+    },
+    {
+      "id": "b4-json-diff",
+      "goal": "Build a CLI tool that takes two JSON files and prints a structured diff: added keys, removed keys, changed values with before/after. Include pytest tests covering nested objects and arrays.",
+      "rationale": "Recursive data structure handling + CLI + edge cases."
+    }
+  ],
+  "tier_C_covenant_specific": [
+    {
+      "id": "c1-fastapi-pydantic-v2",
+      "goal": "Build a FastAPI CRUD server for a Book resource with fields title, author, year, isbn. Use Pydantic v2 for request/response models with validation (year must be 1000-2100, isbn must be 10 or 13 digits). Include pytest tests using TestClient. Store books in memory.",
+      "rationale": "DIRECTLY tests pydantic_v2 covenant + FastAPI soil patterns. Raw Qwen emits v1 imports; engine's covenant rewrites."
+    },
+    {
+      "id": "c2-sqlalchemy-2-mapped",
+      "goal": "Build a Python module defining a User and Post SQLAlchemy model using the 2.0 declarative Mapped syntax (from sqlalchemy.orm import Mapped, mapped_column). User has many Posts. Include a test that creates a SQLite in-memory DB and verifies the relationship works.",
+      "rationale": "Tests SQLAlchemy 2.0 Mapped syntax - recent API that's in the soil failure patterns. Raw Qwen tends to emit 1.x declarative_base."
+    },
+    {
+      "id": "c3-fastapi-settings-yaml",
+      "goal": "Build a FastAPI app with configuration loaded via pydantic-settings from both a config.yaml file and environment variables. Include a /health endpoint that returns the loaded config (minus any secrets). Include pytest tests.",
+      "rationale": "Tests pydantic_v2 (BaseSettings → pydantic_settings) + FastAPI + covenant's BaseSettings rewrite. Raw Qwen emits 'from pydantic import BaseSettings'."
+    }
+  ]
+}

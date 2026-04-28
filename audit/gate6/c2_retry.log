@@ -1,0 +1,123 @@
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m Model mode: LOCAL (Ollama) — no Anthropic API calls will be made
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m Starting build: Build a Python module defining a User and Post SQLAlchemy model using the 2.0 de
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m Run ID: belief-73a16f3d
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m Budget: $10.00 | Max iterations: 3
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m Build memory: 452 prior build(s)
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m Found 3 similar prior build(s):
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m   - Given an existing FastAPI todo API (CRUD for tasks with titl (verdict=pass)
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m   - Given an existing FastAPI todo API (CRUD for tasks with titl (verdict=pass)
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m   - Given an existing FastAPI todo API (CRUD for tasks with titl (verdict=fail_fixable)
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.daemons              [0m Health daemon started
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m CLI: local mode — using keyword classifier (multi_service=False, 0 LLM cost)
+[90m23:38:15[0m [36mINFO    [0m [90mbelief.cli                  [0m CLI: local mode + single-service — using collapsed graph_local pipeline
+[90m23:38:22[0m [36mINFO    [0m [90mbelief.memory.soil          [0m Soil maintenance: archived 232 nutrients (below 0.1 retrievability), 491 active
+[90m23:38:22[0m [36mINFO    [0m [90mbelief.memory.recomposer    [0m Soil maintenance: archived 232 stale nutrients, 491 active
+[90m23:38:22[0m [36mINFO    [0m [90mbelief.memory.recomposer    [0m Recomposer: injected 10 nutrients (cov=3, anti=3, pat=3, skel=1, 2958 chars)
+[90m23:38:22[0m [36mINFO    [0m [90mbelief.memory.recomposer    [0m Recomposer: dropping self-authored tool block in local mode (would overflow 3KB cap)
+[90m23:38:22[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m23:38:24[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=intake backend=local mode=local
+[90m23:38:58[0m [36mINFO    [0m [90mbelief.agents.intake        [0m Intake: 3 criteria, complexity=3
+[90m23:38:58[0m [36mINFO    [0m [90mbelief.agents.intake        [0m Intake completed in 33.9s
+[90m23:38:58[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m23:39:00[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=planner backend=local mode=local
+[90m23:39:53[0m [36mINFO    [0m [90mbelief.agents.planner       [0m Planner: 6 steps, strategy=generate_fresh
+[90m23:39:53[0m [36mINFO    [0m [90mbelief.agents.planner       [0m Planner completed in 53.1s
+[90m23:39:53[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m23:39:55[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=architect backend=local mode=local
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.agents.architect     [0m Architect: SkeletonArtifact — 2 files, 2 chains, 0 ABCs
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.agents.architect     [0m Architect completed in 73.9s
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.agents.skeleton_pass1[0m SkeletonPass1: build plan — 1 skeleton + 1 impl, 1 parallel levels, max parallelism: 1
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.agents.skeleton_builder[0m Pass 1: Generating 1 skeleton files
+[90m23:41:09[0m [36mWARNING [0m [90mbelief.agents.skeleton_builder[0m skeleton_builder: models.py references unresolved base(s) ['Base'] — no dependency edge found
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.agents.skeleton_builder[0m Generated skeleton: models.py (24 lines)
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.agents.skeleton_builder[0m Pass 1 complete: 1/1 files generated deterministically
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.cache.skeleton_cache [0m skeleton_cache: generated + stored key=24bc53415349ac6b
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.agents.skeleton_pass1[0m SkeletonPass1: generated 1 skeleton files
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.agents.skeleton_pass1[0m SkeletonPass1 complete: 1 skeleton files, 1 registry entries
+[90m23:41:09[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m23:41:11[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder: injected 1 covenants into system prompt
+[90m23:41:11[0m [36mINFO    [0m [90mbelief.agents.parallel_planner[0m BuildPlan: 2 files across 2 levels, max parallelism: 1
+[90m23:41:11[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder: DAG ordering — 2 levels, 2 files
+[90m23:41:11[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=builder backend=local mode=local
+[90m23:41:50[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder: wrote test_models.py (1377 chars)
+[90m23:41:50[0m [36mINFO    [0m [90mbelief.agents.builder       [0m Builder completed in 38.5s
+[90m23:41:50[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=moderate sleeping=10s
+[90m23:42:00[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: auto-created 1 __init__.py file(s)
+[90m23:42:00[0m [36mWARNING [0m [90mbelief.validators.package_validator[0m PyPI Simple lookup error for 'pydantic': name 'gen' is not defined — soft-accepting
+[90m23:42:00[0m [36mWARNING [0m [90mbelief.validators.package_validator[0m PyPI Simple lookup error for 'sqlalchemy': name 'gen' is not defined — soft-accepting
+[90m23:42:00[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: VERIFIED pydantic via pypi_soft_accept (PyPI lookup failed (name 'gen' is not defined); allowing with warning)
+[90m23:42:00[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: VERIFIED sqlalchemy via pypi_soft_accept (PyPI lookup failed (name 'gen' is not defined); allowing with warning)
+[90m23:42:06[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: pytest 0/1 passed (0.66s)
+[90m23:42:06[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: failed (exit=2)
+[90m23:42:06[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor completed in 5.7s
+[90m23:42:06[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=moderate sleeping=10s
+[90m23:42:16[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=debugger backend=local mode=local
+[90m23:42:42[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=gap_analyst backend=local mode=local
+[90m23:42:54[0m [36mINFO    [0m [90mbelief.agents.debugger      [0m Debugger: editor — Removed the import statement for 'Mapped, mapped_column' as 
+[90m23:42:54[0m [36mINFO    [0m [90mbelief.agents.debugger      [0m Debugger: editor fix on test_models.py
+[90m23:42:54[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=gap_analyst backend=local mode=local
+[90m23:42:59[0m [36mINFO    [0m [90mbelief.agents.debugger      [0m Debugger: architect/editor — 1 files fixed, root cause: The ImportError is caused by trying to import 'mapped_column' from 'sqlalchemy.o
+[90m23:42:59[0m [36mINFO    [0m [90mbelief.agents.debugger      [0m Debugger completed in 43.5s
+[90m23:42:59[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m23:43:01[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: auto-created 1 __init__.py file(s)
+[90m23:43:01[0m [36mWARNING [0m [90mbelief.validators.package_validator[0m PyPI Simple lookup error for 'pydantic': name 'gen' is not defined — soft-accepting
+[90m23:43:02[0m [36mWARNING [0m [90mbelief.validators.package_validator[0m PyPI Simple lookup error for 'sqlalchemy': name 'gen' is not defined — soft-accepting
+[90m23:43:02[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: VERIFIED pydantic via pypi_soft_accept (PyPI lookup failed (name 'gen' is not defined); allowing with warning)
+[90m23:43:02[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: VERIFIED sqlalchemy via pypi_soft_accept (PyPI lookup failed (name 'gen' is not defined); allowing with warning)
+[90m23:43:06[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: pytest 0/1 passed (0.61s)
+[90m23:43:06[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: failed (exit=2)
+[90m23:43:06[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor completed in 4.6s
+[90m23:43:06[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=moderate sleeping=10s
+[90m23:43:16[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=debugger backend=local mode=local
+[90m23:43:42[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=gap_analyst backend=local mode=local
+[90m23:43:51[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=gap_analyst backend=local mode=local
+[90m23:43:59[0m [36mWARNING [0m [90mbelief.agents.debugger      [0m Debugger: architect diagnosed but editor couldn't apply fixes
+[90m23:43:59[0m [36mINFO    [0m [90mbelief.agents.debugger      [0m Debugger completed in 42.5s
+[90m23:43:59[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=moderate sleeping=10s
+[90m23:44:09[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: auto-created 1 __init__.py file(s)
+[90m23:44:09[0m [36mWARNING [0m [90mbelief.validators.package_validator[0m PyPI Simple lookup error for 'pydantic': name 'gen' is not defined — soft-accepting
+[90m23:44:09[0m [36mWARNING [0m [90mbelief.validators.package_validator[0m PyPI Simple lookup error for 'sqlalchemy': name 'gen' is not defined — soft-accepting
+[90m23:44:09[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: VERIFIED pydantic via pypi_soft_accept (PyPI lookup failed (name 'gen' is not defined); allowing with warning)
+[90m23:44:09[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: VERIFIED sqlalchemy via pypi_soft_accept (PyPI lookup failed (name 'gen' is not defined); allowing with warning)
+[90m23:44:13[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: pytest 0/1 passed (0.61s)
+[90m23:44:13[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor: failed (exit=2)
+[90m23:44:13[0m [36mINFO    [0m [90mbelief.agents.executor      [0m Executor completed in 4.4s
+[90m23:44:13[0m [36mINFO    [0m [90mbelief.graph_local          [0m graph_local: debug budget exhausted (2) — proceeding to synthesizer
+[90m23:44:13[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=moderate sleeping=10s
+[90m23:44:23[0m [36mINFO    [0m [90mbelief.agents.synthesizer   [0m Synthesizer: routing polish through qwen2.5-coder:1.5b (local) instead of qwen2.5-coder:14b
+[90m23:44:23[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=synthesizer backend=local mode=local
+[90m23:44:23[0m [36mERROR   [0m [90mbelief.llm                  [0m Ollama OllamaPermanentError on role=synthesizer: Ollama rejected request (HTTP 404): {"error":"model 'qwen2.5-coder:1.5b' not found"}; falling back to cloud
+[90m23:44:43[0m [36mINFO    [0m [90mbelief.agents.synthesizer   [0m Synthesizer: polished 4 file(s)
+[90m23:44:43[0m [36mINFO    [0m [90mbelief.agents.synthesizer   [0m Synthesizer: generated run.sh (entry=models.py)
+[90m23:44:43[0m [36mINFO    [0m [90mbelief.agents.synthesizer   [0m Synthesizer completed in 20.3s
+[90m23:44:43[0m [36mINFO    [0m [90mbelief.thermal              [0m thermal_gate: pressure=nominal sleeping=2s
+[90m23:44:48[0m [36mINFO    [0m [90mbelief.agents.validator     [0m Validator: pass, 9/10 tests, weighted=0.88
+[90m23:44:48[0m [36mINFO    [0m [90mbelief.agents.validator     [0m Validator completed in 2.8s
+[90m23:44:48[0m [36mINFO    [0m [90mbelief.memory               [0m Build stored: belief-73a16f3d (Build a Python module defining a User and Post SQL)
+[90m23:44:48[0m [36mINFO    [0m [90mbelief.cli                  [0m Build stored in memory (total: 453)
+[90m23:44:49[0m [36mINFO    [0m [90mbelief.cli                  [0m Decomposer: deferred post-print execution starting
+[90m23:44:49[0m [36mINFO    [0m [90mbelief.llm                  [0m Dispatch: role=decomposer backend=local mode=local
+[90m23:45:32[0m [36mINFO    [0m [90mbelief.memory.soil          [0m Soil: deposited n-f28ba17a2f66 (type=antipattern, tier=3)
+[90m23:45:32[0m [36mINFO    [0m [90mbelief.memory.soil          [0m Soil: deposited n-9ea594fe20c1 (type=antipattern, tier=3)
+[90m23:45:32[0m [36mINFO    [0m [90mbelief.memory.soil          [0m Soil: deposited n-e36efed85a61 (type=pattern, tier=3)
+[90m23:45:32[0m [36mINFO    [0m [90mbelief.memory.decomposer    [0m Decomposer: extracted 3 nutrients (antipattern, antipattern, pattern)
+[90m23:45:32[0m [36mINFO    [0m [90mbelief.cli                  [0m Decomposer: deferred execution finished in 43.3s
+[90m23:45:32[0m [36mINFO    [0m [90mbelief.archive.store        [0m AgentArchive: persisted belief-73a16f3d (verdict=ValidationVerdict.PASS, score=0.88, U=0.872)
+
+════════════════════════════════════════════════════════════
+  BUILD COMPLETE — 393.4s
+════════════════════════════════════════════════════════════
+
+  Output: output/belief-73a16f3d/
+  Files:
+    README.md  (1887 chars)
+    models.py  (3121 chars)
+    requirements.txt  (32 chars)
+    run.sh  (549 chars)
+    test_models.py  (10270 chars)
+
+  Cost: $0.0167
+  Verdict: pass
+  Build memory: 453 total builds stored
+  Similar prior builds: 3
+

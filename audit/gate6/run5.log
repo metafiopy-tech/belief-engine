@@ -1,0 +1,50 @@
+Starting Gate 6 mini-eval: 10 tasks × 2 conditions × 2 seeds = 40 runs
+Estimated wall-clock: 3 hours (at ~5 min/run average)
+
+[1/40] SKIP  a1-fizzbuzz engine_local seed=42 (already done)
+[2/40] SKIP  a1-fizzbuzz engine_local seed=1337 (already done)
+[3/40] SKIP  a1-fizzbuzz raw_local seed=42 (already done)
+[4/40] SKIP  a1-fizzbuzz raw_local seed=1337 (already done)
+[5/40] SKIP  a2-palindrome engine_local seed=42 (already done)
+[6/40] SKIP  a2-palindrome engine_local seed=1337 (already done)
+[7/40] SKIP  a2-palindrome raw_local seed=42 (already done)
+[8/40] SKIP  a2-palindrome raw_local seed=1337 (already done)
+[9/40] SKIP  a3-word-count engine_local seed=42 (already done)
+[10/40] SKIP  a3-word-count engine_local seed=1337 (already done)
+[11/40] SKIP  a3-word-count raw_local seed=42 (already done)
+[12/40] SKIP  a3-word-count raw_local seed=1337 (already done)
+[13/40] SKIP  b1-click-todo engine_local seed=42 (already done)
+[14/40] SKIP  b1-click-todo engine_local seed=1337 (already done)
+[15/40] SKIP  b1-click-todo raw_local seed=42 (already done)
+[16/40] SKIP  b1-click-todo raw_local seed=1337 (already done)
+[17/40] SKIP  b2-async-retry-client engine_local seed=42 (already done)
+[18/40] SKIP  b2-async-retry-client engine_local seed=1337 (already done)
+[19/40] SKIP  b2-async-retry-client raw_local seed=42 (already done)
+[20/40] SKIP  b2-async-retry-client raw_local seed=1337 (already done)
+[21/40] SKIP  b3-config-yaml-env engine_local seed=42 (already done)
+[22/40] SKIP  b3-config-yaml-env engine_local seed=1337 (already done)
+[23/40] SKIP  b3-config-yaml-env raw_local seed=42 (already done)
+[24/40] SKIP  b3-config-yaml-env raw_local seed=1337 (already done)
+[25/40] SKIP  b4-json-diff engine_local seed=42 (already done)
+[26/40] SKIP  b4-json-diff engine_local seed=1337 (already done)
+[27/40] SKIP  b4-json-diff raw_local seed=42 (already done)
+[28/40] SKIP  b4-json-diff raw_local seed=1337 (already done)
+[29/40] SKIP  c1-fastapi-pydantic-v2 engine_local seed=42 (already done)
+[30/40] SKIP  c1-fastapi-pydantic-v2 engine_local seed=1337 (already done)
+[31/40] SKIP  c1-fastapi-pydantic-v2 raw_local seed=42 (already done)
+[32/40] SKIP  c1-fastapi-pydantic-v2 raw_local seed=1337 (already done)
+[33/40] RUN   c2-sqlalchemy-2-mapped engine_local seed=42 at 23:48:51
+              → PASS score=0.00 time=517s tokens=0
+[34/40] RUN   c2-sqlalchemy-2-mapped engine_local seed=1337 at 23:57:28
+              → PASS score=0.00 time=550s tokens=0
+[35/40] SKIP  c2-sqlalchemy-2-mapped raw_local seed=42 (already done)
+[36/40] SKIP  c2-sqlalchemy-2-mapped raw_local seed=1337 (already done)
+[37/40] RUN   c3-fastapi-settings-yaml engine_local seed=42 at 00:06:38
+              → FAIL score=0.00 time=1304s tokens=0
+[38/40] RUN   c3-fastapi-settings-yaml engine_local seed=1337 at 00:28:22
+              → PASS score=0.00 time=675s tokens=0
+[39/40] SKIP  c3-fastapi-settings-yaml raw_local seed=42 (already done)
+[40/40] SKIP  c3-fastapi-settings-yaml raw_local seed=1337 (already done)
+
+=== COMPLETE ===
+Total finished runs in DB: 40
