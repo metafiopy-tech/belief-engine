@@ -53,12 +53,10 @@ dependencies = [
     "ruff>=0.9.0",
     # Session 3 (v3.2): layered package validator (slopsquatting defense).
     # rapidfuzz is required for the Levenshtein fuzzy-match suggestion
-    # layer; guarddog + pip-audit are optional subprocess security
-    # checks (the executor tolerates them missing — fail-open for
-    # optional layers, fail-closed for authoritative ones).
+    # layer.  guarddog + pip-audit are subprocess CLI tools — moved to
+    # the [security] extra so the default install stays light. The
+    # executor tolerates them missing (logs and skips the check).
     "rapidfuzz>=3.0",
-    "guarddog>=0.2",
-    "pip-audit>=2.7",
     # Session 4 (v3.2): synthesizer router uses radon for cyclomatic
     # complexity.  Router tolerates radon missing (treats the signal
     # as unknown), so this is a soft requirement — pinned here so the
@@ -82,6 +80,13 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.6.0",
+]
+security = [
+    # CLI tools invoked via subprocess by belief.agents.executor for
+    # supply-chain security checks.  Optional — executor skips them
+    # gracefully if not on PATH.
+    "guarddog>=0.2",
+    "pip-audit>=2.7",
 ]
 local = [
     "ollama>=0.3.0",
