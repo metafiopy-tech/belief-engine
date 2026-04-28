@@ -471,4 +471,4 @@ class TestFullLoopSummary:
     def test_version_is_3(self):
         import belief
 
-        assert belief.__version__ == "3.0.0"
+        assert belief.__version__ == "3.2.0"

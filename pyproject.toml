@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "belief-engine"
-version = "3.1.0"
+version = "3.2.0"
 description = "Autonomous AI build system. Describe what you want. Belief builds it, tests it, deploys it, and learns — on your laptop, no API key required."
 readme = "README.md"
 license = {text = "MIT"}
