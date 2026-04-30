@@ -29,13 +29,12 @@ per request would defeat determinism.
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import json
 import logging
 import os
-import re
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -43,6 +42,21 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+
+# scripts/ is not a regular package; pull the shared adapter helpers in
+# whether we're invoked via "uvicorn scripts.bigcode_shim:app" (package
+# import path) or via importlib (tests). Either way the module lives
+# next to this file.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from _humaneval_adapter import (  # noqa: E402
+    detect_function_name,
+    extract_function_body,
+    looks_like_code_stub,
+    rewrite_stub_to_goal,
+)
 
 logger = logging.getLogger("belief.shim.bigcode")
 
@@ -167,117 +181,15 @@ def _parse_summary_line(stdout: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # HumanEval / MBPP-style code-stub adapter
 # ---------------------------------------------------------------------------
-#
-# BigCode's HumanEval and MBPP tasks send the model a code stub: optional
-# imports, then ``def NAME(args):`` with a docstring describing what the
-# function should do. The expected completion is the *body* of that
-# function — the lines that go after the docstring. The harness assembles
-# ``prompt + completion`` and runs the test suite against the result.
-#
-# The Belief Engine's intake agent expects an English instruction, not a
-# code prefix. So we:
-#
-#   1. Detect a stub-shaped prompt.
-#   2. Rewrite it to "Implement the function below ... <stub>".
-#   3. Run the engine and read its full Python file.
-#   4. Extract just the body of the function with the matching name.
-#   5. Return that body so harness-side ``prompt + completion`` is valid.
-#
-# When the prompt isn't stub-shaped (e.g. a natural-language goal sent
-# directly), the adapter is a no-op and the existing whole-file path runs.
+# The actual logic lives in scripts/_humaneval_adapter.py so the
+# generator (scripts/generate_humaneval_completions.py) can reuse it.
+# These ``_``-prefixed wrappers preserve the shim's existing private
+# test surface (``shim._looks_like_code_stub`` etc.).
 
-
-_DEF_RE = re.compile(r"^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", re.MULTILINE)
-
-
-def _looks_like_code_stub(text: str) -> bool:
-    """A prompt is a code stub if it parses as Python AND has at least
-    one top-level function definition with a docstring as its first
-    statement."""
-    if not text or "def " not in text:
-        return False
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return False
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.body:
-            first = node.body[0]
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
-                if isinstance(first.value.value, str):
-                    return True
-    return False
-
-
-def _detect_function_name(stub: str) -> str | None:
-    """Return the name of the *last* top-level def in the stub.
-
-    HumanEval prompts often have helper imports, sometimes a small
-    helper function, then the target function last. Picking the last
-    def is more robust than picking the first.
-    """
-    try:
-        tree = ast.parse(stub)
-    except SyntaxError:
-        m = list(_DEF_RE.finditer(stub))
-        return m[-1].group(1) if m else None
-    name: str | None = None
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef):
-            name = node.name
-    return name
-
-
-def _rewrite_stub_to_goal(stub: str) -> str:
-    """Wrap a HumanEval-style stub in an English instruction the
-    intake agent can act on."""
-    return (
-        "Implement the function described below. Return a single Python "
-        "file containing the complete function definition (including the "
-        "signature and docstring as given). Do not include __main__ "
-        "blocks, example usage, or test code outside the function.\n\n"
-        f"{stub.rstrip()}\n"
-    )
-
-
-def _extract_function_body(source: str, fn_name: str, *, indent: str = "    ") -> str:
-    """Return the body of ``fn_name`` from ``source``, indented for
-    insertion after the original stub.
-
-    Drops the docstring (the harness's stub already has it). Falls back
-    to returning the whole source if parsing fails or the function
-    can't be found — better to give the harness *something* than a
-    blank completion.
-    """
-    if not source:
-        return ""
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return source
-    target: ast.FunctionDef | None = None
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == fn_name:
-            target = node
-            break
-    if target is None:
-        return source
-    body = list(target.body)
-    # Drop a leading docstring expression if present.
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
-        if isinstance(body[0].value.value, str):
-            body = body[1:]
-    if not body:
-        return f"{indent}pass\n"
-    lines: list[str] = []
-    for stmt in body:
-        try:
-            stmt_src = ast.unparse(stmt)
-        except Exception:  # pragma: no cover — ast.unparse is robust on 3.9+
-            continue
-        for line in stmt_src.split("\n"):
-            lines.append(indent + line if line else "")
-    return "\n".join(lines) + "\n"
+_looks_like_code_stub = looks_like_code_stub
+_detect_function_name = detect_function_name
+_rewrite_stub_to_goal = rewrite_stub_to_goal
+_extract_function_body = extract_function_body
 
 
 async def _run_engine(prompt: str, *, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict[str, Any]:
