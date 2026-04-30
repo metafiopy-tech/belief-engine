@@ -48,3 +48,8 @@ htmlcov/
 
 # Session handoff checklists (ephemeral — written per-session, not versioned)
 docs/sessions/
+docs/session-*/MANUAL_VERIFICATION.md
+SESSION_HANDOFF*.md
+
+# Runtime PIDs and process state
+*.pid

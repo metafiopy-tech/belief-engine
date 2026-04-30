@@ -67,7 +67,7 @@ A fifth run the next morning on a fresh three-challenge sample reproduced the pa
 ```
 You: "Build a todo app with Click"
   |
-11 AI agents collaborate in a convergence loop:
+17 AI agents collaborate in a convergence loop:
   intake -> research -> planner -> architect -> skeleton -> builder
   -> covenant enforce -> import fix -> tester -> executor -> debugger
   -> synthesizer -> validator (real pytest) -> water cycle -> deploy
@@ -104,15 +104,30 @@ v3.0 adds a full self-improvement loop. The engine builds tools for itself, disc
 | **Autocatalytic NEW_TOOL** | The engine uses its own pipeline to build tools for itself. Failure clusters drive tool goals. |
 | **Safety Guardrails** | Async overseer, evaluator integrity hashes, Goodhart canary (held-out benchmark), cost monitors. |
 
+## v3.2: Hardening, Defense, Archive, Repo-Map
+
+v3.2 is the current release. Eight focused sessions on top of v3.1:
+
+| Session | What shipped |
+|--------|-------------|
+| **Ollama hardening** | Retry + circuit breaker on every local LLM call. No more silent stalls when the model server hiccups. |
+| **LibCST Pydantic v2 covenant** | AST-level rewrite covenant for v1→v2 migrations. 30 hermetic tests. |
+| **Package validator** | 6-layer slopsquatting defense (canonicalize → stdlib → hallucination check → typo guard → guarddog → pip-audit). 23 tests. |
+| **Synthesizer router** | Cyclomatic-complexity routing between full Haiku synthesis and a 1.5B local polish fallback. Ablation harness for KEEP/ROUTE/DELETE decisions. |
+| **DGM-style agent archive** | ChromaDB-backed retrieval of prior successful builds. The planner injects top-3 priors into every plan. 16 tests. |
+| **tree-sitter + PageRank repo-map** | Aider-style repo summary for brownfield work. New `belief repomap` command. |
+| **Covenant auto-extraction** | Failure-cluster proposer + precision gate + human-review CLI. **No auto-merge** — `belief covenants approve` is mandatory before a discovered rule lands. |
+| **Validation writeup** | The v3.1.0 paired-A/B results above, expanded into a 2-page technical note (`docs/validation/v3.1.0-consistency-results.md`). |
+
 ## Key Numbers
 
 | Metric | Value |
 |--------|-------|
-| Codebase | 131 Python files, ~37,800 lines |
+| Codebase | 139 Python files, ~43,000 lines |
 | Benchmark | **17/20 (85%)** on 20-challenge suite |
-| Builds completed | 53+ |
+| Builds in soil | 356+ |
 | Nutrients learned | 900+ |
-| Self-learned covenants | 7 static + dynamic discovery |
+| Self-learned covenants | 37 (6 static + 31 crystallized) |
 | Cost per build | **$0.18** (was $0.87 -- 80% reduction) |
 | Build time | ~5 minutes |
 | ChromaDB collections | 5 (tools, episodes, principles, failures, covenants) |
@@ -266,7 +281,7 @@ paid for when needed.
 
 ```
 belief/
-  agents/          -- 11+ LangGraph agents (intake -> validator)
+  agents/          -- 17 LangGraph agents (intake -> validator -> brownfield)
   validators/      -- AST covenant enforcers + dynamic covenant registry
   memory/          -- ChromaDB metabolization (5 collections, FSRS decay)
   refinement/      -- Water cycle (analyze -> fix -> revalidate)
