@@ -15,7 +15,7 @@ Design:
     max_tokens)`` returning raw text. The synthesizer parses the first
     JSON array out of the response and drops malformed entries.
   - Cost guard: we ask for at most 5 tests and cap output at 1200
-    tokens. Typical Haiku cost: ~\$0.01-\$0.02 per build.
+    tokens. Typical Haiku cost: ~\\$0.01-\\$0.02 per build.
 """
 
 from __future__ import annotations

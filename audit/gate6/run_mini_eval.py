@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sqlite3
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # Config
 N_SEEDS = 2
@@ -77,6 +79,94 @@ def record_finish(conn, task_id, condition, seed, **fields):
     conn.commit()
 
 
+_RUN_ID_RE = re.compile(r"Run ID:\s*(belief-[a-f0-9]+)")
+_VERDICT_RE = re.compile(r"Verdict:\s*([A-Za-z_]+)")
+# Validator log line, e.g. "Validator: pass, 9/9 tests, weighted=1.00"
+_VALIDATOR_RE = re.compile(
+    r"Validator:\s*(?P<v>[A-Za-z_]+),\s*"
+    r"(?P<tp>\d+)\s*/\s*(?P<tt>\d+)\s*tests,\s*"
+    r"weighted=(?P<w>[\d.]+)"
+)
+
+
+def _lookup_outcome_in_archive(run_id: str) -> dict | None:
+    """Read a BuildOutcome from the agent archive by run_id.
+
+    Returns the outcome dict (verdict/weighted_score/tests_passed/
+    tests_total) or None on any failure. Never raises — the runner
+    falls back to stdout/stderr regex parsing if this returns None.
+    """
+    if not run_id:
+        return None
+    try:
+        from belief.archive.outcome import BuildOutcome
+        from belief.archive.store import AgentArchive
+
+        arch = AgentArchive()
+        arch._ensure()
+        result = arch._collection.get(ids=[run_id], include=["metadatas"])
+    except Exception:
+        return None
+
+    metadatas = (result or {}).get("metadatas") or []
+    if not metadatas:
+        return None
+    meta = metadatas[0] or {}
+    raw = meta.get("outcome_json")
+    if not raw:
+        # Fall back to the metadata fields if outcome_json wasn't stored.
+        return {
+            "verdict": str(meta.get("verdict") or "unknown"),
+            "weighted_score": float(meta.get("weighted_score") or 0.0),
+            "tests_passed": 0,
+            "tests_total": 0,
+        }
+    try:
+        o: Any = BuildOutcome.from_json(raw)
+    except Exception:
+        return None
+    return {
+        "verdict": str(getattr(o, "verdict", "unknown")),
+        "weighted_score": float(getattr(o, "weighted_score", 0.0) or 0.0),
+        "tests_passed": int(getattr(o, "tests_passed", 0) or 0),
+        "tests_total": int(getattr(o, "tests_total", 0) or 0),
+    }
+
+
+def _parse_metrics_from_streams(stdout: str, stderr: str) -> dict:
+    """Regex fallback: scan stdout and stderr for verdict + validator line.
+
+    The validator line is emitted via logger.info() which writes to
+    stderr by default — Bug 1 in the original parser only looked at
+    stdout, so it never matched. This fallback scans both streams.
+    """
+    verdict = "unknown"
+    weighted_score = 0.0
+    tests_passed = 0
+    tests_total = 0
+    for stream in (stdout, stderr):
+        if not stream:
+            continue
+        for line in stream.splitlines():
+            m = _VERDICT_RE.search(line)
+            if m:
+                verdict = m.group(1).strip().lower()
+            m = _VALIDATOR_RE.search(line)
+            if m:
+                tests_passed = int(m.group("tp"))
+                tests_total = int(m.group("tt"))
+                weighted_score = float(m.group("w"))
+                # If verdict still unknown, take the validator's verdict.
+                if verdict == "unknown":
+                    verdict = m.group("v").strip().lower()
+    return {
+        "verdict": verdict,
+        "weighted_score": weighted_score,
+        "tests_passed": tests_passed,
+        "tests_total": tests_total,
+    }
+
+
 async def run_engine(goal: str, seed: int) -> dict:
     """Run the goal through the engine. Returns metrics dict."""
     # Override the session-1 default seed for this run
@@ -106,26 +196,41 @@ async def run_engine(goal: str, seed: int) -> dict:
         stdout = proc.stdout
         stderr = proc.stderr
 
-        # Parse verdict and score from stdout
-        verdict = "unknown"
-        weighted_score = 0.0
-        tests_passed = 0
-        tests_total = 0
-        for line in stdout.splitlines():
-            if "Verdict:" in line:
-                verdict = line.split("Verdict:")[-1].strip().lower()
-            if "Validator:" in line and "weighted=" in line:
-                # e.g. "Validator: pass, 9/9 tests, weighted=1.00"
-                parts = line.split(",")
-                for p in parts:
-                    p = p.strip()
-                    if "/" in p and "tests" in p:
-                        frac = p.split()[0]
-                        tp, tt = frac.split("/")
-                        tests_passed = int(tp)
-                        tests_total = int(tt)
-                    elif p.startswith("weighted="):
-                        weighted_score = float(p.split("=")[1])
+        # Bug 1 fix — score capture in three layers (most-trustworthy first):
+        #
+        #   1. Look up the BuildOutcome the engine itself persisted to the
+        #      agent archive. The archive holds the validator's authoritative
+        #      counts (post Bug 2 fix), so this is exact.
+        #   2. Failing that, regex-parse stdout AND stderr for "Verdict:"
+        #      and "Validator: <v>, <tp>/<tt> tests, weighted=<w>". The
+        #      validator log goes to stderr by default; the original
+        #      stdout-only parser is why every engine row read 0.0.
+        #   3. Finally, surface whatever zeros we found so the row at
+        #      least carries the verdict/error context.
+        run_id_match = (
+            _RUN_ID_RE.search(stdout) if stdout else None
+        ) or (_RUN_ID_RE.search(stderr) if stderr else None)
+        run_id = run_id_match.group(1) if run_id_match else ""
+
+        archive_metrics = _lookup_outcome_in_archive(run_id)
+        if archive_metrics is not None and archive_metrics.get("tests_total", 0) > 0:
+            verdict = archive_metrics["verdict"]
+            weighted_score = archive_metrics["weighted_score"]
+            tests_passed = archive_metrics["tests_passed"]
+            tests_total = archive_metrics["tests_total"]
+        else:
+            parsed = _parse_metrics_from_streams(stdout, stderr)
+            verdict = parsed["verdict"]
+            weighted_score = parsed["weighted_score"]
+            tests_passed = parsed["tests_passed"]
+            tests_total = parsed["tests_total"]
+            # Even if the archive lookup didn't have test counts, prefer
+            # its verdict/score when the regex fallback yielded nothing.
+            if archive_metrics is not None:
+                if verdict == "unknown" and archive_metrics["verdict"]:
+                    verdict = archive_metrics["verdict"]
+                if weighted_score == 0.0 and archive_metrics["weighted_score"]:
+                    weighted_score = archive_metrics["weighted_score"]
 
         # Read tracker snapshot
         n_calls = LOCAL_TRACKER.total_calls()

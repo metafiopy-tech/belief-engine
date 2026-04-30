@@ -285,3 +285,64 @@ class TestPersistFromState:
 
         persist_build_outcome({"user_goal": "no run_id"}, archive=archive)
         assert archive.size() == 0
+
+    def test_tests_counts_pulled_from_validation_result_first(self, archive: AgentArchive) -> None:
+        """Bug 2 regression: tests_passed/tests_total must come from
+        validation_result (the validator's authoritative count) when
+        present, even if execution_result also carries values."""
+        from belief.archive.persist import _build_outcome_from_state
+
+        state = {
+            "run_id": "belief-bug2-validator",
+            "user_goal": "Build a fizzbuzz",
+            # Validator says 9/9; execution_result says something else.
+            "validation_result": {
+                "verdict": "pass",
+                "weighted_score": 1.0,
+                "tests_passed": 9,
+                "tests_total": 9,
+            },
+            "execution_result": {"tests_passed": 1, "tests_total": 4},
+        }
+        outcome = _build_outcome_from_state(state)
+        assert outcome is not None
+        assert outcome.tests_passed == 9
+        assert outcome.tests_total == 9
+
+    def test_tests_counts_fall_back_to_execution_result(self, archive: AgentArchive) -> None:
+        """Bug 2 fallback: when validation_result lacks the fields,
+        execution_result must still be used."""
+        from belief.archive.persist import _build_outcome_from_state
+
+        state = {
+            "run_id": "belief-bug2-fallback",
+            "user_goal": "Build a fizzbuzz",
+            "validation_result": {"verdict": "pass", "weighted_score": 1.0},
+            "execution_result": {"tests_passed": 3, "tests_total": 5},
+        }
+        outcome = _build_outcome_from_state(state)
+        assert outcome is not None
+        assert outcome.tests_passed == 3
+        assert outcome.tests_total == 5
+
+    def test_tests_counts_accept_validation_result_object(self, archive: AgentArchive) -> None:
+        """Bug 2: validation_result may be a model object with attrs,
+        not a dict — the extractor must handle both shapes."""
+        from belief.archive.persist import _build_outcome_from_state
+
+        class _VR:
+            verdict = "pass"
+            weighted_score = 1.0
+            tests_passed = 7
+            tests_total = 7
+
+        state = {
+            "run_id": "belief-bug2-object",
+            "user_goal": "Build a fizzbuzz",
+            "validation_result": _VR(),
+            "execution_result": {},
+        }
+        outcome = _build_outcome_from_state(state)
+        assert outcome is not None
+        assert outcome.tests_passed == 7
+        assert outcome.tests_total == 7

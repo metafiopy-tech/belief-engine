@@ -67,12 +67,25 @@ def _build_outcome_from_state(final_state: dict[str, Any]) -> BuildOutcome | Non
         verdict = verdict.value  # type: ignore[attr-defined]
 
     exec_r = final_state.get("execution_result") or {}
-    if isinstance(exec_r, dict):
-        tests_passed = int(exec_r.get("tests_passed") or 0)
-        tests_total = int(exec_r.get("tests_total") or 0)
-    else:
-        tests_passed = int(getattr(exec_r, "tests_passed", 0) or 0)
-        tests_total = int(getattr(exec_r, "tests_total", 0) or 0)
+
+    # Prefer validation_result (the validator's authoritative pass/total
+    # counts), then fall back to execution_result. Either may be a dict
+    # or a model object, so probe both shapes before defaulting to 0.
+    def _field(obj: Any, name: str) -> int:
+        if obj is None:
+            return 0
+        if isinstance(obj, dict):
+            try:
+                return int(obj.get(name) or 0)
+            except (TypeError, ValueError):
+                return 0
+        try:
+            return int(getattr(obj, name, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    tests_passed = _field(validation, "tests_passed") or _field(exec_r, "tests_passed")
+    tests_total = _field(validation, "tests_total") or _field(exec_r, "tests_total")
 
     # Wall clock — sum of per-agent timings.
     timings = final_state.get("agent_timings") or {}
