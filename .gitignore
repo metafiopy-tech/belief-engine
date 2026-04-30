@@ -24,6 +24,7 @@ env/
 # Belief Engine
 .belief-engine/
 output/
+results/
 *.db
 *.db-journal
 
