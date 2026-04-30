@@ -115,6 +115,14 @@ verification = [
     "hypothesis-jsonschema>=0.23.0",
     "mypy>=1.0.0",
 ]
+# Post-3.2.0: BigCode evaluation harness shim (scripts/bigcode_shim.py)
+# wraps the engine as an OpenAI-compatible /v1/completions endpoint so
+# bigcode-evaluation-harness can drive it through the same interface
+# it uses for raw Ollama. Opt-in — keeps the default install lean.
+bench = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
 photosynthesis = [
     # Scheduler + resilience
     "apscheduler>=3.11,<4.0",   # NOT 4.x per design note
