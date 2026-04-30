@@ -296,3 +296,186 @@ class TestCompletionsEndpoint:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["choices"][0]["text"] == "X = 1\n"
+
+
+# ---------------------------------------------------------------------------
+# HumanEval/MBPP stub adapter
+# ---------------------------------------------------------------------------
+
+
+_HUMANEVAL_STUB = (
+    "from typing import List\n"
+    "\n"
+    "\n"
+    "def has_close_elements(numbers: List[float], threshold: float) -> bool:\n"
+    '    """ Check if in given list of numbers, are any two numbers closer to each other than\n'
+    "    given threshold.\n"
+    "    >>> has_close_elements([1.0, 2.0, 3.0], 0.5)\n"
+    "    False\n"
+    "    >>> has_close_elements([1.0, 2.8, 3.0, 4.0, 5.0, 2.0], 0.3)\n"
+    "    True\n"
+    '    """\n'
+)
+
+
+class TestLooksLikeCodeStub:
+    def test_humaneval_prompt_is_a_stub(self, shim) -> None:
+        assert shim._looks_like_code_stub(_HUMANEVAL_STUB) is True
+
+    def test_english_goal_is_not_a_stub(self, shim) -> None:
+        assert shim._looks_like_code_stub("Build a fizzbuzz function in Python.") is False
+
+    def test_function_without_docstring_is_not_a_stub(self, shim) -> None:
+        # Pure code without a docstring isn't HumanEval-shaped — treat
+        # as ambiguous and pass through.
+        assert shim._looks_like_code_stub("def f(x):\n    return x + 1\n") is False
+
+    def test_blank_prompt_is_not_a_stub(self, shim) -> None:
+        assert shim._looks_like_code_stub("") is False
+        assert shim._looks_like_code_stub("   ") is False
+
+    def test_syntactically_invalid_prompt_is_not_a_stub(self, shim) -> None:
+        # English text that happens to contain "def " shouldn't trigger.
+        assert shim._looks_like_code_stub("the def of insanity is...") is False
+
+
+class TestDetectFunctionName:
+    def test_picks_target_function_from_humaneval_stub(self, shim) -> None:
+        assert shim._detect_function_name(_HUMANEVAL_STUB) == "has_close_elements"
+
+    def test_picks_last_def_when_multiple_present(self, shim) -> None:
+        """HumanEval sometimes has a small helper above the target."""
+        src = (
+            "def _helper(x):\n    return x * 2\n\n"
+            "def actual_target(n):\n"
+            '    """The function the tests check."""\n'
+        )
+        assert shim._detect_function_name(src) == "actual_target"
+
+    def test_returns_none_when_no_def(self, shim) -> None:
+        assert shim._detect_function_name("just some text") is None
+
+    def test_regex_fallback_on_syntax_error(self, shim) -> None:
+        # Stub that doesn't quite parse but has a recognizable signature.
+        src = "def busted(x:\n    pass\n"
+        # Either None or "busted" is acceptable; never raises.
+        result = shim._detect_function_name(src)
+        assert result in (None, "busted")
+
+
+class TestRewriteStubToGoal:
+    def test_rewrite_includes_original_stub(self, shim) -> None:
+        out = shim._rewrite_stub_to_goal(_HUMANEVAL_STUB)
+        assert "has_close_elements" in out
+        assert "Implement the function" in out
+
+    def test_rewrite_says_no_test_code(self, shim) -> None:
+        out = shim._rewrite_stub_to_goal(_HUMANEVAL_STUB)
+        # Engine should not generate __main__ or test functions —
+        # those would mismatch the harness's own test suite.
+        assert "test" in out.lower() or "__main__" in out
+
+
+class TestExtractFunctionBody:
+    def test_extracts_body_drops_docstring(self, shim) -> None:
+        source = (
+            "def has_close_elements(numbers, threshold):\n"
+            '    """drop me."""\n'
+            "    for i, a in enumerate(numbers):\n"
+            "        for b in numbers[i + 1:]:\n"
+            "            if abs(a - b) < threshold:\n"
+            "                return True\n"
+            "    return False\n"
+        )
+        body = shim._extract_function_body(source, "has_close_elements")
+        assert "drop me" not in body
+        # ast.unparse may add parens around tuple targets — accept either.
+        assert "enumerate(numbers)" in body
+        assert "return False" in body
+        # Every non-empty line must be indented (so harness can append
+        # to the original stub cleanly).
+        for line in body.splitlines():
+            if line.strip():
+                assert line.startswith("    ")
+
+    def test_function_not_found_returns_whole_source(self, shim) -> None:
+        source = "def something_else():\n    return 42\n"
+        assert shim._extract_function_body(source, "missing") == source
+
+    def test_syntax_error_returns_whole_source(self, shim) -> None:
+        source = "def busted(:\n    pass\n"
+        assert shim._extract_function_body(source, "busted") == source
+
+    def test_empty_body_after_docstring_returns_pass(self, shim) -> None:
+        source = 'def stub():\n    """only a docstring."""\n'
+        body = shim._extract_function_body(source, "stub")
+        assert body.strip() == "pass"
+
+    def test_blank_source_returns_blank(self, shim) -> None:
+        assert shim._extract_function_body("", "anything") == ""
+
+
+class TestStubAdapterEndToEnd:
+    def test_stub_prompt_returns_function_body_only(
+        self, client: TestClient, shim, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Send a HumanEval-style stub. The engine produces a full
+        file. The shim must return just the body so harness-side
+        prompt + completion concatenates to a valid program."""
+        engine_output = (
+            "from typing import List\n"
+            "\n"
+            "def has_close_elements(numbers: List[float], threshold: float) -> bool:\n"
+            '    """Check pairwise distances."""\n'
+            "    for i, a in enumerate(numbers):\n"
+            "        for b in numbers[i + 1:]:\n"
+            "            if abs(a - b) < threshold:\n"
+            "                return True\n"
+            "    return False\n"
+        )
+        proc = _FakeProc(stdout='{"run_id": "belief-stub-1", "verdict": "pass"}\n')
+        _install_fake_engine(
+            monkeypatch,
+            shim,
+            proc=proc,
+            output_root=tmp_path,
+            code_files={"has_close_elements.py": engine_output},
+        )
+        resp = client.post("/v1/completions", json={"prompt": _HUMANEVAL_STUB})
+        assert resp.status_code == 200
+        text = resp.json()["choices"][0]["text"]
+        # No signature redefinition (harness already has it).
+        assert "def has_close_elements" not in text
+        # No docstring (harness already has it).
+        assert "Check pairwise distances" not in text
+        # Body lines present (ast.unparse may reformat tuple targets).
+        assert "enumerate(numbers)" in text
+        assert "return False" in text
+        # Body is indented for direct concatenation.
+        for line in text.splitlines():
+            if line.strip():
+                assert line.startswith("    ")
+
+    def test_natural_language_prompt_returns_full_file(
+        self, client: TestClient, shim, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Non-stub prompts are unchanged: the shim returns the
+        engine's full file, no body extraction."""
+        engine_output = "def fizzbuzz(n):\n    return 'fizz' if n % 3 == 0 else str(n)\n"
+        proc = _FakeProc(stdout='{"run_id": "belief-nl-1", "verdict": "pass"}\n')
+        _install_fake_engine(
+            monkeypatch,
+            shim,
+            proc=proc,
+            output_root=tmp_path,
+            code_files={"fizzbuzz.py": engine_output},
+        )
+        resp = client.post(
+            "/v1/completions",
+            json={"prompt": "Build a fizzbuzz function in Python."},
+        )
+        assert resp.status_code == 200
+        text = resp.json()["choices"][0]["text"]
+        # Full file returned (signature + body) — no body extraction.
+        assert "def fizzbuzz" in text
+        assert "return 'fizz'" in text
