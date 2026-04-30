@@ -200,7 +200,25 @@ def generate_raw_completion(
         text = str(msg.get("content") or "")
     if not text:
         text = str(payload.get("response") or "")
+    text = _strip_markdown_fences(text)
     return _maybe_extract_body_if_full_function(text, prompt)
+
+
+_FENCE_RE = re.compile(r"```(?:[A-Za-z0-9_+-]*)?\n?(.*?)```", re.DOTALL)
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Remove ``` ... ``` markdown code fences if Qwen ignored the
+    "no fences" system prompt. Returns the contents of the first fenced
+    block when one is present; otherwise returns ``text`` unchanged.
+    """
+    if not text or "```" not in text:
+        return text
+    m = _FENCE_RE.search(text)
+    if not m:
+        # Lone fences with no closing — strip the leading marker line.
+        return re.sub(r"^```[A-Za-z0-9_+-]*\n?", "", text)
+    return m.group(1)
 
 
 def _maybe_extract_body_if_full_function(text: str, prompt: str) -> str:
@@ -275,9 +293,12 @@ def generate_engine_completion(
     fn_name = detect_function_name(prompt)
     goal = rewrite_stub_to_goal(prompt) if looks_like_code_stub(prompt) else prompt
 
+    # Use the backward-compat top-level form (matches audit/gate6/run_mini_eval.py).
+    # The `build` subcommand exists but its argparser doesn't accept --mode,
+    # which is defined on the top-level parser. Using the subcommand caused
+    # silent argparse failures (~0.7s exit, no stdout, no run_id).
     cmd = [
         "belief",
-        "build",
         "--mode",
         "local",
         "--goal",
@@ -302,12 +323,17 @@ def generate_engine_completion(
         ) from e
 
     stdout = getattr(proc, "stdout", "") or ""
+    stderr = getattr(proc, "stderr", "") or ""
+    returncode = getattr(proc, "returncode", 0)
     run_id = ""
     m = _RUN_ID_RE.search(stdout)
+    if not m:
+        # `Run ID: belief-...` is logged via logger.info → goes to stderr by default.
+        m = _RUN_ID_RE.search(stderr)
     if m:
         run_id = m.group(1)
     else:
-        # Fall back to the JSON summary line.
+        # Fall back to the JSON summary line on stdout.
         for line in reversed(stdout.splitlines()):
             s = line.strip()
             if s.startswith("{") and s.endswith("}"):
@@ -320,7 +346,16 @@ def generate_engine_completion(
                     break
 
     if not run_id:
-        logger.warning("no run_id parsed from engine stdout; returning empty")
+        # Surface the subprocess outcome so failures are diagnosable
+        # without digging into ~/.belief-engine/audit/.
+        stderr_tail = stderr[-800:] if stderr else "(no stderr)"
+        stdout_tail = stdout[-400:] if stdout else "(no stdout)"
+        logger.warning(
+            "no run_id parsed (returncode=%s)\nstderr tail:\n%s\nstdout tail:\n%s",
+            returncode,
+            stderr_tail,
+            stdout_tail,
+        )
         return ""
 
     code = read_code(out_root / run_id)

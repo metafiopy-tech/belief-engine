@@ -195,6 +195,47 @@ class TestGenerateRawCompletion:
         fake = _FakeHttpx({})
         assert gen.generate_raw_completion(_HUMANEVAL_STUB, httpx_module=fake) == ""
 
+    def test_markdown_fences_are_stripped(self, gen) -> None:
+        """Qwen wraps body in ```python ... ``` despite the system
+        prompt asking it not to. Strip the fences."""
+        fenced = (
+            "```python\n"
+            "    for i in range(len(numbers)):\n"
+            "        for j in range(i + 1, len(numbers)):\n"
+            "            if abs(numbers[i] - numbers[j]) < threshold:\n"
+            "                return True\n"
+            "    return False\n"
+            "```"
+        )
+        fake = _FakeHttpx({"message": {"content": fenced}})
+        text = gen.generate_raw_completion(_HUMANEVAL_STUB, httpx_module=fake)
+        assert "```" not in text
+        assert "for i in range" in text
+        assert "return False" in text
+
+
+class TestStripMarkdownFences:
+    def test_strips_python_fence(self, gen) -> None:
+        out = gen._strip_markdown_fences("```python\nreturn 1\n```")
+        assert out.strip() == "return 1"
+
+    def test_strips_bare_fence(self, gen) -> None:
+        out = gen._strip_markdown_fences("```\nreturn 1\n```")
+        assert out.strip() == "return 1"
+
+    def test_passes_through_when_no_fence(self, gen) -> None:
+        out = gen._strip_markdown_fences("    return 1\n")
+        assert out == "    return 1\n"
+
+    def test_handles_unclosed_fence(self, gen) -> None:
+        """If only the opening fence is present, drop just that line."""
+        out = gen._strip_markdown_fences("```python\nreturn 1\n")
+        assert "```" not in out
+        assert "return 1" in out
+
+    def test_blank_input_unchanged(self, gen) -> None:
+        assert gen._strip_markdown_fences("") == ""
+
 
 # ---------------------------------------------------------------------------
 # generate_engine_completion — subprocess + filesystem
