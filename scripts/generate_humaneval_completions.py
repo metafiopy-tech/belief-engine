@@ -402,13 +402,30 @@ def _append_partial(partial_path: Path, index: int, completion: str) -> None:
         f.write(json.dumps({"index": index, "completion": completion}) + "\n")
 
 
-def _write_final(output: Path, completions_by_index: dict[int, str], n_problems: int) -> None:
+def _write_final(
+    output: Path,
+    completions_by_index: dict[int, str],
+    n_problems: int,
+    *,
+    prompts_by_index: dict[int, str] | None = None,
+) -> None:
     """Assemble the BigCode list-of-lists JSON from per-problem
-    completions and write atomically."""
+    completions and write atomically.
+
+    BigCode's HumanEval task expects each loaded generation to be
+    ``prompt + completion`` (its postprocess_generation strips the
+    prompt prefix before re-concatenating). If we feed it just the
+    body, the strip mutilates the body and pass@1 collapses to zero.
+    Pass ``prompts_by_index`` to prepend each task's prompt; omit to
+    leave the body raw (legacy behavior).
+    """
     output.parent.mkdir(parents=True, exist_ok=True)
     payload: list[list[str]] = []
     for i in range(n_problems):
-        payload.append([completions_by_index.get(i, "")])
+        body = completions_by_index.get(i, "")
+        if prompts_by_index is not None and body:
+            body = prompts_by_index.get(i, "") + body
+        payload.append([body])
     tmp = output.with_suffix(output.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp.replace(output)
@@ -450,6 +467,7 @@ def run(
         if i in done:
             continue
         prompt = prob["prompt"]
+        iter_start = time.time()
         logger.info("[%d/%d] %s — generating (%s)", i + 1, n, prob.get("task_id", "?"), backend)
         if backend == "raw":
             try:
@@ -476,17 +494,22 @@ def run(
             n_empty += 1
         _append_partial(partial, i, completion)
         done[i] = completion
-        elapsed = time.time() - t_start
+        iter_elapsed = time.time() - iter_start
+        cumulative = time.time() - t_start
         logger.info(
             "    [%d/%d] done in %.1fs (cumulative %.1fs, %d empty)",
             i + 1,
             n,
-            elapsed,
-            elapsed,
+            iter_elapsed,
+            cumulative,
             n_empty,
         )
 
-    _write_final(output, done, n)
+    # Prepend each task's prompt so the harness's postprocess_generation
+    # (which strips len(prompt) chars before re-concatenating) doesn't
+    # mutilate our completion body.
+    prompts_by_index = {i: p["prompt"] for i, p in enumerate(problems)}
+    _write_final(output, done, n, prompts_by_index=prompts_by_index)
     logger.info("wrote %d completions to %s (%d empty)", n, output, n_empty)
     return 0 if n_empty == 0 else 2
 

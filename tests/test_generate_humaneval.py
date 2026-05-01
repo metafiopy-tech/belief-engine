@@ -368,6 +368,39 @@ class TestResumableIO:
         payload = json.loads(out.read_text())
         assert payload == [["a"], [""], ["c"], [""]]
 
+    def test_write_final_prepends_prompt_when_given(self, gen, tmp_path: Path) -> None:
+        """When prompts_by_index is supplied, each non-empty body must
+        be prefixed with its task's prompt — required by BigCode harness."""
+        out = tmp_path / "with_prompt.json"
+        gen._write_final(
+            out,
+            {0: "    return 1\n", 1: "    return 2\n"},
+            n_problems=2,
+            prompts_by_index={0: "def a():\n", 1: "def b():\n"},
+        )
+        payload = json.loads(out.read_text())
+        assert payload == [
+            ["def a():\n    return 1\n"],
+            ["def b():\n    return 2\n"],
+        ]
+
+    def test_write_final_skips_prompt_for_empty_bodies(self, gen, tmp_path: Path) -> None:
+        """Empty completions stay empty even when prompts are supplied —
+        the harness uses empty completions to mark 'engine produced
+        nothing usable' which scores as fail (correctly)."""
+        out = tmp_path / "empty_skip.json"
+        gen._write_final(
+            out,
+            {0: "", 1: "    return 2\n"},
+            n_problems=2,
+            prompts_by_index={0: "def a():\n", 1: "def b():\n"},
+        )
+        payload = json.loads(out.read_text())
+        assert payload == [
+            [""],
+            ["def b():\n    return 2\n"],
+        ]
+
     def test_write_final_atomically_via_tmp(self, gen, tmp_path: Path) -> None:
         out = tmp_path / "atomic.json"
         gen._write_final(out, {0: "a"}, n_problems=1)
@@ -415,7 +448,12 @@ class TestRunDriver:
         )
         assert rc == 0
         payload = json.loads(out.read_text())
-        assert payload == [["    return True\n"], ["    return True\n"]]
+        # The driver now prepends each task's prompt so the harness's
+        # postprocess (which strips len(prompt) chars) round-trips
+        # cleanly. Bare-body files would score 0 against BigCode's
+        # HumanEval task.
+        expected = _HUMANEVAL_STUB + "    return True\n"
+        assert payload == [[expected], [expected]]
 
     def test_resume_skips_done_indices(
         self, gen, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -458,7 +496,8 @@ class TestRunDriver:
         # 2 fresh calls (index 0 and 2), index 1 came from the partial file.
         assert len(calls) == 2
         payload = json.loads(out.read_text())
-        assert payload[1] == ["PRE-EXISTING\n"]
+        # All entries are now prompt-prefixed in the final JSON.
+        assert payload[1] == [_HUMANEVAL_STUB + "PRE-EXISTING\n"]
 
     def test_empty_completions_signal_nonzero_exit(
         self, gen, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
