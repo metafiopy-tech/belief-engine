@@ -1625,6 +1625,28 @@ def app():
     grinder_sub.add_parser("pause", help="Pause the grinder (control table)")
     grinder_sub.add_parser("resume", help="Resume the grinder (control table)")
 
+    # v3.3 Session 1 — Economist daily-budget contract.
+    econ_parser = subparsers.add_parser(
+        "economy",
+        help="Show or reset the Economist's daily budget tracker (v3.3)",
+    )
+    econ_parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Print today's spend, remaining headroom, and storage paths",
+    )
+    econ_parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Zero today's spend (audit history preserved)",
+    )
+    econ_parser.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help="Override the daily ceiling (USD). Default: $5.00",
+    )
+
     args = parser.parse_args()
 
     # Session 6: apply routing CLI flags to env so ModelRouter picks them up
@@ -1711,6 +1733,20 @@ def app():
                 max_tokens=args.top,
             )
         )
+        sys.exit(0)
+    elif args.command == "economy":
+        from belief.ecology.economist import (
+            DEFAULT_DAILY_BUDGET_USD,
+            cli_reset,
+            cli_show,
+        )
+
+        budget = args.budget if args.budget is not None else DEFAULT_DAILY_BUDGET_USD
+        if args.reset:
+            print(cli_reset(daily_budget_usd=budget))
+        else:
+            # --show is the default when no flag is given.
+            print(cli_show(daily_budget_usd=budget))
         sys.exit(0)
     elif args.command == "covenants":
         from belief.covenants.review_cli import cmd_approve, cmd_reject, cmd_review
