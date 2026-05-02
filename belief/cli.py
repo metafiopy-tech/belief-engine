@@ -1687,6 +1687,45 @@ def app():
         help="Restrict to nutrient types (default: pattern antipattern skeleton; never covenant)",
     )
 
+    # v3.3 Session 3 — Sleep (offline consolidation: replay → crystallizer + FSRS housekeeping).
+    sleep_parser = subparsers.add_parser(
+        "sleep",
+        help="Run offline soil consolidation cycles (v3.3)",
+    )
+    sleep_parser.add_argument(
+        "--cycles",
+        type=int,
+        default=None,
+        help="How many replay → crystallize cycles to run (default: 3)",
+    )
+    sleep_parser.add_argument(
+        "--max-minutes",
+        type=int,
+        default=None,
+        help="Wall-clock cap for the whole run (default: 60)",
+    )
+    sleep_parser.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help="Local budget cap in USD; Economist daily ceiling still applies (default: 1.00)",
+    )
+    sleep_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run replay + scoring but do not promote covenants or refresh FSRS",
+    )
+    sleep_parser.add_argument(
+        "--no-crystallize",
+        action="store_true",
+        help="Skip Phase A (episode replay → covenants); FSRS housekeeping only",
+    )
+    sleep_parser.add_argument(
+        "--no-fsrs-recompute",
+        action="store_true",
+        help="Skip Phase B (FSRS schedule refresh)",
+    )
+
     args = parser.parse_args()
 
     # Session 6: apply routing CLI flags to env so ModelRouter picks them up
@@ -1815,6 +1854,27 @@ def app():
         )
         result = asyncio.run(run_predator_cli(cfg))
         print(cli_format_result(result))
+        sys.exit(0)
+    elif args.command == "sleep":
+        from belief.ecology.sleep import (
+            DEFAULT_BUDGET_USD,
+            DEFAULT_CYCLES,
+            DEFAULT_MAX_MINUTES,
+            SleepConfig,
+            cli_format_result as sleep_format,
+            run as run_sleep_cli,
+        )
+
+        cfg = SleepConfig(
+            cycles=args.cycles if args.cycles is not None else DEFAULT_CYCLES,
+            max_minutes=(args.max_minutes if args.max_minutes is not None else DEFAULT_MAX_MINUTES),
+            budget_usd=args.budget if args.budget is not None else DEFAULT_BUDGET_USD,
+            crystallize=not args.no_crystallize,
+            recompute_fsrs=not args.no_fsrs_recompute,
+            dry_run=bool(args.dry_run),
+        )
+        result = asyncio.run(run_sleep_cli(cfg))
+        print(sleep_format(result))
         sys.exit(0)
     elif args.command == "covenants":
         from belief.covenants.review_cli import cmd_approve, cmd_reject, cmd_review

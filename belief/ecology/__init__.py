@@ -22,6 +22,11 @@ from belief.ecology.predator import (
     PredatorResult,
     run as run_predator,
 )
+from belief.ecology.sleep import (
+    SleepConfig,
+    SleepResult,
+    run as run_sleep,
+)
 
 __all__ = [
     "Economist",
@@ -29,5 +34,8 @@ __all__ = [
     "PredatorResult",
     "PriceQuote",
     "QuoteRejected",
+    "SleepConfig",
+    "SleepResult",
     "run_predator",
+    "run_sleep",
 ]
