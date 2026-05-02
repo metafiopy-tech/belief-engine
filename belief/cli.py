@@ -1726,6 +1726,22 @@ def app():
         help="Skip Phase B (FSRS schedule refresh)",
     )
 
+    # v3.3 Session 4 — Garbage Collector (broken/invalid/duplicate cleanup).
+    gc_parser = subparsers.add_parser(
+        "gc",
+        help="Soft-tombstone broken tools, invalid covenants, and duplicate tool sources (v3.3)",
+    )
+    gc_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Identify findings but do not invalidate anything",
+    )
+    gc_parser.add_argument(
+        "--check-only",
+        action="store_true",
+        help='Same as --dry-run but logged distinctly in audit ("just looking")',
+    )
+
     args = parser.parse_args()
 
     # Session 6: apply routing CLI flags to env so ModelRouter picks them up
@@ -1875,6 +1891,17 @@ def app():
         )
         result = asyncio.run(run_sleep_cli(cfg))
         print(sleep_format(result))
+        sys.exit(0)
+    elif args.command == "gc":
+        from belief.ecology.garbage_collector import (
+            cli_format_result as gc_format,
+            run as run_gc_cli,
+        )
+
+        result = asyncio.run(
+            run_gc_cli(check_only=bool(args.check_only), dry_run=bool(args.dry_run))
+        )
+        print(gc_format(result))
         sys.exit(0)
     elif args.command == "covenants":
         from belief.covenants.review_cli import cmd_approve, cmd_reject, cmd_review
