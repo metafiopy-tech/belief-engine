@@ -1647,6 +1647,46 @@ def app():
         help="Override the daily ceiling (USD). Default: $5.00",
     )
 
+    # v3.3 Session 2 — Predator (utility-driven soft-tombstone of low-value soil).
+    pred_parser = subparsers.add_parser(
+        "predator",
+        help="Soft-tombstone low-utility soil nutrients (v3.3)",
+    )
+    pred_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Score and report candidates but do not invalidate anything",
+    )
+    pred_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Utility threshold; nutrients below this are pruning candidates (default: 0.15)",
+    )
+    pred_parser.add_argument(
+        "--min-age-days",
+        type=int,
+        default=None,
+        help="Skip nutrients younger than this (default: 7)",
+    )
+    pred_parser.add_argument(
+        "--max-delete",
+        type=int,
+        default=None,
+        help="Soft cap on tombstones per run (default: 50; first-run hard cap: 10)",
+    )
+    pred_parser.add_argument(
+        "--confirm-first-run",
+        action="store_true",
+        help="Bypass the 10-deletion first-run safety cap (use after a dry-run inspection)",
+    )
+    pred_parser.add_argument(
+        "--collections",
+        nargs="+",
+        default=None,
+        help="Restrict to nutrient types (default: pattern antipattern skeleton; never covenant)",
+    )
+
     args = parser.parse_args()
 
     # Session 6: apply routing CLI flags to env so ModelRouter picks them up
@@ -1747,6 +1787,34 @@ def app():
         else:
             # --show is the default when no flag is given.
             print(cli_show(daily_budget_usd=budget))
+        sys.exit(0)
+    elif args.command == "predator":
+        from belief.ecology.predator import (
+            DEFAULT_MAX_DELETE_PER_RUN,
+            DEFAULT_MIN_AGE_DAYS,
+            DEFAULT_NUTRIENT_TYPES,
+            DEFAULT_UTILITY_THRESHOLD,
+            PredatorConfig,
+            cli_format_result,
+            run as run_predator_cli,
+        )
+
+        cfg = PredatorConfig(
+            collections=tuple(args.collections) if args.collections else DEFAULT_NUTRIENT_TYPES,
+            utility_threshold=(
+                args.threshold if args.threshold is not None else DEFAULT_UTILITY_THRESHOLD
+            ),
+            min_age_days=(
+                args.min_age_days if args.min_age_days is not None else DEFAULT_MIN_AGE_DAYS
+            ),
+            max_delete_per_run=(
+                args.max_delete if args.max_delete is not None else DEFAULT_MAX_DELETE_PER_RUN
+            ),
+            dry_run=bool(args.dry_run),
+            confirm_first_run=bool(args.confirm_first_run),
+        )
+        result = asyncio.run(run_predator_cli(cfg))
+        print(cli_format_result(result))
         sys.exit(0)
     elif args.command == "covenants":
         from belief.covenants.review_cli import cmd_approve, cmd_reject, cmd_review

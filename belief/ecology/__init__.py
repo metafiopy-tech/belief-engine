@@ -17,9 +17,17 @@ from belief.ecology.economist import (
     PriceQuote,
     QuoteRejected,
 )
+from belief.ecology.predator import (
+    PredatorConfig,
+    PredatorResult,
+    run as run_predator,
+)
 
 __all__ = [
     "Economist",
+    "PredatorConfig",
+    "PredatorResult",
     "PriceQuote",
     "QuoteRejected",
+    "run_predator",
 ]

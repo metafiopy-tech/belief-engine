@@ -1084,6 +1084,37 @@ class Soil:
         logger.info(f"Soil: invalidated {nutrient_id} at {ts:.0f} ({reason!r})")
         return True
 
+    def revalidate_nutrient(self, nutrient_id: str) -> bool:
+        """Inverse of ``invalidate_nutrient``: restore a soft-deleted nutrient.
+
+        Zeros ``valid_until`` and clears ``invalidation_reason`` so the
+        nutrient re-enters the active set for live retrieval. Used by
+        Sleep's restore path (v3.3 Session 3) to reverse Predator
+        false-positive prunes.
+
+        Returns ``True`` if the nutrient existed and was actually
+        restored; ``False`` if it didn't exist or was not invalidated
+        (already in the active set — call is a no-op then).
+        """
+        nutrient, col = self._find_nutrient(nutrient_id)
+        if nutrient is None or col is None:
+            logger.warning(f"Soil: revalidate_nutrient -- {nutrient_id} not found")
+            return False
+        if nutrient.valid_until == 0.0:
+            # Not invalidated — nothing to do.
+            return False
+        nutrient.valid_until = 0.0
+        nutrient.invalidation_reason = ""
+        metadata = nutrient.to_chromadb_metadata()
+        metadata = _add_fsrs_defaults(metadata)
+        col.update(ids=[nutrient_id], metadatas=[metadata])
+        try:
+            self._collection.update(ids=[nutrient_id], metadatas=[metadata])
+        except Exception as e:
+            logger.debug(f"Legacy collection revalidate mirror skipped for {nutrient_id}: {e}")
+        logger.info(f"Soil: revalidated {nutrient_id}")
+        return True
+
     def count_active(self, as_of: Optional[float] = None) -> int:
         """Number of nutrients still in the active set at *as_of* (now)."""
         ts = as_of if as_of is not None else _now_ts()
