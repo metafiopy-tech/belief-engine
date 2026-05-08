@@ -1314,7 +1314,22 @@ def _run_synth_cmd(args) -> None:
 
             pending = state.pending_signals(limit=1000)
             if pending:
-                filt = CascadingRelevanceFilter(keywords_path=config.keywords_file)
+                # Resolve the keywords file: prefer config.keywords_file
+                # (under user state dir, allows local override), fall
+                # back to the repo-shipped copy at
+                # belief/photosynthesis/domain_keywords.yaml. The user
+                # state dir is created fresh on first run and doesn't
+                # contain a keywords file by default; without this
+                # fallback the cascade compiles an empty regex and
+                # rejects every signal at stage 1.
+                kw_path = config.keywords_file
+                if not kw_path.exists():
+                    import belief.photosynthesis as _photosyn_pkg
+
+                    repo_kw = Path(_photosyn_pkg.__file__).parent / "domain_keywords.yaml"
+                    if repo_kw.exists():
+                        kw_path = repo_kw
+                filt = CascadingRelevanceFilter(keywords_path=kw_path)
                 texts = [
                     {
                         "signal_id": row["id"],
