@@ -1742,6 +1742,34 @@ def app():
         help='Same as --dry-run but logged distinctly in audit ("just looking")',
     )
 
+    # v3.3 Session 5 — Curiosity (gap-driven goal proposal).
+    cur_parser = subparsers.add_parser(
+        "curiosity",
+        help="Suggest build goals that fill gaps in the soil (v3.3)",
+    )
+    cur_parser.add_argument(
+        "--suggest",
+        type=int,
+        default=None,
+        help="How many candidate goals to surface (default: 5)",
+    )
+    cur_parser.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help="Local budget cap in USD (Economist daily ceiling still applies; default: 1.00)",
+    )
+    cur_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Score and rank but do not commit Economist or write state",
+    )
+    cur_parser.add_argument(
+        "--auto-build",
+        action="store_true",
+        help="DEFERRED to v3.3 Session 5b (subprocess pipeline chain). Errors with diagnostic.",
+    )
+
     args = parser.parse_args()
 
     # Session 6: apply routing CLI flags to env so ModelRouter picks them up
@@ -1902,6 +1930,32 @@ def app():
             run_gc_cli(check_only=bool(args.check_only), dry_run=bool(args.dry_run))
         )
         print(gc_format(result))
+        sys.exit(0)
+    elif args.command == "curiosity":
+        if args.auto_build:
+            print(
+                "belief curiosity --auto-build is deferred to v3.3 Session 5b "
+                "(subprocess pipeline chain not yet implemented).\n"
+                "Use --suggest N to see candidate goals, then run the chosen goal "
+                "manually via 'belief --goal \"...\"'."
+            )
+            sys.exit(2)
+
+        from belief.ecology.curiosity import (
+            DEFAULT_BUDGET_USD as CURIOSITY_BUDGET_USD,
+            DEFAULT_SUGGEST_N,
+            cli_format_result as cur_format,
+            suggest as run_curiosity_cli,
+        )
+
+        result = asyncio.run(
+            run_curiosity_cli(
+                n=args.suggest if args.suggest is not None else DEFAULT_SUGGEST_N,
+                budget_usd=args.budget if args.budget is not None else CURIOSITY_BUDGET_USD,
+                dry_run=bool(args.dry_run),
+            )
+        )
+        print(cur_format(result))
         sys.exit(0)
     elif args.command == "covenants":
         from belief.covenants.review_cli import cmd_approve, cmd_reject, cmd_review

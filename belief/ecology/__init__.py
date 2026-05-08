@@ -22,6 +22,11 @@ from belief.ecology.predator import (
     PredatorResult,
     run as run_predator,
 )
+from belief.ecology.curiosity import (
+    CuriosityResult,
+    GoalCandidate,
+    suggest as curiosity_suggest,
+)
 from belief.ecology.garbage_collector import (
     GCReport,
     run as run_gc,
@@ -33,14 +38,17 @@ from belief.ecology.sleep import (
 )
 
 __all__ = [
+    "CuriosityResult",
     "Economist",
     "GCReport",
+    "GoalCandidate",
     "PredatorConfig",
     "PredatorResult",
     "PriceQuote",
     "QuoteRejected",
     "SleepConfig",
     "SleepResult",
+    "curiosity_suggest",
     "run_gc",
     "run_predator",
     "run_sleep",
