@@ -40,6 +40,7 @@ from belief.photosynthesis.synthesis.ranker import (
     coverage_gain,
     source_quality,
 )
+from belief.photosynthesis.synthesis.structural_mechanism import StructuralMechanism
 
 
 logger = logging.getLogger("belief.photosynthesis.synthesis.generator")
@@ -89,6 +90,12 @@ class GoalSpec(BaseModel):
     relevance_rationale: str
     novelty_rationale: str
     source_citation: str
+    # Synthesis Engine Session 1: optional cross-domain mechanism payload.
+    # Default None preserves backward-compat with single-domain photosynthesis
+    # cycles -- the existing generator.synthesize() path leaves this unset.
+    # Session 3's cross_domain_generator.synthesize_cross_domain() populates
+    # it for word-set inputs with >=2 words.
+    structural_mechanism: StructuralMechanism | None = None
 
     @field_validator("artifact_type")
     @classmethod
@@ -374,5 +381,6 @@ __all__ = [
     "GoalSpec",
     "POST_DUP_THRESHOLD",
     "SONNET_MODEL",
+    "StructuralMechanism",
     "synthesize",
 ]
