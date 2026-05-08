@@ -91,6 +91,21 @@ async def run_synthesis_cycle(
     All expensive collaborators are injected — this is what makes the
     cycle unit-testable. Dependencies default to "not available", in
     which case the cycle survey-and-track but doesn't call LLMs.
+
+    Two phases now run per cycle:
+
+      1. Cross-domain (SE Session 3): user-submitted ``word_set``
+         bundles that bypass the cascade gate (which can't reach
+         stage 3 in the current engine state without external corpus
+         /centroids). Routed to the cross-domain generator + critic.
+         Source-name branching is intentional here -- the SE plan
+         allows cycle.py to route by source while cascade / novelty /
+         ranker remain uniform.
+      2. Single-domain: the existing photosynthesis path -- score-
+         filtered survivors get scored, ranked, generated, archived.
+
+    Cross-domain runs first so its output appears at the top of the
+    summary. Both contribute to the same ``CycleSummary``.
     """
     from belief.photosynthesis.synthesis.heap import (
         BoundedPriorityHeap,
@@ -109,9 +124,28 @@ async def run_synthesis_cycle(
     from belief.photosynthesis.synthesis.renderer import write_session
 
     summary = CycleSummary()
+
+    # ------------------------------------------------------------------
+    # Phase 0 (SE Session 3): cross-domain word_set bundles
+    # ------------------------------------------------------------------
+    # Bundles with >=2 words route through cross_domain_generator and
+    # the CoVe critic. Bypasses survivors_for_synthesis since the
+    # cascade is currently unable to reach stage 3 (engine-wide
+    # finding from S2.5; harvested signals also stuck at <stage 3).
+    if generator_client is not None and hasattr(state, "word_set_pending_bundles"):
+        await _run_cross_domain_phase(
+            state=state,
+            config=config,
+            summary=summary,
+            generator_client=generator_client,
+            embedder=embedder,
+            archive=archive,
+            pending_dir=pending_dir,
+        )
+
     heap = BoundedPriorityHeap(state)
     rows = state.survivors_for_synthesis(limit=20)
-    summary.surveyed = len(rows)
+    summary.surveyed += len(rows)
 
     if not rows:
         return summary
@@ -267,6 +301,118 @@ async def run_synthesis_cycle(
         state.set_signal_status(signal_id, "promoted")
     summary.promoted += 1
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Cross-domain phase (SE Session 3)
+# ---------------------------------------------------------------------------
+
+
+async def _run_cross_domain_phase(
+    *,
+    state: Any,
+    config: Any,
+    summary: "CycleSummary",
+    generator_client: Callable[..., Awaitable[str]],
+    embedder: Optional[Callable[[str], Any]],
+    archive: Any,
+    pending_dir: Optional[Path],
+    critic_client: Optional[Callable[..., Awaitable[str]]] = None,
+) -> None:
+    """Process pending word_set bundles through the cross-domain generator.
+
+    Mutates ``summary`` in place: promoted/rejected/errors counters
+    reflect cross-domain outcomes alongside the single-domain phase.
+    Failures degrade silently (logged, error appended) so the
+    single-domain phase still runs.
+    """
+    from belief.photosynthesis.synthesis.cross_domain_generator import (
+        synthesize_cross_domain,
+    )
+    from belief.photosynthesis.synthesis.renderer import write_session
+
+    try:
+        bundles = state.word_set_pending_bundles(limit=10)
+    except Exception as exc:
+        summary.errors.append(f"cross_domain_query:{exc}")
+        return
+    summary.surveyed += len(bundles)
+
+    if not bundles:
+        return
+
+    target_dir = pending_dir or getattr(
+        config, "pending_sessions_dir", Path("/var/lib/photosynthesis/pending_sessions")
+    )
+
+    for bundle in bundles:
+        words = list(bundle.get("words") or [])
+        bundle_id = str(bundle.get("bundle_id") or "")
+        row_ids = [int(rid) for rid in bundle.get("row_ids") or []]
+
+        if len(words) < 2:
+            # Single-word bundles can't form a cross-domain pair --
+            # mark rejected so they don't reappear next cycle.
+            for rid in row_ids:
+                state.set_signal_status(rid, "rejected")
+            summary.rejected += 1
+            continue
+
+        try:
+            xd_result = await synthesize_cross_domain(
+                words=words,
+                bundle_id=bundle_id,
+                generator_client=generator_client,
+                critic_client=critic_client,
+            )
+        except Exception as exc:
+            logger.warning("cross_domain_generator raised: %s", exc)
+            summary.errors.append(f"cross_domain_generator:{exc}")
+            continue
+
+        if xd_result.spec is None:
+            for rid in row_ids:
+                state.set_signal_status(rid, "rejected")
+            summary.rejected += 1
+            continue
+
+        # Write the rendered session markdown / json to pending_sessions/
+        try:
+            write_session(xd_result.spec, pending_dir=Path(target_dir))
+        except Exception as exc:
+            summary.errors.append(f"cross_domain_render:{exc}")
+            # Fall through; we still mark promoted because the spec is valid.
+
+        # Optional archive upsert mirrors the single-domain path.
+        if archive is not None:
+            try:
+                spec_text = f"{xd_result.spec.title}. {xd_result.spec.one_paragraph_description}"
+                emb = (embedder or _fallback_embedder)(spec_text)
+                archive.upsert_goal(
+                    "goal_archive",
+                    goal_id=xd_result.spec.goal_id,
+                    embedding=emb,
+                    document=spec_text,
+                    metadata={
+                        "title": xd_result.spec.title,
+                        "artifact_type": xd_result.spec.artifact_type,
+                        "domain_tags": [
+                            xd_result.mechanism.source_domain,
+                            xd_result.mechanism.target_domain,
+                        ]
+                        if xd_result.mechanism is not None
+                        else [],
+                        "status": "pending_build",
+                        "source_citation": xd_result.spec.source_citation,
+                        "structural_mechanism_present": True,
+                    },
+                )
+            except Exception as exc:
+                summary.errors.append(f"cross_domain_archive:{exc}")
+
+        for rid in row_ids:
+            state.set_signal_status(rid, "promoted")
+        summary.promoted += 1
 
 
 # ---------------------------------------------------------------------------

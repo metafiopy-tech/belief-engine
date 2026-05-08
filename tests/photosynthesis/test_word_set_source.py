@@ -279,11 +279,36 @@ class TestPipelineUniformity:
         # cascade module, the test fails so the deviation gets reviewed.
         assert "word_set" not in src
 
-    def test_no_source_name_branches_in_synthesis_cycle(self) -> None:
+    def test_synthesis_cycle_only_branches_on_source_for_cross_domain(self) -> None:
+        """cycle.py is allowed to branch on source name -- that's where
+        the SE plan locates the cross-domain routing decision. But the
+        branch must remain narrowly scoped to the cross-domain phase
+        (word_set_pending_bundles + cross_domain_generator). Anywhere
+        ELSE in cycle.py touches word_set, that's source-name
+        branching outside the documented boundary."""
         from belief.photosynthesis.synthesis import cycle as cycle_mod
 
         src = Path(cycle_mod.__file__).read_text(encoding="utf-8")
-        assert "word_set" not in src
+        # Every "word_set" mention in cycle.py must be on a line that
+        # also references the cross-domain machinery (the helper name
+        # or the bundle query). Anything else is a leak.
+        for lineno, line in enumerate(src.splitlines(), start=1):
+            if "word_set" not in line:
+                continue
+            if "_run_cross_domain_phase" in line:
+                continue
+            if "word_set_pending_bundles" in line:
+                continue
+            lower = line.lower()
+            if "cross_domain" in lower or "cross-domain" in lower:
+                continue
+            stripped = line.lstrip()
+            if stripped.startswith("#") or stripped.startswith('"') or stripped.startswith("``"):
+                continue
+            raise AssertionError(
+                f"cycle.py:{lineno}: 'word_set' appears outside the "
+                f"documented cross-domain branch -- line: {line!r}"
+            )
 
     def test_no_source_name_branches_in_generator(self) -> None:
         from belief.photosynthesis.synthesis import generator as gen_mod

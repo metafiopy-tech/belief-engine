@@ -28,7 +28,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 
 DEFAULT_DB_PATH = "/var/lib/photosynthesis/signals.sqlite"
@@ -286,6 +286,81 @@ class PhotosynthesisState:
                     (limit,),
                 )
             )
+
+    # ------------------------------------------------------------------ cross-domain (SE S3)
+    def word_set_pending_bundles(self, *, limit: int = 10) -> list[dict[str, Any]]:
+        """Return pending word_set bundles, grouped by bundle_id.
+
+        Bypasses the cascade-driven survivors_for_synthesis path,
+        which only returns ``stage_reached=3`` rows. The cascade in
+        the current engine state cannot reach stage 3 without
+        corpus/centroids that nobody passes to its constructor (a
+        finding from SE Session 2.5 live verification). Cross-domain
+        word inputs route around the cascade entirely via this
+        helper, which is consumed by ``cycle.py``'s S3 branch.
+
+        Each returned dict has::
+
+            {
+              "bundle_id":  str,                   # parsed from source_id stem
+              "words":      list[str],             # extracted from per-word rows in submission order
+              "row_ids":    list[int],             # all raw_signal ids in the bundle (per-word + bundle)
+              "bundle_row": dict[str, Any] | None, # the synthetic bundle row (or None if absent)
+            }
+
+        Only bundles whose status is still ``'raw'`` are returned --
+        bundles that have already been promoted/rejected by the
+        cycle don't reappear, mirroring survivors_for_synthesis'
+        idempotency contract.
+        """
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT id, source, source_id, title, summary, raw_excerpt, "
+                "       captured_at, status "
+                "FROM raw_signals "
+                "WHERE source = 'word_set' AND status = 'raw' "
+                "ORDER BY captured_at ASC, id ASC;"
+            ).fetchall()
+        # Group by bundle id (the prefix before the first ':' in source_id).
+        bundles_by_id: dict[str, dict[str, Any]] = {}
+        # Per-word source_id format: "<bundle>:word:<index>:<word>"
+        # Bundle source_id format:   "<bundle>:bundle"
+        for row in rows:
+            sid = str(row["source_id"])
+            bid = sid.split(":", 1)[0]
+            slot = bundles_by_id.setdefault(
+                bid,
+                {
+                    "bundle_id": bid,
+                    "words_with_index": [],  # tuples of (index, word) -- sorted later
+                    "row_ids": [],
+                    "bundle_row": None,
+                },
+            )
+            slot["row_ids"].append(int(row["id"]))
+            if sid.endswith(":bundle"):
+                slot["bundle_row"] = dict(row)
+                continue
+            # Per-word row: parse "<bid>:word:<index>:<word>"
+            parts = sid.split(":", 3)
+            if len(parts) == 4 and parts[1] == "word":
+                try:
+                    idx = int(parts[2])
+                except ValueError:
+                    continue
+                slot["words_with_index"].append((idx, parts[3]))
+
+        # Finalize: sort per-word entries by index, drop scratch field.
+        out: list[dict[str, Any]] = []
+        for bid, slot in bundles_by_id.items():
+            slot["words_with_index"].sort(key=lambda t: t[0])
+            slot["words"] = [w for _, w in slot["words_with_index"]]
+            del slot["words_with_index"]
+            out.append(slot)
+
+        # Stable order: bundles that appeared earliest in the table first.
+        out.sort(key=lambda s: min(s["row_ids"]))
+        return out[:limit]
 
     # ------------------------------------------------------------------ diagnostics
     def count_by_source(self) -> dict[str, int]:
