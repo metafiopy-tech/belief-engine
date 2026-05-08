@@ -310,14 +310,22 @@ async def propose_invariants(
     )
 
     try:
-        from belief.config.models import ModelRouter
+        from belief.config.models import ModelRole, ModelRouter
         from belief.llm import LLMClient
 
         router = ModelRouter()
         llm = LLMClient(router)
 
-        response = await llm.generate(
-            role="decomposer",
+        # ``LLMClient`` exposes ``generate_text`` / ``generate_structured`` —
+        # there is no ``generate``.  Sleep's Claude proposer was wired against
+        # the wrong method name, so the proposer half of the crystallizer
+        # silently fell back to the template sweep on every overnight run.
+        # Route through GAP_ANALYST so we land on Haiku (matches the
+        # docstring's "Uses Haiku for cost efficiency" promise — "decomposer"
+        # is a pipeline node, not a ModelRole, and unknown roles default to
+        # Sonnet).
+        response = await llm.generate_text(
+            role=ModelRole.GAP_ANALYST,
             system=_PROPOSER_SYSTEM,
             prompt=prompt,
             temperature=0.3,
