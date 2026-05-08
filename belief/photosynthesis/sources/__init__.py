@@ -22,6 +22,14 @@ Failures in one source MUST NOT take down the daemon. The daemon
 catches exceptions from harvest() at the scheduler callback layer;
 each source should still guard its own loops so a single malformed
 item doesn't abort the whole batch.
+
+**word_set** (Synthesis Engine S2) is a sibling adapter that does NOT
+follow this contract: it has no upstream to fetch, no watermark, and is
+exposed as ``async def emit(state, config, *, words, ...)`` rather than
+``async def harvest(client, state, config)``. It is intentionally NOT
+registered in ``daemon.HARVESTERS`` -- the ``belief synth words`` CLI
+invokes it directly. From the cascade filter onward, its raw_signal
+rows are indistinguishable from the rest.
 """
 
 from belief.photosynthesis.sources import (
@@ -31,6 +39,7 @@ from belief.photosynthesis.sources import (
     hackernews,
     pypi,
     stackoverflow,
+    word_set,
 )
 
 __all__ = [
@@ -40,4 +49,5 @@ __all__ = [
     "hackernews",
     "pypi",
     "stackoverflow",
+    "word_set",
 ]

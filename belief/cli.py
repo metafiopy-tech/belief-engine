@@ -1243,6 +1243,66 @@ def _run_archive_cmd(args) -> None:
     print("Usage: belief archive inspect [--goal <goal>] [--top N]")
 
 
+def _run_synth_cmd(args) -> None:
+    """Dispatch ``belief synth ...`` -- Synthesis Engine S2 word-set entry.
+
+    Inserts user-submitted words into the photosynthesis raw_signals
+    table as a synthetic source so the existing cascade filter / novelty
+    gate / ranker / heap treat them uniformly with harvested signals.
+    Optionally runs a synthesis cycle so the user sees end-to-end
+    promotion in one command (degrades gracefully without LLM keys).
+    """
+    import asyncio
+
+    action = getattr(args, "synth_action", None)
+    if action != "words":
+        print('Usage: belief synth words "x,y" [--db-path PATH] [--no-cycle]')
+        return
+
+    from belief.photosynthesis.config import PhotoConfig
+    from belief.photosynthesis.sources.word_set import emit, parse_words
+    from belief.photosynthesis.state import PhotosynthesisState
+
+    try:
+        words = parse_words(args.words)
+    except ValueError as exc:
+        print(f"error: {exc}")
+        sys.exit(2)
+
+    config = PhotoConfig()
+    db_path = args.db_path or str(config.signals_db)
+    state = PhotosynthesisState(db_path=db_path)
+
+    inserted = asyncio.run(emit(state, config, words=words, bundle_id=args.bundle_id))
+    print(
+        f"word_set: bundle={args.bundle_id or '(auto)'} words={len(words)} inserted={len(inserted)}"
+    )
+    for seed in inserted:
+        print(f"  - {seed.source_id}  title={seed.title!r}")
+
+    if args.no_cycle:
+        print("--no-cycle: synthesis cycle skipped")
+        return
+
+    # Best-effort cycle. Without a generator_client/archive (the live
+    # path requires API keys + ChromaDB), the cycle survey-and-tracks but
+    # doesn't promote anything. Either way we report what happened.
+    try:
+        from belief.photosynthesis.synthesis.cycle import run_synthesis_cycle
+
+        summary = asyncio.run(run_synthesis_cycle(state, config))
+        print(
+            f"cycle: surveyed={summary.surveyed} pushed={summary.pushed_to_heap} "
+            f"promoted={summary.promoted} rejected={summary.rejected} "
+            f"saturated={summary.saturated} errors={len(summary.errors)}"
+        )
+        if summary.errors:
+            for err in summary.errors[:5]:
+                print(f"  err: {err}")
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"cycle: skipped ({exc})")
+
+
 def app():
     """CLI entry point."""
     import argparse
@@ -1770,6 +1830,42 @@ def app():
         help="DEFERRED to v3.3 Session 5b (subprocess pipeline chain). Errors with diagnostic.",
     )
 
+    # Synthesis Engine S2: word-set input adapter.
+    # ``belief synth words "x,y"`` inserts synthetic raw_signals into the
+    # photosynthesis pipeline so cross-domain word inputs flow through the
+    # same cascade filter / novelty gate / ranker as harvested signals.
+    synth_parser = subparsers.add_parser(
+        "synth",
+        help="Synthesis Engine commands (cross-domain word-set input)",
+    )
+    synth_sub = synth_parser.add_subparsers(dest="synth_action")
+    synth_words = synth_sub.add_parser(
+        "words",
+        help='Submit a comma-separated word set, e.g. "mantis_shrimp,camera"',
+    )
+    synth_words.add_argument(
+        "words",
+        type=str,
+        help='Comma-separated concept words (e.g. "mantis_shrimp,camera")',
+    )
+    synth_words.add_argument(
+        "--db-path",
+        type=str,
+        default=None,
+        help="Override the photosynthesis signals.sqlite path (defaults to PhotoConfig)",
+    )
+    synth_words.add_argument(
+        "--no-cycle",
+        action="store_true",
+        help="Insert signals only -- skip the synthesis cycle (useful for hermetic testing)",
+    )
+    synth_words.add_argument(
+        "--bundle-id",
+        type=str,
+        default=None,
+        help="Override the auto-generated bundle id (default: random 12-char hex)",
+    )
+
     args = parser.parse_args()
 
     # Session 6: apply routing CLI flags to env so ModelRouter picks them up
@@ -1956,6 +2052,9 @@ def app():
             )
         )
         print(cur_format(result))
+        sys.exit(0)
+    elif args.command == "synth":
+        _run_synth_cmd(args)
         sys.exit(0)
     elif args.command == "covenants":
         from belief.covenants.review_cli import cmd_approve, cmd_reject, cmd_review
