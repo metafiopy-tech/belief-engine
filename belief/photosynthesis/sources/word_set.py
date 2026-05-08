@@ -36,7 +36,7 @@ import logging
 import re
 import time
 import uuid
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from belief.photosynthesis.state import CandidateSeed
 
@@ -155,6 +155,9 @@ async def emit(
     words: list[str],
     bundle_id: Optional[str] = None,
     captured_at: Optional[int] = None,
+    atomize: bool = False,
+    research_client: Any = None,
+    research_sources: Any = None,
 ) -> list[CandidateSeed]:
     """Emit synthetic raw_signal rows for ``words``.
 
@@ -195,12 +198,83 @@ async def emit(
         if state.insert_signal(bundle_seed) is not None:
             inserted.append(bundle_seed)
 
+    # Session 5: optional atomization fan-out. When enabled, we
+    # expand each word into 5 axes * 3 prompts = 15 prompts/word and
+    # dispatch them across arXiv / GitHub / PyPI search endpoints in
+    # parallel. Each retrieved doc becomes its own raw_signal so the
+    # cascade filter and synthesizer see ~30-60 grounding documents
+    # instead of just the user's word_set.
+    if atomize:
+        atomized = await _emit_atomized_signals(
+            state=state,
+            words=words,
+            bundle_id=bid,
+            captured_at=ts,
+            research_client=research_client,
+            research_sources=research_sources,
+        )
+        inserted.extend(atomized)
+
     logger.info(
-        "word_set.emit: bundle_id=%s words=%d inserted=%d",
+        "word_set.emit: bundle_id=%s words=%d atomize=%s inserted=%d",
         bid,
         len(words),
+        atomize,
         len(inserted),
     )
+    return inserted
+
+
+async def _emit_atomized_signals(
+    *,
+    state: "PhotosynthesisState",
+    words: list[str],
+    bundle_id: str,
+    captured_at: int,
+    research_client: Any,
+    research_sources: Any,
+) -> list[CandidateSeed]:
+    """Run atomizer + dispatcher and persist retrieved docs as raw_signals.
+
+    Per-doc source_id format: ``<bundle>:atomized:<axis>:<doc_key_hash>``
+    so atomized signals stay grouped under the same bundle for the
+    cycle to find them. Failure (no client / network errors) returns
+    an empty list -- the per-word + bundle signals are already in the
+    table, so the user still gets a partial trace.
+    """
+    try:
+        from belief.photosynthesis.synthesis.atomizer import atomize_words
+        from belief.photosynthesis.synthesis.research_dispatcher import dispatch
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("atomization imports failed: %s", exc)
+        return []
+
+    prompts = atomize_words(words)
+    docs = await dispatch(
+        prompts,
+        client=research_client,
+        sources=research_sources,
+    )
+    if not docs:
+        return []
+
+    inserted: list[CandidateSeed] = []
+    for i, doc in enumerate(docs):
+        key_hash = abs(hash(doc.doc_key())) % (1 << 32)
+        axis = doc.prompts[0].axis if doc.prompts else "unknown"
+        sid = f"{bundle_id}:atomized:{axis}:{key_hash:08x}"
+        seed = CandidateSeed(
+            source=SOURCE_NAME,
+            source_id=sid,
+            title=(doc.title or doc.url or f"atomized_{i}")[:400],
+            summary=(doc.summary or "")[:1000],
+            raw_excerpt=(doc.raw_excerpt or doc.summary or doc.title or "")[:4000],
+            captured_at=captured_at,
+        )
+        if not state.mark_if_new(SOURCE_NAME, seed.source_id):
+            continue
+        if state.insert_signal(seed) is not None:
+            inserted.append(seed)
     return inserted
 
 

@@ -104,6 +104,7 @@ async def synthesize_cross_domain(
     generator_client: Callable[..., Awaitable[str]],
     critic_client: Optional[Callable[..., Awaitable[str]]] = None,
     bio_store: Any = None,
+    corpus: Any = None,
     temperature: float = DEFAULT_TEMPERATURE,
 ) -> CrossDomainResult:
     """Run the four-pass cross-domain synthesizer + critic.
@@ -154,10 +155,19 @@ async def synthesize_cross_domain(
     # ------------------------------------------------------------------
     primer = _build_bio_store_primer(bio_store, source, target)
 
+    # SE Session 5: optional retrieved-corpus block. When the
+    # caller atomized + dispatched research before invoking us, the
+    # corpus is a list of RetrievedDoc-like objects. We format it as
+    # a "RETRIEVED CORPUS" preamble so the freeform pass reasons
+    # over actual documents instead of training-data only.
+    corpus_block = _build_corpus_block(corpus)
+
     # ------------------------------------------------------------------
     # Pass 1 — freeform brainstorm
     # ------------------------------------------------------------------
     freeform_prompt = FREEFORM_PROMPT.format(source=source, target=target)
+    if corpus_block:
+        freeform_prompt = corpus_block + "\n\n" + freeform_prompt
     if primer:
         freeform_prompt = primer + "\n\n" + freeform_prompt
     try:
@@ -464,6 +474,44 @@ def _goalspec_from_mechanism(
         source_citation=f"word_set:{bundle_id}",
         structural_mechanism=mechanism,
     )
+
+
+def _build_corpus_block(corpus: Any) -> str:
+    """Format a list of RetrievedDoc-like objects as a grounding preamble.
+
+    Accepts any iterable whose elements expose ``title``, ``summary``,
+    ``source``, and (optionally) ``url`` attributes. Empty / None
+    corpora return an empty string. Each doc gets one line; the
+    block tops out at ~30 docs to keep the prompt within budget.
+    """
+    if not corpus:
+        return ""
+    try:
+        docs = list(corpus)
+    except TypeError:
+        return ""
+    if not docs:
+        return ""
+
+    lines = [
+        "RETRIEVED CORPUS (atomized research surfaced these "
+        "documents; ground your brainstorm in them where they apply):"
+    ]
+    for i, d in enumerate(docs[:30], start=1):
+        title = getattr(d, "title", "") or ""
+        summary = getattr(d, "summary", "") or ""
+        src = getattr(d, "source", "") or ""
+        url = getattr(d, "url", "") or ""
+        # Each line: rank index, source, title, then a clipped summary.
+        head = f"  {i}. [{src}] {title[:160]}"
+        if url:
+            head += f" <{url[:120]}>"
+        lines.append(head)
+        if summary:
+            lines.append(f"     {summary[:300]}")
+    if len(docs) > 30:
+        lines.append(f"  ... ({len(docs) - 30} more documents available)")
+    return "\n".join(lines)
 
 
 def _build_bio_store_primer(bio_store: Any, source: str, target: str) -> str:
