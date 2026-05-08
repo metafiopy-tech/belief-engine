@@ -1362,13 +1362,68 @@ def _run_synth_cmd(args) -> None:
     else:
         print("--no-cascade: filter pass skipped")
 
-    # Best-effort cycle. Without a generator_client/archive (the live
-    # path requires API keys + ChromaDB), the cycle survey-and-tracks but
-    # doesn't promote anything. Either way we report what happened.
+    # Best-effort cycle. Without a generator_client, the cross-domain
+    # phase no-ops and the single-domain phase survey-and-tracks but
+    # doesn't promote anything. With ANTHROPIC_API_KEY set (and unless
+    # --no-llm is passed), wire an LLMClient.generate_text adapter as
+    # the generator_client and critic_client so the cross-domain four
+    # passes + critic actually run live. Each invocation costs roughly
+    # 5 LLM calls (4 generator passes + 1 critic) -- a few cents on
+    # Sonnet for typical word pairs.
+    generator_client = None
+    critic_client = None
+    if not args.no_llm and os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            from belief.config.models import ModelRole, ModelRouter
+            from belief.llm import LLMClient
+
+            router = ModelRouter()
+            llm = LLMClient(router)
+
+            async def _llm_call(prompt: str, *, temperature: float, max_tokens: int) -> str:
+                # Cross-domain synthesis is reasoning-heavy -- route
+                # through the architect role (Sonnet) by default.
+                return await llm.generate_text(
+                    role=ModelRole.ARCHITECT,
+                    system="",
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+            async def _critic_call(prompt: str, *, temperature: float, max_tokens: int) -> str:
+                # Critic runs on Haiku via gap_analyst -- cheap and the
+                # checks are mechanical enough that Sonnet is overkill.
+                return await llm.generate_text(
+                    role=ModelRole.GAP_ANALYST,
+                    system="",
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+            generator_client = _llm_call
+            critic_client = _critic_call
+            print("LLM: wired (architect=Sonnet, critic=Haiku via gap_analyst)")
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"LLM: not wired ({exc})")
+    elif args.no_llm:
+        print("--no-llm: cross-domain synthesis disabled")
+    else:
+        print("LLM: ANTHROPIC_API_KEY not set; cross-domain phase will no-op")
+
     try:
         from belief.photosynthesis.synthesis.cycle import run_synthesis_cycle
 
-        summary = asyncio.run(run_synthesis_cycle(state, config))
+        summary = asyncio.run(
+            run_synthesis_cycle(
+                state,
+                config,
+                generator_client=generator_client,
+                critic_client=critic_client,
+                pending_dir=Path(config.pending_sessions_dir),
+            )
+        )
         print(
             f"cycle: surveyed={summary.surveyed} pushed={summary.pushed_to_heap} "
             f"promoted={summary.promoted} rejected={summary.rejected} "
@@ -1377,6 +1432,8 @@ def _run_synth_cmd(args) -> None:
         if summary.errors:
             for err in summary.errors[:5]:
                 print(f"  err: {err}")
+        if summary.promoted > 0:
+            print(f"output: pending_sessions written to {Path(config.pending_sessions_dir)}")
     except Exception as exc:  # pragma: no cover - defensive
         print(f"cycle: skipped ({exc})")
 
@@ -1942,6 +1999,13 @@ def app():
         action="store_true",
         help="Skip the cascade filter pass (still runs synthesis cycle); useful "
         "for hermetic testing or when sentence-transformers isn't installed",
+    )
+    synth_words.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Disable the live LLM wiring even if ANTHROPIC_API_KEY is set; "
+        "the cross-domain phase no-ops and the cycle reports surveyed=0 "
+        "(useful for hermetic testing without spending tokens)",
     )
     synth_words.add_argument(
         "--bundle-id",

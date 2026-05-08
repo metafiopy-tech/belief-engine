@@ -83,6 +83,7 @@ async def run_synthesis_cycle(
     novelty_judge: Optional[Callable[[str], Awaitable[str]]] = None,
     time_estimator: Optional[Callable[[str], Awaitable[str]]] = None,
     generator_client: Optional[Callable[..., Awaitable[str]]] = None,
+    critic_client: Optional[Callable[..., Awaitable[str]]] = None,
     successful_builds: int = 0,
     pending_dir: Optional[Path] = None,
 ) -> CycleSummary:
@@ -138,6 +139,7 @@ async def run_synthesis_cycle(
             config=config,
             summary=summary,
             generator_client=generator_client,
+            critic_client=critic_client,
             embedder=embedder,
             archive=archive,
             pending_dir=pending_dir,
