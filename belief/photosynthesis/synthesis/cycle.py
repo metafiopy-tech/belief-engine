@@ -134,6 +134,23 @@ async def run_synthesis_cycle(
     # cascade is currently unable to reach stage 3 (engine-wide
     # finding from S2.5; harvested signals also stuck at <stage 3).
     if generator_client is not None and hasattr(state, "word_set_pending_bundles"):
+        # Lazy-init the bio store (SE Session 4) so each cycle gets a
+        # consistent view across all bundles processed in this pass.
+        # Failure is non-fatal -- if chromadb is broken, the
+        # cross-domain phase still runs without priming.
+        bio_store_instance: Any = None
+        try:
+            from belief.memory.biological_primitives import (
+                BiologicalPrimitiveStore,
+                DEFAULT_PERSIST_DIR,
+            )
+
+            bio_store_instance = BiologicalPrimitiveStore(
+                persist_dir=DEFAULT_PERSIST_DIR,
+            )
+        except Exception as exc:
+            logger.warning("bio_store init failed (skipping priming): %s", exc)
+
         await _run_cross_domain_phase(
             state=state,
             config=config,
@@ -143,6 +160,7 @@ async def run_synthesis_cycle(
             embedder=embedder,
             archive=archive,
             pending_dir=pending_dir,
+            bio_store=bio_store_instance,
         )
 
     heap = BoundedPriorityHeap(state)
@@ -320,6 +338,7 @@ async def _run_cross_domain_phase(
     archive: Any,
     pending_dir: Optional[Path],
     critic_client: Optional[Callable[..., Awaitable[str]]] = None,
+    bio_store: Any = None,
 ) -> None:
     """Process pending word_set bundles through the cross-domain generator.
 
@@ -366,6 +385,7 @@ async def _run_cross_domain_phase(
                 bundle_id=bundle_id,
                 generator_client=generator_client,
                 critic_client=critic_client,
+                bio_store=bio_store,
             )
         except Exception as exc:
             logger.warning("cross_domain_generator raised: %s", exc)

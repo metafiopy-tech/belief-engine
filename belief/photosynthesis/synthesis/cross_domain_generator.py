@@ -103,6 +103,7 @@ async def synthesize_cross_domain(
     bundle_id: str,
     generator_client: Callable[..., Awaitable[str]],
     critic_client: Optional[Callable[..., Awaitable[str]]] = None,
+    bio_store: Any = None,
     temperature: float = DEFAULT_TEMPERATURE,
 ) -> CrossDomainResult:
     """Run the four-pass cross-domain synthesizer + critic.
@@ -119,6 +120,11 @@ async def synthesize_cross_domain(
             None, the critic is skipped and the GoalSpec is emitted
             with ``reason="accepted_no_critic"`` -- useful for
             hermetic tests and live runs without a critic budget.
+        bio_store: optional ``BiologicalPrimitiveStore`` (SE Session 4).
+            When provided, the freeform pass receives a primer block
+            listing the top 5 nearest existing mechanisms so the
+            synthesizer doesn't re-derive what's already known.
+            Accepted mechanisms are added to the store on success.
         temperature: sampling temperature for the synthesizer passes.
             The critic uses 0.0 internally.
 
@@ -139,9 +145,21 @@ async def synthesize_cross_domain(
     source, target = words[0], words[1]
 
     # ------------------------------------------------------------------
+    # Bio-store priming (SE Session 4) -- query the top 5 nearest
+    # existing mechanisms BEFORE pass 1 so the freeform brainstorm
+    # doesn't re-derive what's already known. The primer prepends the
+    # freeform prompt as a "prior mechanisms in your library" section.
+    # When bio_store is None, the primer is empty and pass 1 runs as
+    # in pre-S4.
+    # ------------------------------------------------------------------
+    primer = _build_bio_store_primer(bio_store, source, target)
+
+    # ------------------------------------------------------------------
     # Pass 1 — freeform brainstorm
     # ------------------------------------------------------------------
     freeform_prompt = FREEFORM_PROMPT.format(source=source, target=target)
+    if primer:
+        freeform_prompt = primer + "\n\n" + freeform_prompt
     try:
         freeform = await generator_client(
             freeform_prompt,
@@ -334,6 +352,17 @@ async def synthesize_cross_domain(
             )
 
     # ------------------------------------------------------------------
+    # Bio-store deposit (SE Session 4) -- accepted mechanisms get added
+    # to the store so subsequent calls metabolize prior outputs. Failure
+    # is non-fatal -- the GoalSpec still gets returned to the caller.
+    # ------------------------------------------------------------------
+    if bio_store is not None:
+        try:
+            bio_store.add(mechanism)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("bio_store.add failed (non-fatal): %s", exc)
+
+    # ------------------------------------------------------------------
     # Build the GoalSpec wrapping the validated mechanism
     # ------------------------------------------------------------------
     goal_spec = _goalspec_from_mechanism(
@@ -435,6 +464,47 @@ def _goalspec_from_mechanism(
         source_citation=f"word_set:{bundle_id}",
         structural_mechanism=mechanism,
     )
+
+
+def _build_bio_store_primer(bio_store: Any, source: str, target: str) -> str:
+    """Format the top-5 nearest existing mechanisms as a primer block.
+
+    Returns an empty string when ``bio_store`` is None, the store is
+    empty, or any retrieval error occurs -- the freeform pass then
+    runs without priming. Format is plain prose so the LLM can reason
+    over it without parsing structured input.
+    """
+    if bio_store is None:
+        return ""
+    try:
+        query = f"{source} <-> {target}"
+        neighbors = bio_store.query_nearest(query, top_k=5)
+    except Exception as exc:
+        logger.warning("bio_store.query_nearest failed (skipping primer): %s", exc)
+        return ""
+    if not neighbors:
+        return ""
+
+    lines = [
+        "PRIOR MECHANISMS IN YOUR LIBRARY (closest first by combined "
+        "embedding-similarity * FSRS-retrievability score):",
+    ]
+    for i, n in enumerate(neighbors, start=1):
+        m = n.mechanism
+        rels = ", ".join(r.name for r in m.higher_order_relations)
+        lines.append(
+            f"  {i}. {m.source_domain} <-> {m.target_domain}: "
+            f"{m.predicate_in_source.name}/{m.predicate_in_source.arity} "
+            f"({m.predicate_in_source.marr_level}); relations: {rels} "
+            f"[score={n.weighted_score:.3f}]"
+        )
+    lines.append(
+        "Build on these where they apply, but DO NOT re-derive a "
+        "mechanism that's already in the library -- pick a deeper or "
+        "different predicate if the listed ones already cover the "
+        "structural claim."
+    )
+    return "\n".join(lines)
 
 
 def _extract_json(raw: str) -> Any:
