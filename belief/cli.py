@@ -1293,8 +1293,59 @@ def _run_synth_cmd(args) -> None:
         print(f"  - {seed.source_id}  title={seed.title!r}")
 
     if args.no_cycle:
-        print("--no-cycle: synthesis cycle skipped")
+        print("--no-cycle: synthesis cycle skipped (cascade also skipped)")
         return
+
+    # Cascade pass between emit and cycle, mirroring daemon._filter_pass.
+    # The cascade has built-in graceful degradation: missing
+    # sentence-transformers / pyyaml / sklearn each fall through to a
+    # safer default rather than raising. Skip with --no-cascade for
+    # hermetic testing or when the user just wants to inspect inserts.
+    #
+    # Heads up: the cascade gates relevance against the engine's
+    # keywords_file (default fastapi/anthropic/langchain etc.). User-
+    # submitted concept words rarely overlap that vocabulary, so most
+    # word_set rows end up filtered at stage 1. That's the cascade
+    # doing its job for harvested signals -- the cross-domain bypass
+    # for word_set seeds lives in cycle.py and is part of S3 work.
+    if not args.no_cascade:
+        try:
+            from belief.photosynthesis.filter.cascade import CascadingRelevanceFilter
+
+            pending = state.pending_signals(limit=1000)
+            if pending:
+                filt = CascadingRelevanceFilter(keywords_path=config.keywords_file)
+                texts = [
+                    {
+                        "signal_id": row["id"],
+                        "text": f"{row['title']} {row['summary']}",
+                    }
+                    for row in pending
+                ]
+                results = filt.score(texts)
+                kept = 0
+                for result in results:
+                    if result.signal_id is None:
+                        continue
+                    status = "kept" if result.kept else "filtered"
+                    if result.kept:
+                        kept += 1
+                    state.update_filter_result(
+                        result.signal_id,
+                        stage_reached=int(result.stage_reached),
+                        filter_score=float(result.filter_score),
+                        status=status,
+                    )
+                print(
+                    f"cascade: scored={len(results)} kept={kept} "
+                    f"(stage_reached=3 needed for synthesis cycle)"
+                )
+            else:
+                print("cascade: no pending signals to score")
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"cascade: skipped ({exc})")
+    else:
+        print("--no-cascade: filter pass skipped")
 
     # Best-effort cycle. Without a generator_client/archive (the live
     # path requires API keys + ChromaDB), the cycle survey-and-tracks but
@@ -1869,7 +1920,13 @@ def app():
     synth_words.add_argument(
         "--no-cycle",
         action="store_true",
-        help="Insert signals only -- skip the synthesis cycle (useful for hermetic testing)",
+        help="Insert signals only -- skip the cascade filter and synthesis cycle",
+    )
+    synth_words.add_argument(
+        "--no-cascade",
+        action="store_true",
+        help="Skip the cascade filter pass (still runs synthesis cycle); useful "
+        "for hermetic testing or when sentence-transformers isn't installed",
     )
     synth_words.add_argument(
         "--bundle-id",
