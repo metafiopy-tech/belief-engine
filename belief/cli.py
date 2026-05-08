@@ -1269,7 +1269,19 @@ def _run_synth_cmd(args) -> None:
         print(f"error: {exc}")
         sys.exit(2)
 
-    config = PhotoConfig()
+    # PhotoConfig defaults state_dir to /var/lib/photosynthesis -- the
+    # daemon's launchd-root path. An interactive CLI doesn't have those
+    # permissions, so root the user-mode state under ~/.belief-engine/
+    # to mirror the rest of belief's user-state layout (soil, archive,
+    # audit logs all live there). --db-path still overrides the
+    # signals.sqlite location for hermetic testing if supplied.
+    user_state_dir = Path.home() / ".belief-engine" / "photosynthesis"
+    user_state_dir.mkdir(parents=True, exist_ok=True)
+    config = PhotoConfig(
+        state_dir=user_state_dir,
+        log_dir=user_state_dir / "logs",
+        config_dir=user_state_dir / "cfg",
+    )
     db_path = args.db_path or str(config.signals_db)
     state = PhotosynthesisState(db_path=db_path)
 
