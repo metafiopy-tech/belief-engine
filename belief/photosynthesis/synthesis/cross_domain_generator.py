@@ -105,6 +105,7 @@ async def synthesize_cross_domain(
     critic_client: Optional[Callable[..., Awaitable[str]]] = None,
     bio_store: Any = None,
     corpus: Any = None,
+    research_dispatcher: Optional[Callable[..., Awaitable[Any]]] = None,
     temperature: float = DEFAULT_TEMPERATURE,
 ) -> CrossDomainResult:
     """Run the four-pass cross-domain synthesizer + critic.
@@ -340,6 +341,33 @@ async def synthesize_cross_domain(
                 "structurer": structurer_raw,
             },
         )
+
+    # ------------------------------------------------------------------
+    # Incompleteness pass (SE Session 6) -- generates 15-20
+    # implementation-focused probes against the candidate mechanism,
+    # classifies each against the corpus, loops back through the
+    # research_dispatcher up to MAX_LOOPBACK_ITERATIONS times for
+    # needs_research probes. Open Remainder probes get attached to
+    # mechanism.incompleteness_probes_open so the critic and the
+    # downstream GoalSpec see them.
+    # ------------------------------------------------------------------
+    try:
+        from belief.photosynthesis.synthesis.incompleteness import run_incompleteness
+
+        inc_result = await run_incompleteness(
+            mechanism,
+            corpus=corpus,
+            dispatcher=research_dispatcher,
+        )
+        if inc_result.probes_open:
+            # Re-validate to keep the schema honest -- model_copy
+            # with update= produces a fresh instance and forces the
+            # validators to re-run.
+            mechanism = mechanism.model_copy(
+                update={"incompleteness_probes_open": list(inc_result.probes_open)}
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("incompleteness pass raised (skipping): %s", exc)
 
     # ------------------------------------------------------------------
     # Critic pass (independent context)

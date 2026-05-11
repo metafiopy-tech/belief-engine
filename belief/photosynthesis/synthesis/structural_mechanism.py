@@ -32,7 +32,7 @@ storage / generation logic lives here -- those are Sessions 3 / 4.
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -152,6 +152,61 @@ class NearMiss(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Incompleteness probes (SE Session 6)
+# ---------------------------------------------------------------------------
+
+
+_PROBE_CLASSIFICATIONS = ("resolved_from_corpus", "needs_research", "open_remainder")
+
+
+class IncompletenessProbe(BaseModel):
+    """One implementation-focused question raised by the incompleteness pass.
+
+    Probes are generated against a candidate ``StructuralMechanism``
+    after the structurer pass succeeds. Each probe carries a
+    foreign-key reference back to a specific predicate argument (or
+    higher-order relation) so the downstream Belief Engine pipeline
+    can localize which slot in the mechanism still needs work.
+
+    ``classification`` transitions through the loopback iterations:
+
+      - ``resolved_from_corpus`` -- the probe was answered by a doc
+        already in the retrieved corpus; the probe is satisfied.
+      - ``needs_research`` -- the probe didn't match the existing
+        corpus; the loopback dispatches it to the research_dispatcher
+        on the next iteration.
+      - ``open_remainder`` -- after two loopback iterations, the
+        probe is still unresolved; it's propagated forward into the
+        GoalSpec so the build pipeline knows what's still open.
+    """
+
+    probe_id: str = Field(min_length=1)
+    question: str = Field(min_length=1)
+    references_field: str = Field(min_length=1)
+    classification: str = "needs_research"
+    evidence_url: Optional[str] = None
+    iteration: int = Field(ge=0, default=0)
+
+    @field_validator("classification")
+    @classmethod
+    def _valid_classification(cls, v: str) -> str:
+        if v not in _PROBE_CLASSIFICATIONS:
+            raise ValueError(f"classification must be one of {_PROBE_CLASSIFICATIONS}, got {v!r}")
+        return v
+
+    @field_validator("references_field")
+    @classmethod
+    def _valid_reference(cls, v: str) -> str:
+        # Probes most commonly reference a predicate argument slot,
+        # but they can also reference higher_order_relations[i] or
+        # near_miss. Accept either pattern; reject obviously empty
+        # garbage.
+        if not v.strip():
+            raise ValueError("references_field must be non-empty")
+        return v
+
+
+# ---------------------------------------------------------------------------
 # Top-level structural mechanism
 # ---------------------------------------------------------------------------
 
@@ -183,6 +238,12 @@ class StructuralMechanism(BaseModel):
     near_miss: NearMiss
     considered_and_rejected_attributes: list[str] = Field(min_length=2)
     domain_evidence: list[DomainEvidence] = Field(default_factory=list)
+    # Session 6: open-Remainder probes propagate from the
+    # incompleteness pass into the GoalSpec so the build pipeline can
+    # see what the synthesizer didn't get a chance to resolve.
+    # Default empty list = either no incompleteness pass ran, or all
+    # probes resolved within the loopback budget.
+    incompleteness_probes_open: list[IncompletenessProbe] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _signatures_match(self) -> "StructuralMechanism":

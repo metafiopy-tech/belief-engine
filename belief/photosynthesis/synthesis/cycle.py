@@ -398,6 +398,35 @@ async def _run_cross_domain_phase(
             summary.rejected += 1
             continue
 
+        # SE Session 6: novelty gate. Skip mechanisms that are too
+        # similar to ones already in the bio_store -- 0.30 threshold
+        # means anything >= 70% similar to its nearest neighbor is
+        # rejected as cross_domain_redundant. Failures degrade
+        # permissively (accepted by default) so a broken bio_store
+        # doesn't block synthesis.
+        if bio_store is not None and xd_result.mechanism is not None:
+            try:
+                from belief.photosynthesis.synthesis.cross_domain_novelty import gate
+
+                verdict = gate(xd_result.mechanism, bio_store=bio_store)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("novelty gate failed (accepting): %s", exc)
+                verdict = None
+
+            if verdict is not None and verdict.rejected:
+                logger.info(
+                    "cross_domain novelty gate rejected bundle=%s score=%.3f",
+                    bundle_id,
+                    verdict.novelty_score,
+                )
+                summary.errors.append(
+                    f"cross_domain_redundant:bundle={bundle_id}:score={verdict.novelty_score:.3f}"
+                )
+                for rid in row_ids:
+                    state.set_signal_status(rid, "rejected")
+                summary.rejected += 1
+                continue
+
         # Write the rendered session markdown / json to pending_sessions/
         try:
             write_session(xd_result.spec, pending_dir=Path(target_dir))
