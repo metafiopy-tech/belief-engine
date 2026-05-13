@@ -393,6 +393,17 @@ async def _run_cross_domain_phase(
             continue
 
         if xd_result.spec is None:
+            # SE Session 7.9: surface the rejection reason so operators
+            # can see WHY a bundle didn't make it through. Without this,
+            # `rejected=N errors=0` gives no signal about which pipeline
+            # stage rejected.
+            reason = xd_result.reason or "unknown"
+            logger.info(
+                "cross_domain bundle rejected: bundle=%s reason=%s",
+                bundle_id,
+                reason,
+            )
+            summary.errors.append(f"cross_domain_rejected:bundle={bundle_id}:reason={reason}")
             for rid in row_ids:
                 state.set_signal_status(rid, "rejected")
             summary.rejected += 1
