@@ -345,11 +345,26 @@ class GrinderDaemon:
 async def _default_build_runner(envelope: GoalEnvelope) -> BuildResult:
     """Run the real pipeline. Keep thin — tests always inject a fake."""
     from belief.graph import build_pipeline
+    from belief.photosynthesis.synthesis.sidecar_loader import (
+        extract_structural_mechanism,
+    )
 
     t0 = time.monotonic()
+    # SE Session 7.5: hydrate structural_mechanism from the sidecar so
+    # the IntakeAgent can route the build through the cross-domain
+    # adapter and surface predicate / relations / probes as constraints.
+    initial_state: dict[str, object] = {"user_goal": envelope.goal_text}
+    mechanism = extract_structural_mechanism(envelope.sidecar)
+    if mechanism is not None:
+        initial_state["structural_mechanism"] = mechanism
+        logger.info(
+            "build %s: hydrated structural_mechanism from sidecar (%d open probes)",
+            envelope.goal_id,
+            len(mechanism.incompleteness_probes_open),
+        )
     try:
         graph = build_pipeline()
-        out = await graph.ainvoke({"user_goal": envelope.goal_text})
+        out = await graph.ainvoke(initial_state)
     except Exception as exc:
         return BuildResult(
             goal_id=envelope.goal_id,
