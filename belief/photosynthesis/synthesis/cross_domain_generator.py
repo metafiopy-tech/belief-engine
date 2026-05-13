@@ -325,6 +325,11 @@ async def synthesize_cross_domain(
             },
         )
 
+    # SE Session 7.8 hotfix: Sonnet 4.5 systematically emits
+    # `relation_name` instead of `name` on HigherOrderRelation. Normalize
+    # known drifts before validation so we don't reject every candidate.
+    mechanism_data = _normalize_llm_field_drift(mechanism_data)
+
     try:
         mechanism = StructuralMechanism.model_validate(mechanism_data)
     except ValidationError as exc:
@@ -581,6 +586,45 @@ def _build_bio_store_primer(bio_store: Any, source: str, target: str) -> str:
         "structural claim."
     )
     return "\n".join(lines)
+
+
+def _normalize_llm_field_drift(data: Any) -> Any:
+    """Rename known LLM-drift field names to schema names in-place.
+
+    Sonnet 4.5 systematically emits ``relation_name`` for
+    ``HigherOrderRelation.name`` (the natural reading is "the relation's
+    name") and occasionally drifts on other nested object names. This
+    helper fixes a small whitelist of known drifts BEFORE
+    ``StructuralMechanism.model_validate`` runs, so the structurer pass
+    accepts what the LLM actually produced.
+
+    Known drifts handled (left -> right):
+      - higher_order_relations[*].relation_name  -> name
+      - predicate_in_source.predicate_name       -> name  (defensive)
+      - predicate_in_target.predicate_name       -> name  (defensive)
+      - near_miss.near_miss_description          -> description (defensive)
+
+    Anything else passes through unchanged. Returns ``data`` for chain
+    convenience (mutation is in-place when ``data`` is a dict).
+    """
+    if not isinstance(data, dict):
+        return data
+    # higher_order_relations is a list of dicts with name + relates
+    hor_list = data.get("higher_order_relations")
+    if isinstance(hor_list, list):
+        for rel in hor_list:
+            if isinstance(rel, dict) and "name" not in rel and "relation_name" in rel:
+                rel["name"] = rel.pop("relation_name")
+    # predicate_in_(source|target) is a single dict; the schema field is `name`
+    for pred_key in ("predicate_in_source", "predicate_in_target"):
+        pred = data.get(pred_key)
+        if isinstance(pred, dict) and "name" not in pred and "predicate_name" in pred:
+            pred["name"] = pred.pop("predicate_name")
+    # near_miss is a single dict; the schema field is `description`
+    nm = data.get("near_miss")
+    if isinstance(nm, dict) and "description" not in nm and "near_miss_description" in nm:
+        nm["description"] = nm.pop("near_miss_description")
+    return data
 
 
 def _extract_json(raw: str) -> Any:

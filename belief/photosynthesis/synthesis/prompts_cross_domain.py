@@ -137,9 +137,14 @@ Output strict JSON with EXACTLY these top-level keys:
   "target_domain":                     "{target}",
   "predicate_in_source":               PredicateInstance (same as predicate above),
   "predicate_in_target":               PredicateInstance (IDENTICAL signature: same name, arity, roles, marr_level),
-  "higher_order_relations":            list[HigherOrderRelation], MUST contain at least one entry whose
-                                       ``relates`` includes the predicate name AND at least one OTHER
-                                       distinct predicate name (e.g. "downstream_compute", "energy_cost",
+  "higher_order_relations":            list of objects, each with EXACTLY these two keys:
+                                          "name":    str (snake_case identifier for THIS relation,
+                                                     e.g. "reduces_downstream_compute" -- NOT
+                                                     "relation_name", NOT "name_of_relation"),
+                                          "relates": list[str] of >=2 distinct predicate names.
+                                       MUST contain at least one entry whose ``relates`` includes
+                                       the predicate name AND at least one OTHER distinct
+                                       predicate name (e.g. "downstream_compute", "energy_cost",
                                        "signal_redundancy"),
   "near_miss":                         {{"description": str (concrete counterexample, 30-80 words),
                                           "breaks_at_argument": "predicate_in_(source|target).argument[N]"

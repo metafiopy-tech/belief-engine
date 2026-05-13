@@ -503,3 +503,148 @@ class TestGoalSpecWrapping:
         gr = xd_result.as_generator_result()
         assert gr.spec is xd_result.spec
         assert gr.reason == xd_result.reason
+
+
+# ---------------------------------------------------------------------------
+# LLM field-drift normalization (SE Session 7.8 hotfix)
+#
+# Surfaced from a live `belief synth words mantis_shrimp,camera` run:
+# Sonnet 4.5 systematically emits `relation_name` for
+# HigherOrderRelation.name. ALL 10 bundles got rejected with the same
+# Pydantic ValidationError ("Field required: higher_order_relations[N].name").
+# The normalizer fixes a whitelist of known drifts before validation.
+# ---------------------------------------------------------------------------
+
+
+class TestLLMFieldDriftNormalization:
+    def test_normalize_renames_relation_name_to_name(self) -> None:
+        from belief.photosynthesis.synthesis.cross_domain_generator import (
+            _normalize_llm_field_drift,
+        )
+
+        data = {
+            "higher_order_relations": [
+                {"relation_name": "reduces_compute", "relates": ["a", "b"]},
+                {"relation_name": "scans_geometry", "relates": ["a", "c"]},
+            ],
+        }
+        out = _normalize_llm_field_drift(data)
+        assert out["higher_order_relations"][0]["name"] == "reduces_compute"
+        assert out["higher_order_relations"][1]["name"] == "scans_geometry"
+        assert "relation_name" not in out["higher_order_relations"][0]
+        assert "relation_name" not in out["higher_order_relations"][1]
+
+    def test_normalize_leaves_correct_name_alone(self) -> None:
+        from belief.photosynthesis.synthesis.cross_domain_generator import (
+            _normalize_llm_field_drift,
+        )
+
+        data = {
+            "higher_order_relations": [
+                {"name": "already_correct", "relates": ["a", "b"]},
+            ],
+        }
+        out = _normalize_llm_field_drift(data)
+        assert out["higher_order_relations"][0]["name"] == "already_correct"
+
+    def test_normalize_prefers_name_when_both_present(self) -> None:
+        """If both name AND relation_name exist, schema's name wins."""
+        from belief.photosynthesis.synthesis.cross_domain_generator import (
+            _normalize_llm_field_drift,
+        )
+
+        data = {
+            "higher_order_relations": [
+                {
+                    "name": "schema_name",
+                    "relation_name": "drift_name",
+                    "relates": ["a", "b"],
+                },
+            ],
+        }
+        out = _normalize_llm_field_drift(data)
+        assert out["higher_order_relations"][0]["name"] == "schema_name"
+        # The drift field is left alone -- model_validate would have ignored
+        # an extra key anyway, and we don't want to silently mutate when
+        # the schema field is already present.
+
+    def test_normalize_handles_predicate_name_drift(self) -> None:
+        from belief.photosynthesis.synthesis.cross_domain_generator import (
+            _normalize_llm_field_drift,
+        )
+
+        data = {
+            "predicate_in_source": {
+                "predicate_name": "foo",
+                "arity": 2,
+                "roles": ["a", "b"],
+                "marr_level": "algorithmic",
+            },
+            "predicate_in_target": {
+                "predicate_name": "foo",
+                "arity": 2,
+                "roles": ["a", "b"],
+                "marr_level": "algorithmic",
+            },
+        }
+        out = _normalize_llm_field_drift(data)
+        assert out["predicate_in_source"]["name"] == "foo"
+        assert out["predicate_in_target"]["name"] == "foo"
+        assert "predicate_name" not in out["predicate_in_source"]
+        assert "predicate_name" not in out["predicate_in_target"]
+
+    def test_normalize_handles_near_miss_description_drift(self) -> None:
+        from belief.photosynthesis.synthesis.cross_domain_generator import (
+            _normalize_llm_field_drift,
+        )
+
+        data = {
+            "near_miss": {
+                "near_miss_description": "a counterexample",
+                "breaks_at_argument": "predicate_in_source.argument[0]",
+            },
+        }
+        out = _normalize_llm_field_drift(data)
+        assert out["near_miss"]["description"] == "a counterexample"
+
+    def test_normalize_no_op_on_non_dict(self) -> None:
+        from belief.photosynthesis.synthesis.cross_domain_generator import (
+            _normalize_llm_field_drift,
+        )
+
+        assert _normalize_llm_field_drift(None) is None
+        assert _normalize_llm_field_drift("string") == "string"
+        assert _normalize_llm_field_drift(42) == 42
+        assert _normalize_llm_field_drift([1, 2, 3]) == [1, 2, 3]
+
+    def test_normalize_no_op_on_missing_keys(self) -> None:
+        from belief.photosynthesis.synthesis.cross_domain_generator import (
+            _normalize_llm_field_drift,
+        )
+
+        # Empty / partial dicts -- normalize should not raise.
+        assert _normalize_llm_field_drift({}) == {}
+        assert _normalize_llm_field_drift({"unrelated": "key"}) == {"unrelated": "key"}
+
+    def test_full_synthesizer_accepts_relation_name_drift(self) -> None:
+        """End-to-end: structurer emits relation_name, generator
+        normalizes, validation passes, GoalSpec gets returned."""
+        # Build the canonical four-pass set, then drift the structurer's
+        # higher_order_relations so the relation key is 'relation_name'.
+        canonical = _four_pass_responses("FEW_SHOT_MANTIS_SHRIMP_CAMERA")
+        drifted_structurer = json.loads(canonical[3])
+        for rel in drifted_structurer["higher_order_relations"]:
+            rel["relation_name"] = rel.pop("name")
+        canonical[3] = json.dumps(drifted_structurer)
+
+        gen = _make_fake_client(canonical)
+        result = _run(
+            synthesize_cross_domain(
+                words=["mantis_shrimp", "digital_camera"],
+                bundle_id="b1",
+                generator_client=gen,
+            )
+        )
+        assert result.spec is not None, f"expected success, got reason={result.reason}"
+        assert result.mechanism is not None
+        assert result.mechanism.higher_order_relations[0].name
