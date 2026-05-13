@@ -313,12 +313,22 @@ class PhotosynthesisState:
         cycle don't reappear, mirroring survivors_for_synthesis'
         idempotency contract.
         """
+        # SE Session 7.7 hotfix: the cascade between emit and cycle
+        # rewrites every signal's status from 'raw' to 'kept' or
+        # 'filtered' (mostly the latter for word_set rows, since the
+        # cascade gates against the engine's tech-domain keywords and
+        # arbitrary user concept words rarely match). Filtering only
+        # for status='raw' here would mean the cycle sees zero word_set
+        # bundles after a normal CLI run -- the entire point of the
+        # bypass is defeated. Accept any non-terminal status (i.e.,
+        # not yet promoted/rejected by the synthesizer itself).
         with self.conn() as c:
             rows = c.execute(
                 "SELECT id, source, source_id, title, summary, raw_excerpt, "
                 "       captured_at, status "
                 "FROM raw_signals "
-                "WHERE source = 'word_set' AND status = 'raw' "
+                "WHERE source = 'word_set' "
+                "  AND status NOT IN ('promoted', 'rejected') "
                 "ORDER BY captured_at ASC, id ASC;"
             ).fetchall()
         # Group by bundle id (the prefix before the first ':' in source_id).

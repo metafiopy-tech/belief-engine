@@ -260,6 +260,101 @@ class TestEmit:
 
 
 # ---------------------------------------------------------------------------
+# word_set_pending_bundles must survive cascade re-scoring (S7.7 hotfix)
+# ---------------------------------------------------------------------------
+#
+# The CLI runs the cascade between emit() and the synthesis cycle. The
+# cascade rewrites every signal's status from 'raw' to 'kept' or
+# 'filtered'. Word_set rows almost always end up 'filtered' because the
+# default keyword vocabulary is engine-tech-domain (fastapi, langchain,
+# anthropic, etc.) and arbitrary user concept words don't match.
+#
+# The cross-domain bypass is the whole reason word_set rows can still
+# get processed -- it must not gate on status='raw'. This test pins
+# that the bypass returns the bundles regardless of cascade verdict.
+
+
+class TestWordSetPendingBundlesAfterCascade:
+    def test_returns_bundle_when_cascade_filtered_all_rows(self, state, config) -> None:
+        """The exact failure mode Joe hit live: 3 rows inserted, cascade
+        marks all 3 'filtered', cycle then sees 0 bundles."""
+        from belief.photosynthesis.sources.word_set import emit
+
+        _run(emit(state, config, words=["mantis_shrimp", "camera"]))
+
+        # Simulate the cascade rewrite: every signal flipped to 'filtered'.
+        with state.conn() as c:
+            c.execute("UPDATE raw_signals SET status='filtered' WHERE source='word_set';")
+
+        bundles = state.word_set_pending_bundles(limit=10)
+        assert len(bundles) == 1
+        assert bundles[0]["words"] == ["mantis_shrimp", "camera"]
+
+    def test_returns_bundle_when_cascade_marked_kept(self, state, config) -> None:
+        """The unusual case where a word_set row happens to match the
+        cascade keyword vocabulary -- bundle still surfaces."""
+        from belief.photosynthesis.sources.word_set import emit
+
+        _run(emit(state, config, words=["fastapi", "langchain"]))
+        with state.conn() as c:
+            c.execute("UPDATE raw_signals SET status='kept' WHERE source='word_set';")
+
+        bundles = state.word_set_pending_bundles(limit=10)
+        assert len(bundles) == 1
+        assert bundles[0]["words"] == ["fastapi", "langchain"]
+
+    def test_excludes_promoted_bundles(self, state, config) -> None:
+        """Bundles already promoted by the synthesizer must not reappear."""
+        from belief.photosynthesis.sources.word_set import emit
+
+        _run(emit(state, config, words=["a", "b"]))
+        with state.conn() as c:
+            c.execute("UPDATE raw_signals SET status='promoted' WHERE source='word_set';")
+
+        assert state.word_set_pending_bundles(limit=10) == []
+
+    def test_excludes_rejected_bundles(self, state, config) -> None:
+        """Synthesizer-rejected bundles must not reappear either."""
+        from belief.photosynthesis.sources.word_set import emit
+
+        _run(emit(state, config, words=["a", "b"]))
+        with state.conn() as c:
+            c.execute("UPDATE raw_signals SET status='rejected' WHERE source='word_set';")
+
+        assert state.word_set_pending_bundles(limit=10) == []
+
+    def test_returns_raw_bundles_too(self, state, config) -> None:
+        """Pre-cascade (status='raw') bundles must still be returned."""
+        from belief.photosynthesis.sources.word_set import emit
+
+        _run(emit(state, config, words=["raw_a", "raw_b"]))
+        # No cascade run -- status remains 'raw'
+        bundles = state.word_set_pending_bundles(limit=10)
+        assert len(bundles) == 1
+        assert bundles[0]["words"] == ["raw_a", "raw_b"]
+
+    def test_mixed_status_bundles_all_returned(self, state, config) -> None:
+        """Two bundles with different cascade verdicts -- both surface."""
+        from belief.photosynthesis.sources.word_set import emit
+
+        _run(emit(state, config, words=["a", "b"], bundle_id="bundleA"))
+        _run(emit(state, config, words=["c", "d"], bundle_id="bundleB"))
+        with state.conn() as c:
+            c.execute(
+                "UPDATE raw_signals SET status='kept' "
+                "WHERE source='word_set' AND source_id LIKE 'bundleA%';"
+            )
+            c.execute(
+                "UPDATE raw_signals SET status='filtered' "
+                "WHERE source='word_set' AND source_id LIKE 'bundleB%';"
+            )
+
+        bundles = state.word_set_pending_bundles(limit=10)
+        bundle_ids = {b["bundle_id"] for b in bundles}
+        assert bundle_ids == {"bundleA", "bundleB"}
+
+
+# ---------------------------------------------------------------------------
 # Pipeline-uniformity guard -- the spec is explicit that the cascade
 # filter / novelty gate / ranker treat word_set signals just like the
 # rest. Pin the absence of source-name special-casing so refactors can't
