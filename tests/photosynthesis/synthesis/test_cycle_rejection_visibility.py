@@ -46,16 +46,22 @@ def config(tmp_path: Path) -> PhotoConfig:
     )
 
 
-def _install_fake_synthesize(monkeypatch, *, reason: str) -> None:
+def _install_fake_synthesize(
+    monkeypatch,
+    *,
+    reason: str,
+    critic_result=None,
+) -> None:
     """Stub synthesize_cross_domain to return a None-spec result with
     the supplied reason. This is the path the cycle's rejection
-    visibility branch handles."""
+    visibility branch handles. Optionally attach a CriticResult so
+    the drill-down branch (S7.10) can be exercised."""
 
     async def fake(*, words, bundle_id, generator_client, critic_client=None, **kw):
         return CrossDomainResult(
             spec=None,
             mechanism=None,
-            critic=None,
+            critic=critic_result,
             reason=reason,
             raw_passes={},
         )
@@ -159,3 +165,119 @@ def test_unknown_reason_falls_back_to_literal_unknown(monkeypatch, state, config
 
     assert len(summary.errors) == 1
     assert "reason=unknown" in summary.errors[0]
+
+
+# ---------------------------------------------------------------------------
+# S7.10: critic-check drill-down. When reason=critic_rejected, the
+# cycle should pull failed check names out of xd_result.critic.checks
+# so the CLI prints them alongside the bundle id.
+# ---------------------------------------------------------------------------
+
+
+def test_critic_failed_checks_surface_in_error_entry(monkeypatch, state, config) -> None:
+    """When reason=critic_rejected and the CriticResult has failed
+    checks, the error entry includes their names."""
+    from belief.photosynthesis.synthesis.cross_domain_critic import (
+        CheckResult,
+        CriticResult,
+    )
+
+    critic = CriticResult(
+        verdict="REJECT",
+        checks=[
+            CheckResult(id=1, name="predicate_not_attribute_style", passed=True, reason=""),
+            CheckResult(id=2, name="roles_are_process_oriented", passed=True, reason=""),
+            CheckResult(
+                id=4, name="near_miss_plausibly_fits_domains", passed=False, reason="implausible"
+            ),
+            CheckResult(id=8, name="analogy_is_non_trivial", passed=False, reason="trivial"),
+        ],
+    )
+    _install_fake_synthesize(monkeypatch, reason="critic_rejected", critic_result=critic)
+    _run(emit(state, config, words=["x", "y"], bundle_id="bundle_drilldown"))
+
+    summary = CycleSummary()
+    _run(
+        _run_cross_domain_phase(
+            state=state,
+            config=config,
+            summary=summary,
+            generator_client=_noop_generator,
+            embedder=None,
+            archive=None,
+            pending_dir=None,
+            critic_client=None,
+        )
+    )
+
+    assert len(summary.errors) == 1
+    err = summary.errors[0]
+    assert "reason=critic_rejected" in err
+    assert "failed=" in err
+    # Both failed check names appear (passed ones do not).
+    assert "near_miss_plausibly_fits_domains" in err
+    assert "analogy_is_non_trivial" in err
+    assert "predicate_not_attribute_style" not in err
+    assert "roles_are_process_oriented" not in err
+
+
+def test_critic_no_failed_checks_omits_failed_clause(monkeypatch, state, config) -> None:
+    """If the critic exists but has no failed checks (defensive case),
+    the error entry should not include an empty `failed=` clause."""
+    from belief.photosynthesis.synthesis.cross_domain_critic import (
+        CheckResult,
+        CriticResult,
+    )
+
+    critic = CriticResult(
+        verdict="REJECT",  # verdict says reject but all checks pass (defensive)
+        checks=[
+            CheckResult(id=1, name="predicate_not_attribute_style", passed=True, reason=""),
+            CheckResult(id=2, name="roles_are_process_oriented", passed=True, reason=""),
+        ],
+    )
+    _install_fake_synthesize(monkeypatch, reason="critic_rejected", critic_result=critic)
+    _run(emit(state, config, words=["x", "y"], bundle_id="bundle_no_failed"))
+
+    summary = CycleSummary()
+    _run(
+        _run_cross_domain_phase(
+            state=state,
+            config=config,
+            summary=summary,
+            generator_client=_noop_generator,
+            embedder=None,
+            archive=None,
+            pending_dir=None,
+            critic_client=None,
+        )
+    )
+
+    err = summary.errors[0]
+    assert "reason=critic_rejected" in err
+    assert "failed=" not in err
+
+
+def test_non_critic_rejection_has_no_failed_clause(monkeypatch, state, config) -> None:
+    """Non-critic reasons (e.g. schema_invalid) carry no critic
+    result; the error entry shouldn't have a `failed=` clause."""
+    _install_fake_synthesize(monkeypatch, reason="schema_invalid", critic_result=None)
+    _run(emit(state, config, words=["x", "y"], bundle_id="bundle_schema"))
+
+    summary = CycleSummary()
+    _run(
+        _run_cross_domain_phase(
+            state=state,
+            config=config,
+            summary=summary,
+            generator_client=_noop_generator,
+            embedder=None,
+            archive=None,
+            pending_dir=None,
+            critic_client=None,
+        )
+    )
+
+    err = summary.errors[0]
+    assert "reason=schema_invalid" in err
+    assert "failed=" not in err

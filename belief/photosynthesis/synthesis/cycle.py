@@ -397,13 +397,29 @@ async def _run_cross_domain_phase(
             # can see WHY a bundle didn't make it through. Without this,
             # `rejected=N errors=0` gives no signal about which pipeline
             # stage rejected.
+            #
+            # SE Session 7.10 extension: when reason=critic_rejected,
+            # drill into xd_result.critic.checks and append the names of
+            # the failed checks. Lets operators see WHICH of the eight
+            # critic checks rejected the mechanism (predicate is
+            # attribute-style? roles aren't process-oriented? near-miss
+            # implausible? analogy trivial?).
             reason = xd_result.reason or "unknown"
+            detail = ""
+            critic = getattr(xd_result, "critic", None)
+            if critic is not None and getattr(critic, "checks", None):
+                failed = [c.name for c in critic.checks if not c.passed]
+                if failed:
+                    detail = ":failed=" + ",".join(failed)
             logger.info(
-                "cross_domain bundle rejected: bundle=%s reason=%s",
+                "cross_domain bundle rejected: bundle=%s reason=%s%s",
                 bundle_id,
                 reason,
+                detail,
             )
-            summary.errors.append(f"cross_domain_rejected:bundle={bundle_id}:reason={reason}")
+            summary.errors.append(
+                f"cross_domain_rejected:bundle={bundle_id}:reason={reason}{detail}"
+            )
             for rid in row_ids:
                 state.set_signal_status(rid, "rejected")
             summary.rejected += 1
