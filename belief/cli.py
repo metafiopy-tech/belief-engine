@@ -61,6 +61,7 @@ async def run(
     max_cost: float = 10.0,
     max_iterations: int = 3,
     json_output: bool = False,
+    sidecar_path: "str | Path | None" = None,
 ) -> dict:
     """Run the full pipeline on a goal. Returns final state dict."""
     _configure_logging()
@@ -236,6 +237,13 @@ async def run(
             "accumulated_covenants": [],
         },
     }
+
+    # SE Session 7.6: hydrate structural_mechanism from a sidecar if the
+    # caller (CLI flag) supplied one. Mirror of the Grinder's daemon
+    # hydration. Permissive on errors -- never blocks the build.
+    from belief.photosynthesis.synthesis.sidecar_loader import hydrate_initial_state
+
+    initial_state = hydrate_initial_state(initial_state, sidecar_path)
 
     start = time.time()
     final_state = await pipeline.ainvoke(initial_state)
@@ -1461,6 +1469,18 @@ def app():
         action="store_true",
         help="Print a JSON summary line at the end (for scripting/A/B tests)",
     )
+    build_parser.add_argument(
+        "--sidecar",
+        default=None,
+        help=(
+            "Path to a synthesis sidecar JSON (pending_sessions/<id>.json) "
+            "produced by `belief synth words`. When supplied, any "
+            "structural_mechanism in the sidecar is hydrated into the "
+            "build's initial state so research/planner/architect/builder "
+            "see predicate signatures, relations, and open probes as "
+            "constraints + acceptance criteria."
+        ),
+    )
 
     # Benchmark
     bench_parser = subparsers.add_parser("benchmark", help="Run benchmark challenges")
@@ -2224,7 +2244,16 @@ def app():
         if not goal:
             parser.error("--goal is required")
         json_out = getattr(args, "json_output", False)
-        result = asyncio.run(run(goal, args.max_cost, args.max_iterations, json_output=json_out))
+        sidecar_arg = getattr(args, "sidecar", None)
+        result = asyncio.run(
+            run(
+                goal,
+                args.max_cost,
+                args.max_iterations,
+                json_output=json_out,
+                sidecar_path=sidecar_arg,
+            )
+        )
 
         # Deploy if requested
         if args.deploy and result.get("code_files"):

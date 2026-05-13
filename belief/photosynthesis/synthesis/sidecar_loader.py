@@ -96,7 +96,45 @@ def load_sidecar_from_path(json_path: Path) -> dict[str, Any] | None:
     return loaded
 
 
+def hydrate_initial_state(
+    initial_state: dict,
+    sidecar_path: "str | Path | None",
+) -> dict:
+    """Add `structural_mechanism` to ``initial_state`` from a sidecar JSON.
+
+    Pure function. Returns a NEW dict (does not mutate the input).
+    Permissive on errors: missing path / unreadable file / invalid JSON /
+    sidecar without a mechanism / mechanism that fails validation all
+    return ``initial_state`` unchanged. Logs WARNING via the loader's
+    helpers; does not raise.
+
+    Used by both call sites that build initial state for the pipeline
+    out-of-band of the daemon's GoalEnvelope path:
+      - ``belief.cli.run`` (the CLI ``belief build --sidecar PATH`` flag).
+      - any future programmatic builder that has a sidecar in hand.
+
+    The Grinder daemon path uses ``extract_structural_mechanism`` directly
+    on ``GoalEnvelope.sidecar`` (the dict has already been parsed by
+    ``GoalQueue._load_envelope``), not this helper.
+    """
+    if sidecar_path is None:
+        return initial_state
+    sidecar = load_sidecar_from_path(Path(sidecar_path))
+    mechanism = extract_structural_mechanism(sidecar)
+    if mechanism is None:
+        return initial_state
+    out = dict(initial_state)
+    out["structural_mechanism"] = mechanism
+    logger.info(
+        "hydrated structural_mechanism from sidecar %s (%d open probes)",
+        sidecar_path,
+        len(mechanism.incompleteness_probes_open),
+    )
+    return out
+
+
 __all__ = [
     "extract_structural_mechanism",
+    "hydrate_initial_state",
     "load_sidecar_from_path",
 ]
