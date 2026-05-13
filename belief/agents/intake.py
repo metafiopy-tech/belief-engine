@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from belief.agents.base import BaseAgent
+from belief.agents.cross_domain_intake_adapter import apply_to as apply_mechanism
 from belief.config.models import ModelRole
 from belief.llm import LLMClient
 from belief.models.artifacts import RequirementSpec
@@ -25,7 +26,18 @@ class IntakeAgent(BaseAgent):
         state.phase = Phase.INTAKE
 
         if state.requirement_spec is not None:
-            logger.info("Intake: spec already present — skipping")
+            # Spec already present (e.g., from a prior partial run). Still
+            # apply the cross-domain mechanism if one was set, so the
+            # downstream pipeline sees the structural constraints.
+            if state.structural_mechanism is not None:
+                state.requirement_spec = apply_mechanism(
+                    state.requirement_spec, state.structural_mechanism
+                )
+                logger.info(
+                    "Intake: applied structural_mechanism to existing spec "
+                    f"({len(state.structural_mechanism.incompleteness_probes_open)} open probes)"
+                )
+            logger.info("Intake: spec already present — skipping LLM call")
             state.phase = Phase.RESEARCH
             return state
 
@@ -78,6 +90,17 @@ class IntakeAgent(BaseAgent):
             state.warnings.append(f"Intake used fallback: {e}")
         finally:
             await llm.close()
+
+        # SE Session 7: if a StructuralMechanism rode in on the state,
+        # surface its predicate signature, relations, near-miss, and
+        # open probes into the spec so research / planner / architect /
+        # builder all see them as plain constraints + acceptance criteria.
+        if state.structural_mechanism is not None and state.requirement_spec is not None:
+            n_open = len(state.structural_mechanism.incompleteness_probes_open)
+            state.requirement_spec = apply_mechanism(
+                state.requirement_spec, state.structural_mechanism
+            )
+            logger.info(f"Intake: injected structural_mechanism into spec ({n_open} open probes)")
 
         state.phase = Phase.RESEARCH
         return state

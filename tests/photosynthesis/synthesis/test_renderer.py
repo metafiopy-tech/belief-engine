@@ -115,3 +115,124 @@ def test_write_session_is_overwrite_safe(tmp_path: Path) -> None:
     assert first_json == second_json
     assert second_md.read_text() == before_md
     assert second_json.read_text() == before_json
+
+
+# ---------------------------------------------------------------------------
+# Synthesis Engine Session 7: structural_mechanism + open probes rendering
+# ---------------------------------------------------------------------------
+
+
+def _spec_with_mechanism(*, with_open_probes: bool = True) -> GoalSpec:
+    """A GoalSpec carrying a populated structural_mechanism for S7 tests."""
+    from belief.photosynthesis.synthesis.structural_mechanism import (
+        DomainEvidence,
+        HigherOrderRelation,
+        IncompletenessProbe,
+        NearMiss,
+        PredicateInstance,
+        StructuralMechanism,
+    )
+
+    pred = PredicateInstance(
+        name="downsamples_at_source",
+        arity=2,
+        roles=["source", "downstream"],
+        marr_level="algorithmic",
+    )
+    open_probes: list[IncompletenessProbe] = []
+    if with_open_probes:
+        open_probes = [
+            IncompletenessProbe(
+                probe_id="probe_001",
+                question="What protocol carries the downsampled signal?",
+                references_field="predicate_in_source.argument[1]",
+                classification="open_remainder",
+                iteration=2,
+            ),
+            IncompletenessProbe(
+                probe_id="probe_002",
+                question="What invariant prevents oversampling?",
+                references_field="higher_order_relations[0]",
+                classification="open_remainder",
+                iteration=2,
+            ),
+        ]
+    mechanism = StructuralMechanism(
+        mechanism_id="mantis_camera_001",
+        source_domain="biology",
+        target_domain="computing",
+        predicate_in_source=pred,
+        predicate_in_target=pred.model_copy(),
+        higher_order_relations=[
+            HigherOrderRelation(
+                name="reduces_downstream_compute",
+                relates=["downsamples_at_source", "compresses_at_sensor"],
+            ),
+        ],
+        near_miss=NearMiss(
+            description="Naive RGB camera streaming raw bytes",
+            breaks_at_argument="predicate_in_source.argument[1]",
+        ),
+        considered_and_rejected_attributes=["color_channels", "spectral_count"],
+        domain_evidence=[
+            DomainEvidence(
+                domain="biology",
+                citation="https://example.org/mantis",
+                excerpt="Eyes pre-process before brain.",
+            ),
+        ],
+        incompleteness_probes_open=open_probes,
+    )
+    payload = dict(SAMPLE_SPEC)
+    payload["structural_mechanism"] = mechanism.model_dump()
+    return GoalSpec.model_validate(payload)
+
+
+def test_render_omits_mechanism_section_when_no_mechanism() -> None:
+    """The default sample spec has no mechanism -> output unchanged."""
+    rendered = render_session_markdown(_spec())
+    assert "## Structural Mechanism" not in rendered
+    assert "## Open Implementation Probes" not in rendered
+
+
+def test_render_appends_mechanism_section_when_mechanism_present() -> None:
+    rendered = render_session_markdown(_spec_with_mechanism())
+    assert "## Structural Mechanism" in rendered
+    assert "mantis_camera_001" in rendered
+    assert "downsamples_at_source/2 (algorithmic)" in rendered
+    assert "source, downstream" in rendered
+    assert "reduces_downstream_compute" in rendered
+    assert "compresses_at_sensor" in rendered
+    assert "near_miss" in rendered
+    assert "Naive RGB camera streaming raw bytes" in rendered
+    assert "color_channels, spectral_count" in rendered
+
+
+def test_render_appends_open_probes_subsection_when_probes_exist() -> None:
+    rendered = render_session_markdown(_spec_with_mechanism(with_open_probes=True))
+    assert "## Open Implementation Probes" in rendered
+    assert "[probe_001 @ predicate_in_source.argument[1]]" in rendered
+    assert "What protocol carries the downsampled signal?" in rendered
+    assert "[probe_002 @ higher_order_relations[0]]" in rendered
+
+
+def test_render_omits_open_probes_subsection_when_no_probes() -> None:
+    rendered = render_session_markdown(_spec_with_mechanism(with_open_probes=False))
+    # Mechanism section is present
+    assert "## Structural Mechanism" in rendered
+    # ...but the open-probes header is suppressed (no header without items)
+    assert "## Open Implementation Probes" not in rendered
+
+
+def test_render_with_mechanism_is_deterministic() -> None:
+    spec = _spec_with_mechanism()
+    a = render_session_markdown(spec)
+    b = render_session_markdown(spec)
+    assert a == b
+
+
+def test_render_mechanism_section_appears_after_acceptance_criteria() -> None:
+    rendered = render_session_markdown(_spec_with_mechanism())
+    ac_idx = rendered.index("ACCEPTANCE CRITERIA")
+    mech_idx = rendered.index("## Structural Mechanism")
+    assert ac_idx < mech_idx

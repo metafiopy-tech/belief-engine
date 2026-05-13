@@ -28,6 +28,7 @@ from belief.models.artifacts import (
     ValidationResult,
 )
 from belief.models.skeleton import SkeletonArtifact
+from belief.photosynthesis.synthesis.structural_mechanism import StructuralMechanism
 
 
 class Phase(str, Enum):
@@ -132,6 +133,14 @@ class UnifiedState(BaseModel):
 
     # ── Convergence tracking ─────────────────────────────────
     previous_gap_summaries: list[str] = Field(default_factory=list)
+
+    # ── Cross-domain mechanism (Synthesis Engine S7) ─────────
+    # When non-None, IntakeAgent injects the mechanism into the
+    # RequirementSpec via cross_domain_intake_adapter.apply_to so that
+    # downstream agents see the predicate signature, relations, near-miss,
+    # and open incompleteness probes as plain constraints / acceptance
+    # criteria. Default None preserves the existing pipeline behavior.
+    structural_mechanism: Optional[StructuralMechanism] = None
 
     # ── Build memory context ─────────────────────────────────
     similar_builds_context: str = ""  # Injected from CLI before pipeline runs

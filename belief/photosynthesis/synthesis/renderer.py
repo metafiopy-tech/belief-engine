@@ -21,9 +21,61 @@ from typing import Any
 
 
 from belief.photosynthesis.synthesis.generator import GoalSpec
+from belief.photosynthesis.synthesis.structural_mechanism import StructuralMechanism
 
 
 DEFAULT_PENDING_DIR = Path("/var/lib/photosynthesis/pending_sessions")
+
+
+# ---------------------------------------------------------------------------
+# Structural-mechanism markdown rendering (SE Session 7)
+# ---------------------------------------------------------------------------
+
+
+def _render_mechanism_block(mechanism: StructuralMechanism) -> list[str]:
+    """Render the ``## Structural Mechanism`` section as a list of lines.
+
+    Returns an empty list contract is satisfied at the call site (we
+    only invoke this when ``mechanism is not None``). Output is
+    deterministic: stable iteration order over Pydantic-list fields,
+    no time-dependent text.
+    """
+    pred = mechanism.predicate_in_source  # source / target share signature
+    roles = ", ".join(pred.roles)
+    rejected = ", ".join(mechanism.considered_and_rejected_attributes)
+    lines: list[str] = [
+        "",
+        "## Structural Mechanism",
+        f"- mechanism_id: {mechanism.mechanism_id}",
+        f"- source_domain: {mechanism.source_domain}",
+        f"- target_domain: {mechanism.target_domain}",
+        f"- predicate: {pred.name}/{pred.arity} ({pred.marr_level})",
+        f"  - roles: {roles}",
+        "- higher_order_relations:",
+    ]
+    for hor in mechanism.higher_order_relations:
+        related = ", ".join(hor.relates)
+        lines.append(f"  - {hor.name}: relates {related}")
+    lines.append(
+        f"- near_miss (breaks at {mechanism.near_miss.breaks_at_argument}): "
+        f"{mechanism.near_miss.description}"
+    )
+    lines.append(f"- considered_and_rejected_attributes: {rejected}")
+    return lines
+
+
+def _render_open_probes_block(mechanism: StructuralMechanism) -> list[str]:
+    """Render the ``## Open Implementation Probes`` subsection.
+
+    Returns an empty list when ``incompleteness_probes_open`` is empty
+    so we never emit a header with nothing under it.
+    """
+    if not mechanism.incompleteness_probes_open:
+        return []
+    lines: list[str] = ["", "## Open Implementation Probes"]
+    for i, probe in enumerate(mechanism.incompleteness_probes_open, start=1):
+        lines.append(f"{i}. [{probe.probe_id} @ {probe.references_field}] {probe.question}")
+    return lines
 
 
 def render_session_markdown(spec: GoalSpec) -> str:
@@ -82,6 +134,14 @@ def render_session_markdown(spec: GoalSpec) -> str:
         "ACCEPTANCE CRITERIA",
     ]
     lines.extend(ac_lines)
+
+    # SE Session 7: append Structural Mechanism + Open Implementation
+    # Probes blocks when the GoalSpec carries a structural_mechanism.
+    # When None (the default), behavior is byte-identical to pre-S7.
+    if spec.structural_mechanism is not None:
+        lines.extend(_render_mechanism_block(spec.structural_mechanism))
+        lines.extend(_render_open_probes_block(spec.structural_mechanism))
+
     lines.append("")  # trailing newline
     return "\n".join(lines)
 
