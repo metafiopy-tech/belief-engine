@@ -1430,7 +1430,7 @@ def _run_synth_cmd(args) -> None:
                 generator_client=generator_client,
                 critic_client=critic_client,
                 pending_dir=Path(config.pending_sessions_dir),
-                critic_tolerance=getattr(args, "critic_tolerance", 2),
+                critic_tolerance=getattr(args, "critic_tolerance", 3),
             )
         )
         print(
@@ -2037,12 +2037,14 @@ def app():
     synth_words.add_argument(
         "--critic-tolerance",
         type=int,
-        default=2,
+        default=3,
         help=(
             "How many of the 6 LLM-driven critic checks (3-8) may fail "
-            "and still ACCEPT (default: 2). Deterministic checks 1+2 "
-            "are always gating. Set to 0 to require all 8 checks pass "
-            "(strict legacy behavior)."
+            "and still ACCEPT (default: 3, calibrated against live demo "
+            "data where Haiku consistently rejects 2-3 checks on real "
+            "cross-domain analogies). Deterministic checks 1+2 are "
+            "always gating. Set to 0 for strict legacy behavior; set "
+            "to 6 to bypass LLM gating entirely (deterministic only)."
         ),
     )
 

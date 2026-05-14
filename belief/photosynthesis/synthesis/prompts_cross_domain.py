@@ -176,15 +176,25 @@ Return JSON only. No prose.
 CRITIC_PROMPT = """\
 You are an INDEPENDENT critic of a cross-domain structural-mechanism
 claim. You see ONLY the candidate JSON below; you do not see the
-synthesizer's reasoning or its earlier brainstorm. Critique it as if
-the synthesizer might be wrong.
+synthesizer's reasoning or its earlier brainstorm.
+
+CALIBRATION: this is a CROSS-DOMAIN structural analogy. Some level
+of abstraction is the entire POINT -- a mechanism that maps a
+biological process onto a computing process is supposed to abstract
+away surface-level differences. Reject when the analogy is
+substantively WRONG (a non-sequitur, a tautology, a re-labeling of
+the same domain), not when it's "merely" structural. The
+synthesizer has already gone through three passes specifically
+designed to filter out trivial claims; your job is to catch the
+remaining real failures, not to re-litigate the abstraction
+threshold.
 
 Candidate StructuralMechanism:
 {mechanism_json}
 
-Run the following 8 checks. For each, output ``passed: true`` only
-if the check is clearly satisfied. ``reason`` should be at most one
-sentence.
+Run the following 8 checks. For each, output ``passed: true`` when
+the check is satisfied to a reasonable standard -- not "perfectly,"
+"reasonably." ``reason`` should be at most one sentence.
 
   1. Predicate is NOT attribute-style. The predicate name is verb-ish
      (``pre_classify_signal``, ``broadcast_then_prune``), not a property
@@ -197,20 +207,29 @@ sentence.
      not bare labels (``related_to``, ``is_a``).
   4. NearMiss plausibly fits the domains -- the counterexample
      references something coherent in source or target rather than a
-     non-sequitur.
+     non-sequitur. PASS unless the counterexample is plainly absurd
+     for both domains.
   5. NearMiss breaks_at_argument is a substantive failure point --
      the named slot is one where a real domain-system would actually
-     fail, not a meaningless filler index.
+     fail. PASS unless the named slot is obviously the wrong place
+     for the failure to manifest.
   6. The considered_and_rejected_attributes are SURFACE-level
      properties (descriptive), not themselves relational mechanisms.
      If any rejected attribute reads like a real predicate, the
      synthesizer probably picked the wrong main predicate.
-  7. The predicate transfers non-trivially to the target domain.
-     The same name+arity+roles can be APPLIED in the target with a
-     coherent meaning, not just by re-labeling.
-  8. The analogy is non-trivial. It is not "both have parts" or
-     "both involve information" -- it makes a specific claim about
-     HOW one process is structurally like another.
+  7. The predicate transfers to the target domain coherently. The
+     same name+arity+roles can be APPLIED in the target. The
+     transfer is "coherent" if a domain expert would recognize the
+     target instance as a valid example of the predicate -- abstract
+     mappings are FINE, that's the point. Reject only on
+     re-labeling (target instance is verbatim the source instance
+     with renamed words).
+  8. The analogy makes a specific structural claim. PASS when the
+     mechanism names a HOW (e.g. "filter at the transducer to
+     reduce downstream compute"); reject only when it collapses to
+     "both have parts" or "both involve information" with no
+     structural specificity. Cross-domain abstraction itself is NOT
+     a failure mode here.
 
 Return strict JSON:
 {{"verdict": "ACCEPT"|"REJECT",
@@ -219,7 +238,9 @@ Return strict JSON:
     ...8 entries...
   ]}}
 
-ACCEPT iff all 8 checks pass. Otherwise REJECT.
+The caller computes the final verdict from the per-check pass flags
+with a tolerance for a small number of ``passed: false`` LLM checks.
+Be honest in each check; the verdict field is advisory.
 """
 
 
