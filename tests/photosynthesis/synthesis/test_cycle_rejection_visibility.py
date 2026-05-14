@@ -281,3 +281,212 @@ def test_non_critic_rejection_has_no_failed_clause(monkeypatch, state, config) -
     err = summary.errors[0]
     assert "reason=schema_invalid" in err
     assert "failed=" not in err
+
+
+# ---------------------------------------------------------------------------
+# S7.13: novelty gate enable/disable + threshold knobs
+# ---------------------------------------------------------------------------
+
+
+def _install_synthesize_returning_accepted(monkeypatch):
+    """Stub synthesize_cross_domain to return a fully-accepted spec
+    (no critic rejection) -- exercises the gate path on a live mechanism."""
+    from belief.photosynthesis.synthesis.cross_domain_critic import CriticResult
+    from belief.photosynthesis.synthesis.cross_domain_generator import CrossDomainResult
+    from belief.photosynthesis.synthesis.generator import GoalSpec
+    from belief.photosynthesis.synthesis.structural_mechanism import (
+        DomainEvidence,
+        HigherOrderRelation,
+        NearMiss,
+        PredicateInstance,
+        StructuralMechanism,
+    )
+
+    pred = PredicateInstance(
+        name="downsamples_at_source",
+        arity=2,
+        roles=["source", "downstream"],
+        marr_level="algorithmic",
+    )
+    mech = StructuralMechanism(
+        mechanism_id="m1",
+        source_domain="biology",
+        target_domain="computing",
+        predicate_in_source=pred,
+        predicate_in_target=pred.model_copy(),
+        higher_order_relations=[
+            HigherOrderRelation(
+                name="reduces_downstream_compute",
+                relates=["downsamples_at_source", "compresses_at_sensor"],
+            ),
+        ],
+        near_miss=NearMiss(
+            description="A bee compound eye sums signals downstream",
+            breaks_at_argument="predicate_in_source.argument[0]",
+        ),
+        considered_and_rejected_attributes=["color_count", "spectral_count"],
+        domain_evidence=[
+            DomainEvidence(
+                domain="biology",
+                citation="general",
+                excerpt="mantis_shrimp pre-classifies",
+            ),
+        ],
+    )
+    from belief.photosynthesis.synthesis.generator import AcceptanceCriterion
+
+    spec = GoalSpec(
+        goal_id="m1-goal",
+        title="Build a downsampling sensor",
+        one_paragraph_description="A FastAPI mount of a downsampling sensor.",
+        artifact_type="api",
+        primary_libraries=["fastapi"],
+        new_libraries_introduced=[],
+        acceptance_criteria=[
+            AcceptanceCriterion(kind="endpoint", spec="POST /sample handles raw frames"),
+        ],
+        estimated_build_time_min=60,
+        estimated_difficulty=3,
+        prerequisite_skills=["fastapi"],
+        relevance_rationale="cross-domain demo",
+        novelty_rationale="first run",
+        source_citation="word_set",
+        structural_mechanism=mech,
+    )
+
+    async def fake(*, words, bundle_id, generator_client, critic_client=None, **kw):
+        return CrossDomainResult(
+            spec=spec,
+            mechanism=mech,
+            critic=CriticResult(verdict="ACCEPT", checks=[]),
+            reason="accepted",
+            raw_passes={},
+        )
+
+    monkeypatch.setattr(
+        "belief.photosynthesis.synthesis.cycle.synthesize_cross_domain",
+        fake,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "belief.photosynthesis.synthesis.cross_domain_generator.synthesize_cross_domain",
+        fake,
+        raising=False,
+    )
+    return mech
+
+
+class _FakeBioStore:
+    """Bio store stub: novelty_score returns whatever you set."""
+
+    def __init__(self, score: float):
+        self._score = score
+
+    def novelty_score(self, mech) -> float:  # noqa: ANN001
+        return self._score
+
+    def add(self, mech) -> None:  # noqa: ANN001
+        pass
+
+
+def test_novelty_gate_enabled_rejects_below_threshold(monkeypatch, state, config, tmp_path) -> None:
+    """Default behavior preserved: low-novelty mechanism rejected."""
+    _install_synthesize_returning_accepted(monkeypatch)
+    _run(emit(state, config, words=["a", "b"], bundle_id="bundle_low_novel"))
+
+    bio = _FakeBioStore(score=0.1)  # 0.1 < default 0.30 -> reject
+    summary = CycleSummary()
+    _run(
+        _run_cross_domain_phase(
+            state=state,
+            config=config,
+            summary=summary,
+            generator_client=_noop_generator,
+            embedder=None,
+            archive=None,
+            pending_dir=tmp_path,
+            critic_client=None,
+            bio_store=bio,
+            novelty_gate_enabled=True,
+        )
+    )
+    assert summary.rejected == 1
+    assert summary.promoted == 0
+    assert any("cross_domain_redundant" in e for e in summary.errors)
+
+
+def test_novelty_gate_disabled_admits_low_novelty(monkeypatch, state, config, tmp_path) -> None:
+    """`--no-novelty-gate` lets a duplicate-ish mechanism through."""
+    _install_synthesize_returning_accepted(monkeypatch)
+    _run(emit(state, config, words=["a", "b"], bundle_id="bundle_bypass"))
+
+    bio = _FakeBioStore(score=0.0)  # would normally reject hard
+    summary = CycleSummary()
+    _run(
+        _run_cross_domain_phase(
+            state=state,
+            config=config,
+            summary=summary,
+            generator_client=_noop_generator,
+            embedder=None,
+            archive=None,
+            pending_dir=tmp_path,
+            critic_client=None,
+            bio_store=bio,
+            novelty_gate_enabled=False,
+        )
+    )
+    assert summary.promoted == 1
+    assert summary.rejected == 0
+    assert not any("cross_domain_redundant" in e for e in summary.errors)
+
+
+def test_novelty_threshold_lowered_admits_borderline(monkeypatch, state, config, tmp_path) -> None:
+    """Setting threshold=0.05 admits a 0.10-novel mechanism."""
+    _install_synthesize_returning_accepted(monkeypatch)
+    _run(emit(state, config, words=["a", "b"], bundle_id="bundle_lower"))
+
+    bio = _FakeBioStore(score=0.10)  # < default 0.30 but > 0.05
+    summary = CycleSummary()
+    _run(
+        _run_cross_domain_phase(
+            state=state,
+            config=config,
+            summary=summary,
+            generator_client=_noop_generator,
+            embedder=None,
+            archive=None,
+            pending_dir=tmp_path,
+            critic_client=None,
+            bio_store=bio,
+            novelty_gate_enabled=True,
+            novelty_threshold=0.05,
+        )
+    )
+    assert summary.promoted == 1
+    assert summary.rejected == 0
+
+
+def test_novelty_threshold_raised_rejects_borderline(monkeypatch, state, config, tmp_path) -> None:
+    """Setting threshold=0.50 rejects a 0.40-novel mechanism."""
+    _install_synthesize_returning_accepted(monkeypatch)
+    _run(emit(state, config, words=["a", "b"], bundle_id="bundle_strict"))
+
+    bio = _FakeBioStore(score=0.40)  # passes default 0.30 but not 0.50
+    summary = CycleSummary()
+    _run(
+        _run_cross_domain_phase(
+            state=state,
+            config=config,
+            summary=summary,
+            generator_client=_noop_generator,
+            embedder=None,
+            archive=None,
+            pending_dir=tmp_path,
+            critic_client=None,
+            bio_store=bio,
+            novelty_gate_enabled=True,
+            novelty_threshold=0.50,
+        )
+    )
+    assert summary.rejected == 1

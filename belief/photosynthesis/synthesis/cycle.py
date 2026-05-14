@@ -87,6 +87,8 @@ async def run_synthesis_cycle(
     successful_builds: int = 0,
     pending_dir: Optional[Path] = None,
     critic_tolerance: int = 0,
+    novelty_threshold: Optional[float] = None,
+    novelty_gate_enabled: bool = True,
 ) -> CycleSummary:
     """Run one synthesis cycle. Returns a summary dict.
 
@@ -163,6 +165,8 @@ async def run_synthesis_cycle(
             pending_dir=pending_dir,
             bio_store=bio_store_instance,
             critic_tolerance=critic_tolerance,
+            novelty_threshold=novelty_threshold,
+            novelty_gate_enabled=novelty_gate_enabled,
         )
 
     heap = BoundedPriorityHeap(state)
@@ -342,6 +346,8 @@ async def _run_cross_domain_phase(
     critic_client: Optional[Callable[..., Awaitable[str]]] = None,
     bio_store: Any = None,
     critic_tolerance: int = 0,
+    novelty_threshold: Optional[float] = None,
+    novelty_gate_enabled: bool = True,
 ) -> None:
     """Process pending word_set bundles through the cross-domain generator.
 
@@ -430,16 +436,31 @@ async def _run_cross_domain_phase(
             continue
 
         # SE Session 6: novelty gate. Skip mechanisms that are too
-        # similar to ones already in the bio_store -- 0.30 threshold
-        # means anything >= 70% similar to its nearest neighbor is
-        # rejected as cross_domain_redundant. Failures degrade
-        # permissively (accepted by default) so a broken bio_store
-        # doesn't block synthesis.
-        if bio_store is not None and xd_result.mechanism is not None:
+        # similar to ones already in the bio_store -- default 0.30
+        # threshold means anything >= 70% similar to its nearest
+        # neighbor is rejected as cross_domain_redundant. Failures
+        # degrade permissively (accepted by default) so a broken
+        # bio_store doesn't block synthesis.
+        #
+        # SE Session 7.13: novelty_gate_enabled lets operators bypass
+        # the gate entirely, and novelty_threshold lets them tune the
+        # similarity bar (lower = more permissive; 0.0 effectively
+        # disables score-based rejection). Both flags reach here from
+        # `belief synth words --no-novelty-gate` and
+        # `--novelty-threshold N`.
+        if novelty_gate_enabled and bio_store is not None and xd_result.mechanism is not None:
             try:
-                from belief.photosynthesis.synthesis.cross_domain_novelty import gate
+                from belief.photosynthesis.synthesis.cross_domain_novelty import (
+                    DEFAULT_NOVELTY_THRESHOLD,
+                    gate,
+                )
 
-                verdict = gate(xd_result.mechanism, bio_store=bio_store)
+                threshold = (
+                    DEFAULT_NOVELTY_THRESHOLD
+                    if novelty_threshold is None
+                    else float(novelty_threshold)
+                )
+                verdict = gate(xd_result.mechanism, bio_store=bio_store, threshold=threshold)
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("novelty gate failed (accepting): %s", exc)
                 verdict = None

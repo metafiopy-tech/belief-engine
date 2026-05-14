@@ -1431,6 +1431,8 @@ def _run_synth_cmd(args) -> None:
                 critic_client=critic_client,
                 pending_dir=Path(config.pending_sessions_dir),
                 critic_tolerance=getattr(args, "critic_tolerance", 3),
+                novelty_threshold=getattr(args, "novelty_threshold", None),
+                novelty_gate_enabled=not getattr(args, "no_novelty_gate", False),
             )
         )
         print(
@@ -2045,6 +2047,30 @@ def app():
             "cross-domain analogies). Deterministic checks 1+2 are "
             "always gating. Set to 0 for strict legacy behavior; set "
             "to 6 to bypass LLM gating entirely (deterministic only)."
+        ),
+    )
+    synth_words.add_argument(
+        "--novelty-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Novelty gate threshold in [0, 1] (default: 0.30 from "
+            "DEFAULT_NOVELTY_THRESHOLD). The bio_store rejects any "
+            "candidate mechanism with novelty score < threshold as "
+            "cross_domain_redundant. Lower = more permissive (more "
+            "duplicate-ish mechanisms ship); 0.0 effectively disables "
+            "score-based rejection while still consulting the store."
+        ),
+    )
+    synth_words.add_argument(
+        "--no-novelty-gate",
+        action="store_true",
+        help=(
+            "Bypass the novelty gate entirely. Mechanism is admitted "
+            "to pending_sessions even if a near-identical mechanism "
+            "already lives in the bio_store. Useful for re-deriving "
+            "the same mechanism from the same word_set during demo "
+            "iteration without nuking the store."
         ),
     )
 
