@@ -1430,6 +1430,7 @@ def _run_synth_cmd(args) -> None:
                 generator_client=generator_client,
                 critic_client=critic_client,
                 pending_dir=Path(config.pending_sessions_dir),
+                critic_tolerance=getattr(args, "critic_tolerance", 2),
             )
         )
         print(
@@ -2032,6 +2033,17 @@ def app():
         type=str,
         default=None,
         help="Override the auto-generated bundle id (default: random 12-char hex)",
+    )
+    synth_words.add_argument(
+        "--critic-tolerance",
+        type=int,
+        default=2,
+        help=(
+            "How many of the 6 LLM-driven critic checks (3-8) may fail "
+            "and still ACCEPT (default: 2). Deterministic checks 1+2 "
+            "are always gating. Set to 0 to require all 8 checks pass "
+            "(strict legacy behavior)."
+        ),
     )
 
     args = parser.parse_args()

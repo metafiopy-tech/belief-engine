@@ -86,6 +86,7 @@ async def run_synthesis_cycle(
     critic_client: Optional[Callable[..., Awaitable[str]]] = None,
     successful_builds: int = 0,
     pending_dir: Optional[Path] = None,
+    critic_tolerance: int = 0,
 ) -> CycleSummary:
     """Run one synthesis cycle. Returns a summary dict.
 
@@ -161,6 +162,7 @@ async def run_synthesis_cycle(
             archive=archive,
             pending_dir=pending_dir,
             bio_store=bio_store_instance,
+            critic_tolerance=critic_tolerance,
         )
 
     heap = BoundedPriorityHeap(state)
@@ -339,6 +341,7 @@ async def _run_cross_domain_phase(
     pending_dir: Optional[Path],
     critic_client: Optional[Callable[..., Awaitable[str]]] = None,
     bio_store: Any = None,
+    critic_tolerance: int = 0,
 ) -> None:
     """Process pending word_set bundles through the cross-domain generator.
 
@@ -386,6 +389,7 @@ async def _run_cross_domain_phase(
                 generator_client=generator_client,
                 critic_client=critic_client,
                 bio_store=bio_store,
+                critic_tolerance=critic_tolerance,
             )
         except Exception as exc:
             logger.warning("cross_domain_generator raised: %s", exc)

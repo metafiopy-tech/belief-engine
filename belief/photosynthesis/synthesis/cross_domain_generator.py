@@ -107,6 +107,7 @@ async def synthesize_cross_domain(
     corpus: Any = None,
     research_dispatcher: Optional[Callable[..., Awaitable[Any]]] = None,
     temperature: float = DEFAULT_TEMPERATURE,
+    critic_tolerance: int = 0,
 ) -> CrossDomainResult:
     """Run the four-pass cross-domain synthesizer + critic.
 
@@ -379,7 +380,11 @@ async def synthesize_cross_domain(
     # ------------------------------------------------------------------
     critic_result: Optional[CriticResult] = None
     if critic_client is not None:
-        critic_result = await critique(mechanism, critic_client=critic_client)
+        critic_result = await critique(
+            mechanism,
+            critic_client=critic_client,
+            llm_check_tolerance=critic_tolerance,
+        )
         if not critic_result.accepted:
             return CrossDomainResult(
                 spec=None,

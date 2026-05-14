@@ -214,6 +214,115 @@ class TestCriticLLMPath:
 
 
 # ---------------------------------------------------------------------------
+# SE Session 7.11: critic tolerance for LLM-driven checks (3-8)
+#
+# Live mantis_shrimp+camera runs got rejected 2x in a row on different
+# 1-2 LLM checks each time. The all-8-must-pass threshold is too strict
+# for real cross-domain analogies. Default tolerance now 2; deterministic
+# checks (1, 2) are always gating regardless of tolerance.
+# ---------------------------------------------------------------------------
+
+
+def _critic_response_with_n_failures(n_failures: int, *, verdict: str = "ACCEPT") -> str:
+    """Build a critic response where the LAST `n_failures` LLM checks
+    (high IDs first) fail and the rest pass. The verdict can be set
+    independently to test that per-check flags are authoritative."""
+    failing_ids = set(range(8, 8 - n_failures, -1))  # 8, 7, 6, ...
+    return json.dumps(
+        {
+            "verdict": verdict,
+            "checks": [
+                {
+                    "id": cid,
+                    "name": f"c{cid}",
+                    "passed": cid not in failing_ids,
+                    "reason": "test",
+                }
+                for cid in range(1, 9)
+            ],
+        }
+    )
+
+
+class TestCriticTolerance:
+    def test_default_tolerance_zero_preserves_strict_behavior(self) -> None:
+        """tolerance=0 (the default to critique) requires all 8 to pass."""
+        good = _few_shot_mech("FEW_SHOT_MANTIS_SHRIMP_CAMERA")
+        critic = _make_fake_client([_critic_response_with_n_failures(1)])
+        result = _run(critique(good, critic_client=critic, llm_check_tolerance=0))
+        assert result.verdict == "REJECT"
+
+    def test_tolerance_two_admits_two_llm_failures(self) -> None:
+        """The empirical sweet spot from live demo: tolerance=2 lets
+        a mechanism through with 2 LLM checks failing (real Haiku
+        variance). One failure shorter is also accepted."""
+        good = _few_shot_mech("FEW_SHOT_MANTIS_SHRIMP_CAMERA")
+
+        for n_failed in (0, 1, 2):
+            critic = _make_fake_client([_critic_response_with_n_failures(n_failed)])
+            result = _run(critique(good, critic_client=critic, llm_check_tolerance=2))
+            assert result.verdict == "ACCEPT", (
+                f"tolerance=2 should ACCEPT with {n_failed} LLM failures"
+            )
+
+    def test_tolerance_two_rejects_three_llm_failures(self) -> None:
+        """Tolerance has a ceiling; 3 failures still REJECT at tolerance=2."""
+        good = _few_shot_mech("FEW_SHOT_MANTIS_SHRIMP_CAMERA")
+        critic = _make_fake_client([_critic_response_with_n_failures(3)])
+        result = _run(critique(good, critic_client=critic, llm_check_tolerance=2))
+        assert result.verdict == "REJECT"
+
+    def test_per_check_flags_override_llm_verdict(self) -> None:
+        """Even if the LLM says verdict=ACCEPT, per-check failures still
+        gate. This guards against the LLM contradicting its own check
+        flags (a known noisy behavior on Haiku)."""
+        good = _few_shot_mech("FEW_SHOT_MANTIS_SHRIMP_CAMERA")
+        # 4 LLM checks fail but the verdict says ACCEPT.
+        critic = _make_fake_client([_critic_response_with_n_failures(4, verdict="ACCEPT")])
+        result = _run(critique(good, critic_client=critic, llm_check_tolerance=2))
+        assert result.verdict == "REJECT"
+
+    def test_per_check_flags_promote_when_llm_says_reject(self) -> None:
+        """Conversely: LLM says REJECT but only 1 check actually fails
+        and tolerance=2 -- the per-check accounting wins, ACCEPT."""
+        good = _few_shot_mech("FEW_SHOT_MANTIS_SHRIMP_CAMERA")
+        critic = _make_fake_client([_critic_response_with_n_failures(1, verdict="REJECT")])
+        result = _run(critique(good, critic_client=critic, llm_check_tolerance=2))
+        assert result.verdict == "ACCEPT"
+
+    def test_deterministic_checks_always_gate(self) -> None:
+        """A predicate-style failure (check 1) ALWAYS rejects, even at
+        tolerance=999. Deterministic checks are non-tolerant."""
+        bad = StructuralMechanism.model_validate(
+            json.loads(_few_shot_json("FEW_SHOT_MANTIS_SHRIMP_CAMERA"))
+        )
+        # Mutate to attribute-style name so deterministic check 1 fails.
+        bad_data = json.loads(bad.model_dump_json())
+        bad_data["predicate_in_source"]["name"] = "has_many_sensors"
+        bad_data["predicate_in_target"]["name"] = "has_many_sensors"
+        bad_data["higher_order_relations"][0]["relates"] = [
+            "has_many_sensors",
+            "downstream_compute",
+        ]
+        bad_data["mechanism_id"] = "x-y-has_many_sensors"
+        bad = StructuralMechanism.model_validate(bad_data)
+
+        critic = _make_fake_client([_critic_response_with_n_failures(0)])
+        result = _run(critique(bad, critic_client=critic, llm_check_tolerance=999))
+        assert result.verdict == "REJECT"
+        # The deterministic check 1 short-circuited; LLM never called.
+        assert result.short_circuited is True
+        assert any(c.id == 1 and not c.passed for c in result.checks)
+
+    def test_negative_tolerance_clamped_to_zero(self) -> None:
+        """Pathological input -- negative tolerance is treated as 0."""
+        good = _few_shot_mech("FEW_SHOT_MANTIS_SHRIMP_CAMERA")
+        critic = _make_fake_client([_critic_response_with_n_failures(1)])
+        result = _run(critique(good, critic_client=critic, llm_check_tolerance=-5))
+        assert result.verdict == "REJECT"
+
+
+# ---------------------------------------------------------------------------
 # Synthesizer four-pass control flow
 # ---------------------------------------------------------------------------
 
