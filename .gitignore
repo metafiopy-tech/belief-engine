@@ -54,3 +54,6 @@ SESSION_HANDOFF*.md
 
 # Runtime PIDs and process state
 *.pid
+
+# Per-machine Claude Code settings (local only, never tracked)
+.claude/settings.local.json
