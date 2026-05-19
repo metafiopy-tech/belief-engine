@@ -52,9 +52,28 @@ class BaseAgent(ABC):
     role: ModelRole
     name: str
 
-    def __init__(self, router: ModelRouter) -> None:
+    def __init__(self, router: ModelRouter, agent_id: str | None = None) -> None:
         self.router = router
         self.model = router.get_model(self.role)
+        # Mycorrhizal Stage 1: stable identifier used by the reciprocity
+        # ledger. Defaults to the class-level ``name`` because that's
+        # deterministic across process restarts (which a per-instance
+        # creation-timestamp hash would not be — and the ledger is
+        # persistent across restarts by design). Explicit ``agent_id``
+        # overrides are useful for sharded swarms where two instances
+        # of the same agent class need distinct accounting.
+        self._agent_id = agent_id
+
+    @property
+    def agent_id(self) -> str:
+        """Stable identifier used by the reciprocity ledger.
+
+        Override via the constructor when multiple instances of the same
+        agent class need separate accounting. Default is the class-level
+        ``name`` attribute, which is already conventionally unique per
+        agent role (Architect / Builder / Tester / …).
+        """
+        return self._agent_id or self.name
 
     @abstractmethod
     async def run(self, state: UnifiedState) -> UnifiedState:

@@ -258,6 +258,39 @@ async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         logger.debug(f"Decomposer: recombination skipped: {e}")
 
+    # Mycorrhizal Stage 1: charge the constructing agent for compute spent
+    # on this build. We hook here (not at every agent boundary) because the
+    # decomposer is the canonical end-of-build node — exactly one charge
+    # per run, idempotent on run_id, never raises. Token totals are pulled
+    # from state.token_usage if the upstream agents populated it; otherwise
+    # we fall back to a placeholder cost of 1.0 so the agent still appears
+    # in the ledger with a non-zero denominator.
+    try:
+        from belief.memory.reciprocity import get_default_ledger
+
+        constructor = state.get("agent_id") or "belief_engine"
+        run_id = state.get("run_id") or "unknown"
+        token_usage = state.get("token_usage") or {}
+        if isinstance(token_usage, dict):
+            cost = float(
+                token_usage.get("total_prompt_tokens", 0)
+                + token_usage.get("total_completion_tokens", 0)
+            )
+        else:
+            cost = float(
+                getattr(token_usage, "total_prompt_tokens", 0)
+                + getattr(token_usage, "total_completion_tokens", 0)
+            )
+        if cost <= 0:
+            cost = 1.0  # placeholder for builds without token tracking
+        get_default_ledger().record_request(
+            agent_id=str(constructor),
+            cost=cost,
+            idempotency_key=f"request:{run_id}",
+        )
+    except Exception as e:  # pragma: no cover — best effort, never blocks build
+        logger.debug(f"Reciprocity request charge skipped: {e}")
+
     return result
 
 
@@ -407,6 +440,24 @@ async def _extract_and_deposit(state: dict[str, Any]) -> list[Nutrient]:
             # Deposit (handles dedup + lineage internally)
             soil.deposit(nutrient)
             deposited.append(nutrient)
+
+            # Mycorrhizal Stage 1: credit the constructing agent in the
+            # reciprocity ledger. The credit is per-nutrient (value 1.0),
+            # keyed by nutrient_id so a re-run of the decomposer for the
+            # same build never double-counts. Failures here MUST NOT
+            # propagate — the decomposer never fails the build.
+            try:
+                from belief.memory.reciprocity import get_default_ledger
+
+                constructor = state.get("agent_id") or "belief_engine"
+                get_default_ledger().record_contribution(
+                    agent_id=str(constructor),
+                    nutrient_value=1.0,
+                    nutrient_id=nutrient.nutrient_id,
+                    idempotency_key=f"contrib:{nutrient.nutrient_id}",
+                )
+            except Exception as rec_err:  # pragma: no cover — best effort
+                logger.debug(f"Reciprocity contribution credit skipped: {rec_err}")
 
     except Exception as e:
         logger.warning(f"Decomposer LLM call failed: {e}")

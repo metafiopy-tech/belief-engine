@@ -1865,6 +1865,19 @@ def app():
         help="Override the daily ceiling (USD). Default: $5.00",
     )
 
+    # Mycorrhizal Stage 1 — per-agent reciprocity ledger.
+    recip_parser = subparsers.add_parser(
+        "reciprocity",
+        help="Show the per-agent reciprocity ledger (mycorrhizal Stage 1)",
+    )
+    recip_parser.add_argument(
+        "--window",
+        type=str,
+        default=None,
+        help="Time window for exchange-rate aggregation (default: 7d). "
+        "Accepts '7d', '24h', '30m', 'all'.",
+    )
+
     # v3.3 Session 2 — Predator (utility-driven soft-tombstone of low-value soil).
     pred_parser = subparsers.add_parser(
         "predator",
@@ -2174,6 +2187,12 @@ def app():
         else:
             # --show is the default when no flag is given.
             print(cli_show(daily_budget_usd=budget))
+        sys.exit(0)
+    elif args.command == "reciprocity":
+        from belief.memory.reciprocity import DEFAULT_WINDOW, cli_show
+
+        window = args.window if args.window is not None else DEFAULT_WINDOW
+        print(cli_show(window=window))
         sys.exit(0)
     elif args.command == "predator":
         from belief.ecology.predator import (
