@@ -149,6 +149,28 @@ class ToolRegistry:
         )
 
         logger.info(f"Registered tool: {tool.name} (id={tool.id})")
+
+        # Mycorrhizal Stage 2: record this as a niche-modification event so
+        # downstream builds that consume the tool can credit the original
+        # constructor (tool.created_by). The post-state description is
+        # derived from the tool's own metadata so the niche ledger stays
+        # self-documenting without an extra LLM call. Best-effort — never
+        # fails the registration.
+        try:
+            from belief.memory.niche_ledger import get_default_ledger as _niche_ledger
+
+            _niche_ledger().record_modification(
+                constructing_agent_id=tool.created_by or "belief_engine",
+                kind="tool",
+                soil_reference=tool.id,
+                pre_state_description=(
+                    f"no self-authored tool available for: {tool.description[:80]}"
+                ),
+                post_state_description=(f"{tool.name}: {tool.description[:120]}"),
+            )
+        except Exception as nl_err:  # pragma: no cover — best-effort
+            logger.debug(f"Niche-modification record skipped for {tool.id}: {nl_err}")
+
         return tool.id
 
     def get_tool(self, tool_id: str) -> SelfAuthoredTool:

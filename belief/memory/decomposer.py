@@ -437,9 +437,13 @@ async def _extract_and_deposit(state: dict[str, Any]) -> list[Nutrient]:
                 framework=ext.framework or None,
             )
 
-            # Deposit (handles dedup + lineage internally)
-            soil.deposit(nutrient)
+            # Deposit (handles dedup + lineage internally). The returned
+            # id is the nutrient's own when novel, or the dedup-target's
+            # id when it merged into an existing nutrient — Stage 2 reads
+            # that signal to gate the niche-primitive registration.
+            deposited_id = soil.deposit(nutrient)
             deposited.append(nutrient)
+            is_novel = deposited_id == nutrient.nutrient_id
 
             # Mycorrhizal Stage 1: credit the constructing agent in the
             # reciprocity ledger. The credit is per-nutrient (value 1.0),
@@ -458,6 +462,26 @@ async def _extract_and_deposit(state: dict[str, Any]) -> list[Nutrient]:
                 )
             except Exception as rec_err:  # pragma: no cover — best effort
                 logger.debug(f"Reciprocity contribution credit skipped: {rec_err}")
+
+            # Mycorrhizal Stage 2: novel nutrients are niche modifications
+            # (new primitives the system can compose with). Dedup-merged
+            # nutrients reinforce an existing niche and don't register a
+            # new one. The pre/post descriptions stay short — the
+            # nutrient's own content carries the detail. Best-effort.
+            if is_novel:
+                try:
+                    from belief.memory.niche_ledger import get_default_ledger as _nl
+
+                    constructor = state.get("agent_id") or "belief_engine"
+                    _nl().record_modification(
+                        constructing_agent_id=str(constructor),
+                        kind="primitive",
+                        soil_reference=nutrient.nutrient_id,
+                        pre_state_description=(f"no soil primitive for: {ext.embedding_text[:80]}"),
+                        post_state_description=(f"{ext.nutrient_type}: {ext.content[:120]}"),
+                    )
+                except Exception as nl_err:  # pragma: no cover — best effort
+                    logger.debug(f"Niche primitive record skipped: {nl_err}")
 
     except Exception as e:
         logger.warning(f"Decomposer LLM call failed: {e}")

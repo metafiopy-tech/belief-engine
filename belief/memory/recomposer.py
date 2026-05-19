@@ -386,6 +386,28 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
                     logger.info(
                         f"Recomposer: added {len(relevant_tools)} self-authored tools to context"
                     )
+
+                # Mycorrhizal Stage 2: each surfaced tool counts as a
+                # reference to the niche that registered it. The semantic
+                # is "this niche was visible to this build" — a slightly
+                # weaker signal than "definitely consumed" but the cleanest
+                # chokepoint that has build_id in hand. Idempotency-keyed
+                # on (niche_id, run_id) so a recomposer replay for the
+                # same build never double-credits. Best-effort.
+                try:
+                    from belief.memory.niche_ledger import get_default_ledger
+
+                    nl = get_default_ledger()
+                    run_id = state.get("run_id") or "unknown"
+                    for t in relevant_tools:
+                        rec = nl.lookup_by_soil_reference(kind="tool", soil_reference=t.id)
+                        if rec is not None:
+                            nl.record_reference(
+                                niche_id=rec.niche_id,
+                                referring_build_id=str(run_id),
+                            )
+                except Exception as nl_err:  # pragma: no cover — best-effort
+                    logger.debug(f"Niche-reference record skipped: {nl_err}")
         except Exception as e:
             logger.debug(f"Tool retrieval skipped: {e}")
 

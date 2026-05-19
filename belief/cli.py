@@ -1878,6 +1878,37 @@ def app():
         "Accepts '7d', '24h', '30m', 'all'.",
     )
 
+    # Mycorrhizal Stage 2 — niche-modification ledger.
+    niche_parser = subparsers.add_parser(
+        "niches",
+        help="Show the niche-modification ledger (mycorrhizal Stage 2)",
+    )
+    niche_parser.add_argument(
+        "--agent",
+        type=str,
+        default=None,
+        help="Show only niches constructed by this agent_id.",
+    )
+    niche_parser.add_argument(
+        "--query",
+        type=str,
+        default=None,
+        help="Substring-search pre/post-state descriptions and soil_reference.",
+    )
+    niche_parser.add_argument(
+        "--kind",
+        type=str,
+        default=None,
+        choices=("tool", "primitive", "pattern", "covenant"),
+        help="Filter --query results to a single niche kind.",
+    )
+    niche_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Top-N rows for the default view (default: 10).",
+    )
+
     # v3.3 Session 2 — Predator (utility-driven soft-tombstone of low-value soil).
     pred_parser = subparsers.add_parser(
         "predator",
@@ -2193,6 +2224,18 @@ def app():
 
         window = args.window if args.window is not None else DEFAULT_WINDOW
         print(cli_show(window=window))
+        sys.exit(0)
+    elif args.command == "niches":
+        from belief.memory.niche_ledger import cli_show as niches_cli_show
+
+        print(
+            niches_cli_show(
+                agent=args.agent,
+                query=args.query,
+                kind=args.kind,
+                limit=args.limit,
+            )
+        )
         sys.exit(0)
     elif args.command == "predator":
         from belief.ecology.predator import (
