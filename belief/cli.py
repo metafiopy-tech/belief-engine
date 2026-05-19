@@ -1878,6 +1878,44 @@ def app():
         "Accepts '7d', '24h', '30m', 'all'.",
     )
 
+    # Mycorrhizal Stage 4 — signal alphabet + channel-capacity harness.
+    sig_parser = subparsers.add_parser(
+        "signal",
+        help="Emit / inspect / measure capacity of the signal alphabet (mycorrhizal Stage 4)",
+    )
+    sig_sub = sig_parser.add_subparsers(dest="signal_action")
+    sig_cap = sig_sub.add_parser(
+        "capacity",
+        help="Run the channel-capacity probe and report bits/hour",
+    )
+    sig_cap.add_argument("--samples", type=int, default=500)
+    sig_cap.add_argument("--seed", type=int, default=1)
+    sig_emit = sig_sub.add_parser("emit", help="Emit one signal manually")
+    sig_emit.add_argument("agent_id", type=str)
+    sig_emit.add_argument(
+        "token",
+        type=str,
+        choices=("STRESS", "DISCOVER", "REQUEST", "OFFER", "WARN"),
+    )
+    sig_emit.add_argument("magnitude", type=float)
+    sig_show = sig_sub.add_parser(
+        "show",
+        help="Show current concentration profile across all tokens for an agent",
+    )
+    sig_show.add_argument("agent_id", type=str)
+    sig_show.add_argument(
+        "--window",
+        type=str,
+        default="5m",
+        help="Integration window (default 5m).",
+    )
+    sig_show.add_argument(
+        "--half-life",
+        type=str,
+        default="2m",
+        help="Decay half-life (default 2m).",
+    )
+
     # Mycorrhizal Stage 3 — soil-layer snapshots + cold-start.
     snap_parser = subparsers.add_parser(
         "snapshot",
@@ -2258,6 +2296,43 @@ def app():
 
         window = args.window if args.window is not None else DEFAULT_WINDOW
         print(cli_show(window=window))
+        sys.exit(0)
+    elif args.command == "signal":
+        action = getattr(args, "signal_action", None) or "show"
+        if action == "capacity":
+            from belief.signal.capacity import cli_run_capacity
+
+            print(cli_run_capacity(n_samples=args.samples, seed=args.seed))
+        elif action == "emit":
+            from belief.signal.alphabet import Signal
+            from belief.signal.store import get_default_store
+
+            store = get_default_store()
+            sig = Signal(
+                agent_id=args.agent_id,
+                token=args.token,
+                magnitude=args.magnitude,
+            )
+            ok = store.emit(sig)
+            print(
+                f"signal emit: {'recorded' if ok else 'duplicate (idempotency)'}: "
+                f"{sig.agent_id} {sig.token} {sig.magnitude}"
+            )
+        elif action == "show":
+            from belief.signal.store import get_default_store, parse_duration
+
+            store = get_default_store()
+            window = parse_duration(args.window)
+            hl = parse_duration(args.half_life)
+            profile = store.profile(args.agent_id, window=window, half_life=hl)
+            print(
+                f"Concentration profile for {args.agent_id!r} "
+                f"(window={args.window}, half_life={args.half_life}):"
+            )
+            for tok, conc in profile.items():
+                print(f"  {tok:<10} {conc:.4f}")
+        else:
+            print("usage: belief signal {capacity,emit,show} ...")
         sys.exit(0)
     elif args.command == "snapshot":
         from belief.memory.snapshot import (
