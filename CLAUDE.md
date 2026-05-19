@@ -2,9 +2,9 @@
 
 ## What This Is
 
-Autocatalytic multi-agent build system (~220 Python files in `belief/`, ~64,600 lines as of v3.3 Session 5). Takes a natural language goal, produces working deployed software, and improves itself after every build. Uses LangGraph for agent orchestration, Anthropic Claude for LLM calls, ChromaDB for persistent learning memory with FSRS decay.
+Autocatalytic multi-agent build system (~233 Python files in `belief/`, ~69,600 lines as of v3.3 + Synthesis Engine). Takes a natural language goal, produces working deployed software, and improves itself after every build. Uses LangGraph for agent orchestration, Anthropic Claude for LLM calls, ChromaDB for persistent learning memory with FSRS decay.
 
-**Current ring:** v3.3.0 in flight. Tier 1 of the ecology layer (Economist, Predator, Sleep, GC) is live; first Tier 2 organ (Curiosity, suggest-only) is live. Speciator / Storyteller / Red-team / Body remain unscheduled.
+**Current ring:** v3.3.0 shipped with the Synthesis Engine layered on top. Tier 1 of the ecology layer (Economist, Predator, Sleep, GC) is live; first Tier 2 organ (Curiosity, suggest-only) is live. Speciator / Storyteller / Red-team / Body remain unscheduled. The Synthesis Engine (8 sessions + post-plan hotfixes) is end-to-end-demonstrated: `belief synth words "mantis_shrimp,camera" → sidecar → belief build --sidecar ...` produced 13 files of working Python at 0.82 weighted score for $0.94 on 2026-05-13.
 
 ## Quick Start
 
@@ -105,15 +105,49 @@ Adds the "ecology organs" -- background processes that maintain soil quality, ma
 - `belief/ecology/_information_gain.py` -- v1 info-gain heuristic.
 - `belief/ecology/_utility.py` -- shared utility-scoring used by Predator + Curiosity.
 
+## Synthesis Engine (layered on v3.3, Sessions 1-8 + hotfixes)
+
+Sibling input pathway to the Belief Engine. Takes two or more concept words, produces a typed `StructuralMechanism` payload, and feeds it into the build pipeline as constraints + acceptance criteria. Lives under the existing `belief/photosynthesis/` daemon rather than as a separate subsystem -- a word-set bundle routes through the cross-domain branch instead of the standard single-domain signal flow.
+
+Cross-domain code (`belief/photosynthesis/synthesis/`):
+- `cross_domain_generator.py` -- four-pass synthesizer on Sonnet (brainstorm, predicate-form-forcing, anti-rationalization, final structurer).
+- `cross_domain_critic.py` -- 8-check CoVe critic on Haiku via `gap_analyst`. Configurable tolerance via `--critic-tolerance N` (default 3 of 6 LLM checks may fail).
+- `cross_domain_novelty.py` -- novelty gate against the bio store. Threshold knob `--novelty-threshold` (default 0.30); `--no-novelty-gate` bypasses entirely (demo iteration only).
+- `incompleteness.py` -- 14-20 implementation probes per mechanism, classified against retrieved corpus, 2-iteration loopback through `research_dispatcher.py`.
+- `atomizer.py` -- 5 axes × 3 templates → 15 prompts/word, fans out to arxiv + github (pypi opt-in).
+- `structural_mechanism.py` -- Pydantic schema with predicate signature, Marr-level role arguments, named higher-order relations, near-miss disambiguation, open probes.
+- `prompts_cross_domain.py` -- few-shot bank (currently 3 pairs).
+- `sidecar_loader.py` -- hydrates `StructuralMechanism` from JSON sidecar at Grinder envelope pickup.
+- `renderer.py` -- markdown + JSON sidecar emission with `## Structural Mechanism` and `## Open Implementation Probes` sections.
+
+Integration:
+- `belief/agents/cross_domain_intake_adapter.py` -- bridges synthesis output into `RequirementSpec` as constraints + acceptance criteria. Every downstream agent sees the spec as an unusually well-specified request.
+- `belief/grinder/daemon.py` -- hydrates `structural_mechanism` from sidecar dict at envelope pickup.
+- `belief/cli.py` -- `belief build --sidecar PATH` flag for one-shot CLI builds without going through the daemon.
+- `UnifiedState.structural_mechanism` -- optional field carried through the pipeline.
+
+## Photosynthesis (signal acquisition daemon)
+
+Long-running daemon that harvests raw signals from RSS / arxiv / github / pypi / word-set inputs, scores them through the cascade filter, and feeds survivors into the synthesis pipeline. 45 Python files, ~10.2K lines under `belief/photosynthesis/`. Predates the v3.3 ecology organs.
+
+- `daemon.py` -- APScheduler-driven job loop. `_job_health` map surfaces every job's last-run status, including five explicitly-stubbed jobs (`_budget_reconcile`, `domain_profile_rebuild`, `threshold_calibrate`, `dead_letter_retry`, `skill_library_compact`) that are visible-but-disabled pending real implementations.
+- `filter/cascade.py` -- 4-stage cascading relevance filter (bloom blocklist → keyword regex → TF-IDF cosine → MiniLM embedding). Stage 3 fail-closed against missing local cache via `HF_HUB_OFFLINE` scoping (Phase 1, 2026-05-18); `BELIEF_OFFLINE=1` raises `OfflineModeError` cleanly; `BELIEF_EMBED_ALLOW_DOWNLOAD=1` opts back in to in-band Hugging Face fetches.
+- `sources/` -- 9 source adapters (rss, arxiv direct, github, pypi, word-set, etc.). The word-set adapter is the Synthesis Engine input path; survives cascade re-scoring via the bypass mechanism (S7.7 hotfix).
+- `safety/cost_tracker.py` -- `BreakerAnthropic` wraps raw Anthropic calls with budget + pybreaker. Intentional architectural carveout: Photosynthesis's cost shape (high-volume cheap calls under a hard daily cap) doesn't match agent routing's per-role tiering, so it bypasses `ModelRouter` deliberately.
+- `bittensor/` -- 4 files, Bittensor-network integration scaffolding (not exercised in default builds).
+- `state.py`, `config.py`, `domain_keywords.yaml` -- per-domain config, sqlite state for the cascade and source adapters.
+
 ## Project Structure
 
 ```
 belief/
-  agents/          -- agents (intake through brownfield + reproduction_tester)
+  agents/          -- agents (intake through brownfield + reproduction_tester + cross_domain_intake_adapter)
   validators/      -- AST covenant enforcers + dynamic covenant registry
   covenants/       -- LibCST proposers + precision gate (v3.2)
-  memory/          -- ChromaDB soil (5 collections), FSRS, tool registry, episode recorder, library inductor, trophic levels
+  memory/          -- ChromaDB soil (6 collections incl. bio store), FSRS, tool registry, episode recorder, library inductor, trophic levels
   ecology/         -- v3.3 organs: economist, predator, sleep, garbage_collector, curiosity (+ shared _utility / _information_gain helpers)
+  photosynthesis/  -- Signal acquisition daemon: daemon.py + filter/cascade.py + sources/ + safety/ + synthesis/ + bittensor/ (45 files, ~10.2K lines)
+  grinder/         -- Daemon envelope pickup (hydrates SE structural_mechanism from sidecar dict at build time)
   refinement/      -- Water cycle (analyzer, fixer, runner)
   evolution/       -- SICA, archive, crystallizer, jitterbug, progression, tool_validator
   archive/         -- v3.2 DGM-style retrieval layer (planner priors)
@@ -125,10 +159,17 @@ belief/
   codebase/        -- Brownfield (localizer, repo_graph, patch_sampler, change_impact)
   languages/       -- Python + TypeScript adapters
   polarity/        -- Latios/Latias incompleteness engine
+  verification/    -- Schemathesis / Hypothesis adapters for API verification (optional dependency)
   models/          -- State, artifacts, skeleton, contracts, service_architecture
   config/          -- Settings, model routing, local model table
   tools/           -- Composition planner, deployment generator
   prompts/         -- All agent prompts + protocol skeletons
+  core/            -- Shared HTTP client (BreakerAsyncClient), small primitives reused across subsystems
+  daemons/         -- Long-running orchestration helpers (separate from photosynthesis/daemon.py)
+  utils/           -- Cross-cutting small utilities
+  cache/           -- On-disk cache scaffolding
+  bittensor/       -- Top-level Bittensor integration (distinct from photosynthesis/bittensor/)
+  experiments/     -- One-off experimental modules (not part of default pipeline)
   hardening.py     -- Budget, rate limiter, security scanner, audit log  [IMMUTABLE]
   benchmark.py     -- Scoring logic                                       [IMMUTABLE]
   graph.py         -- LangGraph pipeline (all nodes + edges)
@@ -164,6 +205,13 @@ belief predator                       # Soft-tombstone low-utility nutrients
 belief sleep                          # Offline soil consolidation cycles
 belief gc                             # Tombstone broken tools / invalid covenants / duplicate sources
 belief curiosity                      # Suggest build goals filling soil gaps
+
+# Synthesis Engine
+belief synth words "word_a,word_b"    # Cross-domain mechanism synthesis (writes sidecar)
+belief synth words "..." --no-novelty-gate         # Bypass novelty filter (demo iteration)
+belief synth words "..." --critic-tolerance 3      # Allow N of 6 LLM critic checks to fail
+belief synth words "..." --novelty-threshold 0.30  # Bio-store similarity threshold
+belief build --goal "..." --sidecar PATH           # Build with hydrated structural_mechanism
 
 # Observability
 belief dashboard                      # Metrics dashboard
@@ -239,7 +287,7 @@ python3 -m pytest tests/test_curiosity.py -v                           # v3.3 Se
 
 ## Hard constraints
 
-- `belief/benchmark.py` scoring and `belief/hardening.py` are immutable. ruff `extend-exclude = ["belief/hardening.py"]`.
+- `belief/benchmark.py` scoring and `belief/hardening.py` are immutable. ruff `extend-exclude = ["belief/hardening.py", "audit"]` (audit/ holds generated build outputs, not source).
 - Tests are a hard gate. On red, revert the session rather than patching forward.
 - Sessions ship one at a time. Even when asked to do multiple, pause for commit + approval between each.
 - All shell snippets on Joe's Mac use `python3` / `pip3`, never bare `python`.

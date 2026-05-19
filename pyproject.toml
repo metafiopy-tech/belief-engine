@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "belief-engine"
-version = "3.2.0"
+version = "3.3.0"
 description = "Autonomous AI build system. Describe what you want. Belief builds it, tests it, deploys it, and learns — on your laptop, no API key required."
 readme = "README.md"
 license = {text = "MIT"}
@@ -196,7 +196,13 @@ target-version = "py311"
 # 3 E402 mid-file imports are structural (sectioned file) and would
 # require reshaping the module to fix — off-limits.  Excluding it here
 # keeps pre-commit / CI green without touching the file.
-extend-exclude = ["belief/hardening.py"]
+#
+# `audit/` contains generated build outputs and one-shot eval scripts
+# (e.g. audit/build_*/fibonacci.py, audit/run_mini_eval.py) — those
+# files are artifacts, not source, and should not be held to the
+# package quality bar.  Excluding the whole directory keeps
+# `ruff check .` clean.
+extend-exclude = ["belief/hardening.py", "audit"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
