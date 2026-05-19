@@ -283,7 +283,45 @@ class CascadingRelevanceFilter:
         SentenceTransformer = _load_sentence_transformers()
         if SentenceTransformer is None:
             return
-        self._embed_model = SentenceTransformer(self._embed_model_name, device="cpu")
+        # Phase 1 (2026-05-18): fail-closed when the model isn't
+        # already cached locally. Tests in tests/photosynthesis/
+        # test_filter.py exercise the no-corpus path with
+        # sentence-transformers installed but the model not
+        # pre-cached; they expect the cascade to skip stage 3
+        # cleanly rather than attempt a Hugging Face download.
+        # Scoping HF_HUB_OFFLINE to this one constructor call makes
+        # a missing cache raise a catchable OSError instead of
+        # either silently downloading or hanging on a network
+        # timeout. Set BELIEF_EMBED_ALLOW_DOWNLOAD=1 to opt back in
+        # to in-band downloads (useful when populating a fresh
+        # machine's cache).
+        allow_download = os.environ.get("BELIEF_EMBED_ALLOW_DOWNLOAD", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        prev_offline = os.environ.get("HF_HUB_OFFLINE")
+        if not allow_download:
+            os.environ["HF_HUB_OFFLINE"] = "1"
+        try:
+            self._embed_model = SentenceTransformer(self._embed_model_name, device="cpu")
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "stage-3 embedding model %r not available locally (%s); "
+                "cascade will skip stage 3. Set "
+                "BELIEF_EMBED_ALLOW_DOWNLOAD=1 to permit Hugging Face "
+                "downloads, or pre-cache the model.",
+                self._embed_model_name,
+                exc,
+            )
+            return
+        finally:
+            if not allow_download:
+                if prev_offline is None:
+                    os.environ.pop("HF_HUB_OFFLINE", None)
+                else:
+                    os.environ["HF_HUB_OFFLINE"] = prev_offline
         try:
             self._embed_model.max_seq_length = 256
         except AttributeError:
