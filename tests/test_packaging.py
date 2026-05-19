@@ -44,9 +44,9 @@ def _load_pyproject() -> dict:
 
 
 class TestPyprojectVersion:
-    def test_version_bumped_to_3_2_0(self):
+    def test_version_bumped_to_3_3_0(self):
         cfg = _load_pyproject()
-        assert cfg["project"]["version"] == "3.2.0", "Audit ship: bump to 3.2.0"
+        assert cfg["project"]["version"] == "3.3.0", "v3.3 ship: bump to 3.3.0"
 
     def test_project_name_unchanged(self):
         cfg = _load_pyproject()
