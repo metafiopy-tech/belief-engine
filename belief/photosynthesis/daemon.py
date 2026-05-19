@@ -185,6 +185,19 @@ class PhotosynthesisDaemon:
                 replace_existing=True,
             )
 
+        # Mycorrhizal Stage 3 — periodic soil snapshots. The job is
+        # registered unconditionally; the callback handles its own
+        # exceptions so a snapshot failure can never wedge the
+        # scheduler. Defaults: 6h cadence, GFS rotation (10/10/10).
+        self.scheduler.add_job(
+            self._snapshot_take,
+            trigger="interval",
+            seconds=self.config.cadences.snapshot_take_s,
+            id="snapshot_take",
+            name="snapshot_take",
+            replace_existing=True,
+        )
+
         # control_table_init runs once on startup (fires ~5s after start)
         self._control_table_init()
 
@@ -404,6 +417,24 @@ class PhotosynthesisDaemon:
     def _skill_library_compact(self) -> None:
         """Spec: compact the skill library (dedup near-duplicate skills)."""
         self._set_stub("skill_library_compact", "needs skill library (ToolRegistry)")
+
+    def _snapshot_take(self) -> None:
+        """Mycorrhizal Stage 3: pack a durable soil snapshot, then rotate.
+
+        Best-effort — exceptions are logged and stored in the
+        per-job health map but never propagate to the scheduler.
+        """
+        try:
+            from belief.memory.snapshot import SoilSnapshot
+
+            snap = SoilSnapshot()
+            dest = snap.take_snapshot()
+            deleted = snap.rotate_snapshots()
+            self._job_health["snapshot_take"] = f"ok: {dest.name} (rotated {len(deleted)})"
+            logger.info("snapshot_take: %s (rotated %d older)", dest, len(deleted))
+        except Exception as e:
+            self._job_health["snapshot_take"] = f"error: {e}"
+            logger.exception("snapshot_take failed")
 
     def _set_stub(self, job_id: str, reason: str) -> None:
         """Mark a job as stubbed and log once on first discovery."""

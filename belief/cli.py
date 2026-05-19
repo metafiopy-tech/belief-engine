@@ -1878,6 +1878,40 @@ def app():
         "Accepts '7d', '24h', '30m', 'all'.",
     )
 
+    # Mycorrhizal Stage 3 — soil-layer snapshots + cold-start.
+    snap_parser = subparsers.add_parser(
+        "snapshot",
+        help="Pack / restore / list / verify durable soil snapshots (mycorrhizal Stage 3)",
+    )
+    snap_sub = snap_parser.add_subparsers(dest="snapshot_action")
+    snap_take = snap_sub.add_parser("take", help="Pack a new snapshot")
+    snap_take.add_argument(
+        "--label",
+        type=str,
+        default=None,
+        help="Optional label appended to the snapshot directory name.",
+    )
+    snap_restore = snap_sub.add_parser(
+        "restore", help="Atomically restore the live state from a snapshot path"
+    )
+    snap_restore.add_argument("path", type=str, help="Snapshot directory to restore from")
+    snap_sub.add_parser("list", help="List snapshots, newest first")
+    snap_verify = snap_sub.add_parser(
+        "verify", help="Validate a snapshot directory before restoring"
+    )
+    snap_verify.add_argument("path", type=str)
+
+    cold_parser = subparsers.add_parser(
+        "cold-start",
+        help="Restore from a snapshot (optional) and print a soil-health summary",
+    )
+    cold_parser.add_argument(
+        "--snapshot",
+        type=str,
+        default=None,
+        help="Snapshot directory to restore from before the health summary.",
+    )
+
     # Mycorrhizal Stage 2 — niche-modification ledger.
     niche_parser = subparsers.add_parser(
         "niches",
@@ -2224,6 +2258,29 @@ def app():
 
         window = args.window if args.window is not None else DEFAULT_WINDOW
         print(cli_show(window=window))
+        sys.exit(0)
+    elif args.command == "snapshot":
+        from belief.memory.snapshot import (
+            cli_list as snap_cli_list,
+            cli_restore as snap_cli_restore,
+            cli_take as snap_cli_take,
+            cli_verify as snap_cli_verify,
+        )
+
+        action = getattr(args, "snapshot_action", None) or "list"
+        if action == "take":
+            print(snap_cli_take(label=args.label))
+        elif action == "restore":
+            print(snap_cli_restore(args.path))
+        elif action == "verify":
+            print(snap_cli_verify(args.path))
+        else:
+            print(snap_cli_list())
+        sys.exit(0)
+    elif args.command == "cold-start":
+        from belief.memory.snapshot import cli_cold_start
+
+        print(cli_cold_start(snapshot_path=args.snapshot))
         sys.exit(0)
     elif args.command == "niches":
         from belief.memory.niche_ledger import cli_show as niches_cli_show

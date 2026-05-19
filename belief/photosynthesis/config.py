@@ -50,6 +50,10 @@ class Cadences:
     threshold_calibrate_s: int = 7 * 24 * 3600  # 1/week
     dead_letter_retry_s: int = 10 * 60  # 6/h
     skill_library_compact_s: int = 24 * 3600  # 1/day
+    # Mycorrhizal Stage 3 — durable soil snapshots on a fixed cadence.
+    # 6h matches the GFS rotation defaults (~10 hourly buckets = 2.5d
+    # retention at the recent tier).
+    snapshot_take_s: int = 6 * 3600
 
 
 @dataclass(frozen=True)
