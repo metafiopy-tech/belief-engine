@@ -255,6 +255,26 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     result = dict(state)
 
+    # Mycorrhizal Stage 5: advisory routing decision for this build's
+    # originating agent. This is OBSERVABILITY ONLY — it records a routing
+    # event for the `belief topology` diagnostic and never reroutes or
+    # blocks the build. With no hubs (the current state), the decision is
+    # always ROUTE_DIRECT. Wrapped so a routing failure can never affect a
+    # build; identical risk profile to the Stage 1/2 ledger hooks that
+    # already write during build tests.
+    try:
+        from belief.routing import HubRegistry, Router
+        from belief.routing._store import RoutingStore
+        from belief.memory.reciprocity import get_default_ledger as _recip
+
+        agent_id = str(state.get("agent_id") or "belief_engine")
+        _routing_store = RoutingStore()
+        _hubs = HubRegistry(_routing_store, _recip())
+        Router(_routing_store, _hubs).route(agent_id)
+        _routing_store.close()
+    except Exception as routing_err:  # pragma: no cover — advisory, never blocks
+        logger.debug(f"Recomposer: advisory routing skipped: {routing_err}")
+
     try:
         goal = state.get("user_goal", "")
         if not goal:

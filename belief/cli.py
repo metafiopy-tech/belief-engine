@@ -1878,6 +1878,23 @@ def app():
         "Accepts '7d', '24h', '30m', 'all'.",
     )
 
+    # Mycorrhizal Stage 5 — hub topology / routing diagnostics.
+    topo_parser = subparsers.add_parser(
+        "topology",
+        help="Show the routing topology + hub set (mycorrhizal Stage 5)",
+    )
+    topo_parser.add_argument(
+        "--window",
+        type=str,
+        default=None,
+        help="Window for routing-event analysis (e.g. '7d', '24h'); default all.",
+    )
+    topo_parser.add_argument(
+        "--recompute-hubs",
+        action="store_true",
+        help="Recompute hub membership from the reciprocity ledger before reporting.",
+    )
+
     # Mycorrhizal Stage 4 — signal alphabet + channel-capacity harness.
     sig_parser = subparsers.add_parser(
         "signal",
@@ -2296,6 +2313,21 @@ def app():
 
         window = args.window if args.window is not None else DEFAULT_WINDOW
         print(cli_show(window=window))
+        sys.exit(0)
+    elif args.command == "topology":
+        from belief.memory.reciprocity import get_default_ledger
+        from belief.routing._store import RoutingStore
+        from belief.routing.diagnostics import TopologyDiagnostics, cli_format_report
+        from belief.routing.hubs import HubRegistry
+
+        store = RoutingStore()
+        hubs = HubRegistry(store, get_default_ledger())
+        if args.recompute_hubs:
+            hubs.recompute()
+        diag = TopologyDiagnostics(store)
+        report = diag.report(window=args.window)
+        print(cli_format_report(report, hub_ids=hubs.current_hubs()))
+        store.close()
         sys.exit(0)
     elif args.command == "signal":
         action = getattr(args, "signal_action", None) or "show"
