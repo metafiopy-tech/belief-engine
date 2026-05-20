@@ -1878,6 +1878,12 @@ def app():
         "Accepts '7d', '24h', '30m', 'all'.",
     )
 
+    # Mycorrhizal Stage 6 — defense-priming warnings.
+    subparsers.add_parser(
+        "warnings",
+        help="Show active priming / covenant warnings (mycorrhizal Stage 6)",
+    )
+
     # Mycorrhizal Stage 5 — hub topology / routing diagnostics.
     topo_parser = subparsers.add_parser(
         "topology",
@@ -2313,6 +2319,11 @@ def app():
 
         window = args.window if args.window is not None else DEFAULT_WINDOW
         print(cli_show(window=window))
+        sys.exit(0)
+    elif args.command == "warnings":
+        from belief.safety.priming import cli_show as warnings_cli_show
+
+        print(warnings_cli_show())
         sys.exit(0)
     elif args.command == "topology":
         from belief.memory.reciprocity import get_default_ledger

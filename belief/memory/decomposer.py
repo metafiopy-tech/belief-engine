@@ -483,6 +483,27 @@ async def _extract_and_deposit(state: dict[str, Any]) -> list[Nutrient]:
                 except Exception as nl_err:  # pragma: no cover — best effort
                     logger.debug(f"Niche primitive record skipped: {nl_err}")
 
+            # Mycorrhizal Stage 6: a freshly-extracted antipattern is an
+            # unconfirmed failure mode — emit a priming-class warning so
+            # future operations on the same pattern raise a sentinel. This
+            # is priming, NOT a covenant block: it never refuses anything
+            # (the build pipeline doesn't call check_operation). Best-effort.
+            if ntype == NutrientType.ANTIPATTERN:
+                try:
+                    from belief.safety.priming import get_default_propagator
+
+                    constructor = state.get("agent_id") or "belief_engine"
+                    get_default_propagator().emit_priming(
+                        pattern=ext.embedding_text[:80],
+                        evidence={
+                            "build_id": build_id,
+                            "nutrient_id": nutrient.nutrient_id,
+                        },
+                        originating_agent_id=str(constructor),
+                    )
+                except Exception as pr_err:  # pragma: no cover — best effort
+                    logger.debug(f"Priming warning emit skipped: {pr_err}")
+
     except Exception as e:
         logger.warning(f"Decomposer LLM call failed: {e}")
     finally:
