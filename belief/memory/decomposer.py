@@ -291,6 +291,52 @@ async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:  # pragma: no cover — best effort, never blocks build
         logger.debug(f"Reciprocity request charge skipped: {e}")
 
+    # Mycorrhizal Stage 7: three-tier decomposition of FAILED builds, plus
+    # quarantine routing for toxic output. This runs ALONGSIDE the LLM
+    # decomposer above (successful builds are its domain); it extracts value
+    # from failures the LLM path doesn't claim. Pure analysis + best-effort
+    # persistence — never blocks the build. Toxic builds (security
+    # violations etc.) are quarantined instead of decomposed into soil.
+    try:
+        from belief.memory.decomposers import decompose_failed_build
+        from belief.memory.quarantine import get_default_collection, is_toxic
+
+        errors = state.get("errors", []) or []
+        validation = state.get("validation_result")
+        verdict_str = ""
+        if validation:
+            v = (
+                validation.get("verdict")
+                if isinstance(validation, dict)
+                else getattr(validation, "verdict", None)
+            )
+            verdict_str = v.value if hasattr(v, "value") else str(v or "")
+        exec_result = state.get("execution_result")
+        exec_error = ""
+        if exec_result:
+            exec_error = (
+                exec_result.get("error_summary", "")
+                if isinstance(exec_result, dict)
+                else getattr(exec_result, "error_summary", "")
+            ) or ""
+
+        toxic_marker = is_toxic(errors, verdict=verdict_str, exec_error=exec_error)
+        if toxic_marker:
+            # Quarantine instead of decompose — toxic output must not seed soil.
+            get_default_collection().quarantine(
+                build_id=str(state.get("run_id", "unknown")),
+                reason=f"toxic marker: {toxic_marker}",
+                evidence={"verdict": verdict_str, "exec_error": exec_error[:200]},
+            )
+            logger.info("Decomposer: build quarantined (%s)", toxic_marker)
+        else:
+            decomp = decompose_failed_build(state)
+            if decomp.recovered_anything:
+                logger.info("Decomposer: three-tier recovery %s", decomp.summary())
+                result["three_tier_decomposition"] = decomp.summary()
+    except Exception as e:  # pragma: no cover — best effort, never blocks build
+        logger.debug(f"Three-tier decomposition skipped: {e}")
+
     return result
 
 

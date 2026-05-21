@@ -1878,6 +1878,23 @@ def app():
         "Accepts '7d', '24h', '30m', 'all'.",
     )
 
+    # Mycorrhizal Stage 7 — quarantine review + succession mode.
+    quar_parser = subparsers.add_parser(
+        "quarantine",
+        help="Review quarantined builds (mycorrhizal Stage 7)",
+    )
+    quar_sub = quar_parser.add_subparsers(dest="quarantine_action")
+    quar_sub.add_parser("review", help="List builds pending quarantine review")
+    quar_approve = quar_sub.add_parser("approve", help="Approve a quarantined build")
+    quar_approve.add_argument("build_id", type=str)
+    quar_reject = quar_sub.add_parser("reject", help="Reject a quarantined build")
+    quar_reject.add_argument("build_id", type=str)
+
+    subparsers.add_parser(
+        "succession",
+        help="Show the current succession mode + policy (mycorrhizal Stage 7)",
+    )
+
     # Mycorrhizal Stage 6 — defense-priming warnings.
     subparsers.add_parser(
         "warnings",
@@ -2324,6 +2341,24 @@ def app():
         from belief.safety.priming import cli_show as warnings_cli_show
 
         print(warnings_cli_show())
+        sys.exit(0)
+    elif args.command == "quarantine":
+        from belief.memory.quarantine import cli_review, get_default_collection
+
+        action = getattr(args, "quarantine_action", None) or "review"
+        if action == "approve":
+            ok = get_default_collection().approve(args.build_id)
+            print(f"approve {args.build_id}: {'done' if ok else 'not found'}")
+        elif action == "reject":
+            ok = get_default_collection().reject(args.build_id)
+            print(f"reject {args.build_id}: {'done' if ok else 'not found'}")
+        else:
+            print(cli_review())
+        sys.exit(0)
+    elif args.command == "succession":
+        from belief.lifecycle.succession import cli_show as succession_cli_show
+
+        print(succession_cli_show())
         sys.exit(0)
     elif args.command == "topology":
         from belief.memory.reciprocity import get_default_ledger
