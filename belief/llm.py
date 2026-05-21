@@ -1123,12 +1123,20 @@ class LLMClient:
         a partial. This is the path code generation uses so a large file is
         not silently chopped mid-statement.
 
-        Continuation uses Anthropic assistant-prefill: the accumulated text is
-        fed back as a partial assistant turn and the model continues it
-        seamlessly (no repeated preamble). Each call's ``max_tokens`` applies
+        Continuation sends the partial back as assistant *history* followed by
+        a user "continue" instruction, so the conversation ends with a user
+        turn — assistant-message prefill (ending on an assistant turn) is
+        rejected by some models with a 400. Each call's ``max_tokens`` applies
         to the NEW segment, so total output can reach roughly
         ``max_tokens * (1 + max_continuations)``.
         """
+        continue_instruction = (
+            "Your previous message was cut off because it reached the output "
+            "length limit. Continue from EXACTLY where you stopped. Do not "
+            "repeat any earlier content, do not add commentary, and do not "
+            "wrap the output in code fences — emit only the remaining content "
+            "so it can be concatenated directly onto what you already wrote."
+        )
         role_str = role.value if isinstance(role, ModelRole) else role
 
         accumulated = ""
@@ -1163,15 +1171,16 @@ class LLMClient:
                 truncated = False
                 break
 
-            # Still cut off — prefill the assistant turn with what we have and
-            # continue. Anthropic rejects a prefill ending in whitespace, so
-            # rstrip the seed and keep ``accumulated`` consistent with what the
-            # model actually continues from.
+            # Still cut off — feed the partial back as assistant history and
+            # ask for the rest in a trailing USER turn. The conversation must
+            # end with a user message (assistant-prefill 400s on some models).
+            # rstrip the seed so it concatenates cleanly with the next segment.
             truncated = True
             accumulated = accumulated.rstrip()
             messages = [
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": accumulated},
+                {"role": "user", "content": continue_instruction},
             ]
 
         return accumulated, truncated

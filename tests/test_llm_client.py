@@ -582,15 +582,17 @@ class TestGenerateLongText:
         llm._call_with_role = fake  # type: ignore[assignment]
         text, truncated = await llm.generate_long_text("builder", "sys", "p")
 
-        # Seed is rstripped before the prefill, so the seam has no double space.
+        # Seed is rstripped before being fed back, so the seam has no double space.
         assert text == "part1part2"
         assert truncated is False
         assert len(seen) == 2
-        # Continuation call prefills the assistant turn with the partial.
-        assert seen[1] == [
-            {"role": "user", "content": "p"},
-            {"role": "assistant", "content": "part1"},
-        ]
+        # Continuation feeds the partial back as assistant history, then a user
+        # turn — the conversation MUST end with a user message (assistant
+        # prefill 400s on some models; that bug shipped firmware-less builds).
+        assert seen[1][0] == {"role": "user", "content": "p"}
+        assert seen[1][1] == {"role": "assistant", "content": "part1"}
+        assert seen[1][-1]["role"] == "user"
+        assert len(seen[1]) == 3
 
     @pytest.mark.asyncio
     async def test_truncated_flag_set_when_cap_exhausted(self) -> None:
