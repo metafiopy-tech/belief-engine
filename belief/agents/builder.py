@@ -424,13 +424,23 @@ class BuilderAgent(BaseAgent):
                         f"Protocol skeleton injection failed for {file_spec.filename}: {e}"
                     )
 
-            raw = await llm.generate_text(
+            raw, truncated = await llm.generate_long_text(
                 role=self.role,
                 system=system,
                 prompt=prompt,
                 temperature=0.2,
                 complexity=state.complexity_score,
             )
+            if truncated:
+                # The model hit the output ceiling even after continuation —
+                # storing the partial would ship a file cut mid-statement
+                # (the bug that produced 8/23 non-parsing files). Drop it and
+                # let the missing-file path / compile gate flag it instead.
+                logger.warning(
+                    "Builder: %s still truncated after continuation cap — discarding partial file",
+                    file_spec.filename,
+                )
+                return None
             return _strip_fences(raw)
         except Exception as e:
             logger.warning(f"Builder: failed to generate {file_spec.filename}: {e}")

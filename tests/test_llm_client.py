@@ -539,6 +539,77 @@ class TestCloudRoleBudgetTimeout:
 
 
 # ---------------------------------------------------------------------------
+# 5c. generate_long_text — bounded continuation on max_tokens truncation
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateLongText:
+    """The builder uses this so a large file is not silently chopped at the
+    output-token ceiling. It must auto-continue via assistant-prefill when the
+    model stops on ``max_tokens``, and report ``truncated=True`` only if still
+    cut after the continuation cap.
+    """
+
+    @pytest.mark.asyncio
+    async def test_single_call_when_model_finishes(self) -> None:
+        llm = LLMClient(router=None)  # router unused once _call_with_role is faked
+        calls: list[list[dict]] = []
+
+        async def fake(role, system, messages, *, max_tokens, temperature, complexity):
+            calls.append(messages)
+            return ({"content": [{"text": "done"}], "stop_reason": "end_turn"}, "m", "local")
+
+        llm._call_with_role = fake  # type: ignore[assignment]
+        text, truncated = await llm.generate_long_text("builder", "sys", "p")
+
+        assert text == "done"
+        assert truncated is False
+        assert len(calls) == 1  # no continuation needed
+
+    @pytest.mark.asyncio
+    async def test_continues_then_finishes(self) -> None:
+        llm = LLMClient(router=None)
+        scripted = [
+            ({"content": [{"text": "part1 "}], "stop_reason": "max_tokens"}, "m", "local"),
+            ({"content": [{"text": "part2"}], "stop_reason": "end_turn"}, "m", "local"),
+        ]
+        seen: list[list[dict]] = []
+
+        async def fake(role, system, messages, *, max_tokens, temperature, complexity):
+            seen.append(messages)
+            return scripted.pop(0)
+
+        llm._call_with_role = fake  # type: ignore[assignment]
+        text, truncated = await llm.generate_long_text("builder", "sys", "p")
+
+        # Seed is rstripped before the prefill, so the seam has no double space.
+        assert text == "part1part2"
+        assert truncated is False
+        assert len(seen) == 2
+        # Continuation call prefills the assistant turn with the partial.
+        assert seen[1] == [
+            {"role": "user", "content": "p"},
+            {"role": "assistant", "content": "part1"},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_truncated_flag_set_when_cap_exhausted(self) -> None:
+        llm = LLMClient(router=None)
+        n = {"calls": 0}
+
+        async def fake(role, system, messages, *, max_tokens, temperature, complexity):
+            n["calls"] += 1
+            return ({"content": [{"text": "x"}], "stop_reason": "max_tokens"}, "m", "local")
+
+        llm._call_with_role = fake  # type: ignore[assignment]
+        text, truncated = await llm.generate_long_text("builder", "sys", "p", max_continuations=2)
+
+        assert truncated is True
+        assert n["calls"] == 3  # initial + 2 continuations
+        assert text == "xxx"
+
+
+# ---------------------------------------------------------------------------
 # 6. Health check
 # ---------------------------------------------------------------------------
 

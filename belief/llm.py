@@ -1104,6 +1104,78 @@ class LLMClient:
 
         return text
 
+    async def generate_long_text(
+        self,
+        role: ModelRole | str,
+        system: str,
+        prompt: str,
+        temperature: float = 0.3,
+        max_tokens: int = 8192,
+        complexity: int = 1,
+        max_continuations: int = 2,
+    ) -> tuple[str, bool]:
+        """Generate free-form text, auto-continuing when the model stops
+        because it hit ``max_tokens`` rather than finishing.
+
+        Returns ``(text, truncated)``. ``truncated`` is True only if the
+        response was STILL cut off after ``max_continuations`` follow-ups —
+        the caller should treat that as a generation failure rather than store
+        a partial. This is the path code generation uses so a large file is
+        not silently chopped mid-statement.
+
+        Continuation uses Anthropic assistant-prefill: the accumulated text is
+        fed back as a partial assistant turn and the model continues it
+        seamlessly (no repeated preamble). Each call's ``max_tokens`` applies
+        to the NEW segment, so total output can reach roughly
+        ``max_tokens * (1 + max_continuations)``.
+        """
+        role_str = role.value if isinstance(role, ModelRole) else role
+
+        accumulated = ""
+        truncated = False
+        messages: list[dict] = [{"role": "user", "content": prompt}]
+
+        for _ in range(1 + max_continuations):
+            data, model, backend = await self._call_with_role(
+                role,
+                system,
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                complexity=complexity,
+            )
+
+            text = data["content"][0]["text"]
+            if backend == "cloud":
+                usage = data.get("usage", {})
+                self._record_usage(
+                    role_str,
+                    model,
+                    usage.get("input_tokens", 0),
+                    usage.get("output_tokens", 0),
+                    usage.get("cache_read_input_tokens", 0),
+                    usage.get("cache_creation_input_tokens", 0),
+                )
+
+            accumulated += text
+
+            if data.get("stop_reason") != "max_tokens":
+                truncated = False
+                break
+
+            # Still cut off — prefill the assistant turn with what we have and
+            # continue. Anthropic rejects a prefill ending in whitespace, so
+            # rstrip the seed and keep ``accumulated`` consistent with what the
+            # model actually continues from.
+            truncated = True
+            accumulated = accumulated.rstrip()
+            messages = [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": accumulated},
+            ]
+
+        return accumulated, truncated
+
     async def generate_structured(
         self,
         role: ModelRole | str,
