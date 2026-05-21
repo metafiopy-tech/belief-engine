@@ -17,6 +17,31 @@ from belief.prompts import INTAKE_SYSTEM, INTAKE_PROMPT
 
 logger = logging.getLogger("belief.agents.intake")
 
+# Upper bound on a natural-language goal handed to intake. Deliberately
+# generous: a goal is one input among many and the models' context is large, so
+# real multi-deliverable specs (the capsule goal was ~3K chars) pass through
+# untouched. The old 2000-char cap silently amputated legitimate goals — it
+# dropped later deliverables and constraints before the planner ever saw them,
+# and only logged a buried warning. Above this bound we still trim, but loudly.
+# Synthesis-Engine specs arrive via structural_mechanism and skip this path.
+MAX_GOAL_CHARS = 20000
+
+
+def enforce_goal_limit(goal: str) -> tuple[str, str | None]:
+    """Clamp an over-long goal to ``MAX_GOAL_CHARS``.
+
+    Returns ``(goal, warning)``; ``warning`` is None when the goal is within
+    the limit. Pure — no logging, no state mutation — so callers decide how to
+    surface the warning.
+    """
+    if len(goal) <= MAX_GOAL_CHARS:
+        return goal, None
+    return (
+        goal[:MAX_GOAL_CHARS],
+        f"Intake: goal truncated from {len(goal)} to {MAX_GOAL_CHARS} chars "
+        f"(specification beyond this point was dropped)",
+    )
+
 
 class IntakeAgent(BaseAgent):
     role = ModelRole.INTAKE
@@ -47,9 +72,10 @@ class IntakeAgent(BaseAgent):
             state.phase = Phase.FAILED
             return state
 
-        if len(goal) > 2000:
-            goal = goal[:2000]
-            state.warnings.append("Intake: goal truncated to 2000 chars")
+        goal, goal_warning = enforce_goal_limit(goal)
+        if goal_warning:
+            state.warnings.append(goal_warning)
+            logger.warning(goal_warning)
         state.user_goal = goal
 
         llm = LLMClient(self.router)
