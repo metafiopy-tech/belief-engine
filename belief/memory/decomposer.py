@@ -218,7 +218,13 @@ async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
     result = dict(state)
 
     try:
-        nutrients = await _extract_and_deposit(state)
+        # Session A: extraction makes an LLM call — gate it against the build
+        # cost ceiling so a build that has already hit --max-cost (or would
+        # cross it here) doesn't spend in the tail.
+        from belief.llm import ceiling_for_node
+
+        async with ceiling_for_node(state):
+            nutrients = await _extract_and_deposit(state)
         result["extracted_nutrients"] = [
             {"id": n.nutrient_id, "type": n.nutrient_type.value, "content": n.content}
             for n in nutrients

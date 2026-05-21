@@ -20,7 +20,14 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from belief.config.models import ModelRole, ModelRouter
-from belief.llm import _usage_ctx
+from belief.llm import (
+    BudgetExceededError,
+    CostCeiling,
+    _ceiling_ctx,
+    _usage_ctx,
+    committed_usd_from_state,
+    cost_grace_usd,
+)
 from belief.models.artifacts import TokenUsage
 from belief.models.state import Phase, UnifiedState
 from belief.thermal import async_thermal_gate
@@ -113,9 +120,42 @@ class BaseAgent(ABC):
             failed.setdefault("errors", []).append(f"{self.name}: state error: {e}")
             return failed
 
-        # Set up per-agent token tracking
+        # ── Session A: hard cost ceiling (handoff Q4) ─────────────────────
+        # Cumulative spend booked by prior agents/nodes. This agent's own
+        # spend is added at check time from _usage_ctx, so the projection is
+        # cumulative across the whole build.
+        cap = forge_state.max_cost_usd
+        committed_usd = committed_usd_from_state(forge_state.token_usage)
+        ceiling = CostCeiling(
+            max_cost_usd=cap,
+            committed_usd=committed_usd,
+            grace_usd=cost_grace_usd(),
+        )
+
+        # Pre-agent gate: if we're already at/over budget before this agent
+        # even starts, skip it entirely. Once a build aborts, this fires for
+        # every remaining agent so the rest of the pipeline no-ops cheaply
+        # instead of each agent crashing on its first call.
+        if ceiling.would_exceed(0.0):
+            agent_log.warning(
+                "%s: build budget ceiling reached before start "
+                "(spend=$%.4f, cap=$%.2f) — aborting build",
+                self.name,
+                committed_usd,
+                cap,
+            )
+            forge_state.aborted_budget = True
+            forge_state.phase = Phase.FAILED
+            forge_state.warnings.append(
+                f"{self.name}: aborted — build budget ceiling ${cap:.2f} reached "
+                f"(spend ${committed_usd:.4f})"
+            )
+            return forge_state.model_dump()
+
+        # Set up per-agent token tracking + the ceiling for this agent's calls
         agent_usage = TokenUsage(backend=self.router.backend)
         ctx_token = _usage_ctx.set(agent_usage)
+        ceil_token = _ceiling_ctx.set(ceiling)
 
         try:
             result = await self.run(forge_state)
@@ -142,6 +182,39 @@ class BaseAgent(ABC):
             output["agent_timings"] = timings
             return output
 
+        except BudgetExceededError as budget_exc:
+            # Deliberate stop, not a crash: the pre-call gate refused another
+            # LLM call because projected spend would cross --max-cost. Persist
+            # whatever partial files this agent already produced, mark the
+            # build aborted so the CLI records verdict="aborted_budget".
+            elapsed = time.monotonic() - _t0
+            agent_log.warning(
+                "%s: build budget ceiling reached mid-agent after %.1fs: %s",
+                self.name,
+                elapsed,
+                budget_exc,
+            )
+            forge_state.aborted_budget = True
+            forge_state.phase = Phase.FAILED
+            forge_state.warnings.append(
+                f"{self.name}: aborted — build budget ceiling "
+                f"${forge_state.max_cost_usd:.2f} reached"
+            )
+            output = forge_state.model_dump()
+            # Book whatever this agent spent before tripping the ceiling.
+            existing_raw = output.get("token_usage")
+            if existing_raw:
+                existing = (
+                    TokenUsage(**existing_raw) if isinstance(existing_raw, dict) else existing_raw
+                )
+                output["token_usage"] = existing.merge(agent_usage).model_dump()
+            elif agent_usage.total_prompt_tokens > 0:
+                output["token_usage"] = agent_usage.model_dump()
+            timings = dict(output.get("agent_timings") or {})
+            timings[self.name] = round(elapsed, 2)
+            output["agent_timings"] = timings
+            return output
+
         except Exception as exc:
             elapsed = time.monotonic() - _t0
             agent_log.error(f"{self.name} crashed after {elapsed:.1f}s: {exc}", exc_info=True)
@@ -155,6 +228,7 @@ class BaseAgent(ABC):
 
         finally:
             _usage_ctx.reset(ctx_token)
+            _ceiling_ctx.reset(ceil_token)
 
     async def _update_polarity(self, output: dict[str, Any], elapsed: float) -> None:
         """Run polarity update after each agent action.

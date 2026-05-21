@@ -43,6 +43,7 @@ from belief.agents.synthesizer import SynthesizerAgent
 from belief.agents.tester import TesterAgent
 from belief.agents.validator import ValidatorAgent
 from belief.config.models import ModelRouter
+from belief.llm import ceiling_for_node
 from belief.memory.decomposer import decomposer_node
 from belief.memory.recomposer import recomposer_node
 from belief.models.state import Phase
@@ -424,41 +425,43 @@ async def _polarity_check_impl(state: dict[str, Any], router: ModelRouter) -> di
             validator_summary = getattr(validation, "summary", "")
 
     llm = LLMClient(router)
+    # Session A: enforce the build cost ceiling for this tail node's LLM call.
     try:
-        prompt = LATIOS_PROMPT.format(
-            goal=goal,
-            acceptance_criteria=criteria or "  (none specified)",
-            validator_summary=validator_summary or "  (no validator output)",
-            exec_success=exec_success,
-        )
-        raw = await llm.generate_text(
-            role="latios",
-            system=LATIOS_SYSTEM,
-            prompt=prompt,
-            temperature=0.2,
-            max_tokens=800,
-        )
+        async with ceiling_for_node(state):
+            prompt = LATIOS_PROMPT.format(
+                goal=goal,
+                acceptance_criteria=criteria or "  (none specified)",
+                validator_summary=validator_summary or "  (no validator output)",
+                exec_success=exec_success,
+            )
+            raw = await llm.generate_text(
+                role="latios",
+                system=LATIOS_SYSTEM,
+                prompt=prompt,
+                temperature=0.2,
+                max_tokens=800,
+            )
 
-        # Parse JSON response
-        match = re.search(r'\{[^{}]*"significant_gap"[^{}]*\}', raw, re.DOTALL)
-        if match:
-            data = json.loads(match.group())
-            polarity = dict(result.get("polarity", {}))
-            if data.get("significant_gap"):
-                polarity["current_remainder"] = f"significant: {data.get('gap_summary', '')}"
-                polarity["accumulated_remainders"] = polarity.get("accumulated_remainders", []) + [
-                    data.get("gap_summary", "")
-                ]
-                logger.info(f"Latios: SIGNIFICANT gap — {data.get('gap_summary', '')[:100]}")
-                # Increment iteration for the re-run
-                result["iteration"] = state.get("iteration", 0) + 1
+            # Parse JSON response
+            match = re.search(r'\{[^{}]*"significant_gap"[^{}]*\}', raw, re.DOTALL)
+            if match:
+                data = json.loads(match.group())
+                polarity = dict(result.get("polarity", {}))
+                if data.get("significant_gap"):
+                    polarity["current_remainder"] = f"significant: {data.get('gap_summary', '')}"
+                    polarity["accumulated_remainders"] = polarity.get(
+                        "accumulated_remainders", []
+                    ) + [data.get("gap_summary", "")]
+                    logger.info(f"Latios: SIGNIFICANT gap — {data.get('gap_summary', '')[:100]}")
+                    # Increment iteration for the re-run
+                    result["iteration"] = state.get("iteration", 0) + 1
+                else:
+                    polarity["current_remainder"] = None
+                    logger.info(f"Latios: gap is {data.get('gap_level', 'NONE')} — complete")
+
+                result["polarity"] = polarity
             else:
-                polarity["current_remainder"] = None
-                logger.info(f"Latios: gap is {data.get('gap_level', 'NONE')} — complete")
-
-            result["polarity"] = polarity
-        else:
-            logger.warning("Latios: could not parse output — treating as complete")
+                logger.warning("Latios: could not parse output — treating as complete")
 
     except Exception as e:
         logger.warning(f"Latios check failed: {e}")
@@ -731,14 +734,17 @@ async def _refinement_impl(state: dict[str, Any], router: ModelRouter) -> dict[s
                 test_output, _, _, _ = _run_tests(code_files, test_files)
                 logger.info("Refinement: ran baseline tests to get initial output")
 
-        # Run the water cycle (pass router so refinement uses the same backend)
-        refinement = await run_refinement_loop(
-            code_files=code_files,
-            test_files=test_files,
-            initial_test_output=test_output,
-            max_cycles=3,
-            router=router,
-        )
+        # Run the water cycle (pass router so refinement uses the same backend).
+        # Session A: under the build cost ceiling — the loop is the largest tail
+        # spender, so its per-cycle calls are gated against --max-cost too.
+        async with ceiling_for_node(state):
+            refinement = await run_refinement_loop(
+                code_files=code_files,
+                test_files=test_files,
+                initial_test_output=test_output,
+                max_cycles=3,
+                router=router,
+            )
 
         # Update state with refined code
         result["code_files"] = refinement["code_files"]

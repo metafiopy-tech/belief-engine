@@ -16,8 +16,10 @@ import json
 import logging
 import os
 import re
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from typing import Any, Type, TypeVar
+from dataclasses import dataclass
+from typing import Any, AsyncIterator, Type, TypeVar
 
 import httpx
 from pydantic import BaseModel
@@ -259,6 +261,141 @@ T = TypeVar("T", bound=BaseModel)
 # Context variable for per-agent token accumulation
 # BaseAgent.__call__ sets this before run() and reads it after
 _usage_ctx: ContextVar[TokenUsage | None] = ContextVar("_usage_ctx", default=None)
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Session A (post-stress-test, handoff Q4): hard cost ceiling
+#
+# The stress test observed `--max-cost 3.0` running to $5.75 because the cap
+# was recorded in state but never consulted (UnifiedState.over_budget() was
+# dead code). These primitives make the cap a HARD ceiling: a pre-call gate at
+# the single LLM dispatch point (`_call_with_role`) refuses to start another
+# call once projected spend would cross the cap, so the build aborts rather
+# than overspends.
+# ───────────────────────────────────────────────────────────────────────────
+
+# Reserve held back from the cap so a build aborts *before* a call pushes it
+# over, rather than after. A single tail call can't blow through a margin this
+# size. Override per process via BELIEF_COST_GRACE_USD.
+DEFAULT_COST_GRACE_USD = 0.50
+
+
+def cost_grace_usd() -> float:
+    """Spend reserve held back from ``--max-cost`` (see DEFAULT_COST_GRACE_USD).
+
+    Read from ``BELIEF_COST_GRACE_USD`` when set and parseable, else the
+    default. Never negative.
+    """
+    raw = os.environ.get("BELIEF_COST_GRACE_USD", "").strip()
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            logger.warning("Ignoring non-numeric BELIEF_COST_GRACE_USD=%r", raw)
+    return DEFAULT_COST_GRACE_USD
+
+
+class BudgetExceededError(RuntimeError):
+    """Raised by the pre-call gate when the build's projected spend would
+    cross its ``--max-cost`` ceiling.
+
+    Carries the accounting that tripped the ceiling so the agent wrapper can
+    record an ``aborted_budget`` verdict instead of treating it as a crash.
+    """
+
+    def __init__(self, committed_usd: float, max_cost_usd: float, grace_usd: float) -> None:
+        self.committed_usd = committed_usd
+        self.max_cost_usd = max_cost_usd
+        self.grace_usd = grace_usd
+        super().__init__(
+            f"Build budget ceiling reached: spend ${committed_usd:.4f} + grace "
+            f"${grace_usd:.4f} >= cap ${max_cost_usd:.2f}; aborting before next LLM call."
+        )
+
+
+@dataclass
+class CostCeiling:
+    """Build-level spend ceiling consulted before every LLM call.
+
+    ``committed_usd`` is the spend booked by *prior* agents/nodes (read from
+    pipeline state at install time). The in-flight unit's own spend so far is
+    read from ``_usage_ctx`` at check time and added on top, so the projection
+    is cumulative across the whole build.
+    """
+
+    max_cost_usd: float
+    committed_usd: float = 0.0
+    grace_usd: float = DEFAULT_COST_GRACE_USD
+
+    def projected_usd(self, pending_usd: float = 0.0) -> float:
+        return self.committed_usd + pending_usd + self.grace_usd
+
+    def would_exceed(self, pending_usd: float = 0.0) -> bool:
+        # max_cost <= 0 means "no ceiling configured" — never block.
+        if self.max_cost_usd <= 0:
+            return False
+        return self.projected_usd(pending_usd) >= self.max_cost_usd
+
+    def check(self, pending_usd: float = 0.0) -> None:
+        if self.would_exceed(pending_usd):
+            raise BudgetExceededError(
+                committed_usd=self.committed_usd + pending_usd,
+                max_cost_usd=self.max_cost_usd,
+                grace_usd=self.grace_usd,
+            )
+
+
+# Set by BaseAgent.__call__ (and ceiling_for_node) before LLM work; read in
+# _call_with_role before each dispatch. None = no ceiling enforced (e.g. a
+# standalone LLMClient used outside the pipeline), so the gate is a no-op.
+_ceiling_ctx: ContextVar["CostCeiling | None"] = ContextVar("_ceiling_ctx", default=None)
+
+
+def committed_usd_from_state(token_usage: Any) -> float:
+    """Pull cumulative spend from a state ``token_usage`` (dict, model, or None)."""
+    if token_usage is None:
+        return 0.0
+    if isinstance(token_usage, dict):
+        return float(token_usage.get("total_cost_usd", 0.0) or 0.0)
+    return float(getattr(token_usage, "total_cost_usd", 0.0) or 0.0)
+
+
+def _enforce_cost_ceiling() -> None:
+    """Pre-call gate: raise :class:`BudgetExceededError` if another LLM call
+    would cross the active ceiling. No-op when no ceiling is installed."""
+    ceiling = _ceiling_ctx.get()
+    if ceiling is None:
+        return
+    usage = _usage_ctx.get()
+    pending = usage.total_cost_usd if usage is not None else 0.0
+    ceiling.check(pending)
+
+
+@asynccontextmanager
+async def ceiling_for_node(state: dict[str, Any]) -> AsyncIterator[None]:
+    """Install a build cost ceiling for a non-agent graph node that spends LLM
+    money (polarity_check, refinement, decomposer).
+
+    Mirrors the per-agent ceiling that BaseAgent installs, so the pre-call gate
+    fires inside these nodes too. A fresh ``_usage_ctx`` is set so the gate
+    accumulates the node's own spend across multiple calls (e.g. the refinement
+    loop). When the build is already over budget, ``would_exceed`` is true and
+    every call inside the node is blocked pre-dispatch; the node's own
+    try/except swallows the :class:`BudgetExceededError`, so no further spend
+    occurs and the build still finalises cleanly.
+    """
+    committed = committed_usd_from_state(state.get("token_usage"))
+    cap = float(state.get("max_cost_usd", 10.0) or 10.0)
+    ceiling = CostCeiling(max_cost_usd=cap, committed_usd=committed, grace_usd=cost_grace_usd())
+    node_usage = TokenUsage()
+    usage_token = _usage_ctx.set(node_usage)
+    ceil_token = _ceiling_ctx.set(ceiling)
+    try:
+        yield
+    finally:
+        _usage_ctx.reset(usage_token)
+        _ceiling_ctx.reset(ceil_token)
+
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
@@ -902,6 +1039,12 @@ class LLMClient:
         role_str = role.value if isinstance(role, ModelRole) else role
         backend = self.router.backend_for(role)
         cloud_model = self.router.get_model(role, complexity)
+
+        # Session A: hard cost ceiling. Refuse to start another call once the
+        # build's projected spend would cross --max-cost. Checked here, the
+        # single dispatch point for both cloud and local, so every generate_*
+        # path is covered. No-op when no ceiling is installed.
+        _enforce_cost_ceiling()
 
         logger.info(
             "Dispatch: role=%s backend=%s mode=%s",

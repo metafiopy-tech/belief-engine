@@ -56,6 +56,19 @@ def _get_project_root() -> Path:
     return cwd
 
 
+def _resolve_verdict(final_state: dict, validation_verdict: str) -> str:
+    """Resolve the verdict recorded in build memory.
+
+    Session A (handoff Q4): a build that hit the hard cost ceiling reports
+    ``aborted_budget`` so it is distinguishable from a normal terminal verdict
+    in the build record, dashboard, and soil. Otherwise the validator's
+    verdict stands.
+    """
+    if final_state.get("aborted_budget"):
+        return "aborted_budget"
+    return validation_verdict
+
+
 async def run(
     goal: str,
     max_cost: float = 10.0,
@@ -269,6 +282,16 @@ async def run(
             usage.get("total_cost_usd", 0)
             if isinstance(usage, dict)
             else getattr(usage, "total_cost_usd", 0)
+        )
+
+    # Session A: a budget-aborted build reports a distinct verdict so the build
+    # record can tell a hard-ceiling stop apart from a normal terminal verdict.
+    verdict_str = _resolve_verdict(final_state, verdict_str)
+    if final_state.get("aborted_budget"):
+        logger.warning(
+            "Build ABORTED on cost ceiling — verdict=aborted_budget, spend=$%.4f, cap=$%.2f",
+            cost,
+            max_cost,
         )
 
     if code_files:

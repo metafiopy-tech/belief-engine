@@ -156,6 +156,10 @@ class UnifiedState(BaseModel):
     # ── Cost tracking ────────────────────────────────────────
     token_usage: Optional[TokenUsage] = None
     max_cost_usd: float = 10.0
+    # Session A: set True by BaseAgent when the pre-call cost ceiling refuses
+    # another LLM call. Distinguishes a budget abort from a normal terminal
+    # verdict so the build record can record verdict="aborted_budget".
+    aborted_budget: bool = False
 
     # ── Diagnostics ──────────────────────────────────────────
     errors: list[str] = Field(default_factory=list)
