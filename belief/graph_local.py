@@ -95,6 +95,7 @@ from belief.memory.recomposer import recomposer_node
 # refinement / trace-wrapper improvements flow through to local mode
 # automatically.
 from belief.graph import (
+    _compile_gate_node,
     _covenant_enforce_node,
     _exec_error_is_refinable,
     _import_fix_node,
@@ -281,6 +282,7 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_node("synthesizer", _traced(synthesizer, "synthesizer"))
     graph.add_node("validator", _traced(validator, "validator"))
     graph.add_node("refinement", _traced(_make_refinement_node(router), "refinement"))
+    graph.add_node("compile_gate", _traced(_compile_gate_node, "compile_gate"))
 
     # ── Edges ──────────────────────────────────────────────────────
     graph.set_entry_point("recomposer")
@@ -312,13 +314,16 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
     # Synthesizer → validator
     graph.add_edge("synthesizer", "validator")
 
-    # Validator → refinement? → END
+    # Validator → refinement? → compile_gate → END
     # (Decomposer is fired post-print by the CLI; see module docstring.)
+    # Both terminal paths pass through the compile gate so a non-parsing build
+    # can never report pass — same backstop as the cloud pipeline.
     graph.add_conditional_edges(
         "validator",
         _route_after_validator,
-        {"refinement": "refinement", "__end__": END},
+        {"refinement": "refinement", "__end__": "compile_gate"},
     )
-    graph.add_edge("refinement", END)
+    graph.add_edge("refinement", "compile_gate")
+    graph.add_edge("compile_gate", END)
 
     return graph.compile()

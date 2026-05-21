@@ -863,6 +863,34 @@ def _traced(node: Any, agent_name: str) -> Any:
     return _sync_wrapper
 
 
+def _compile_gate_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic terminal gate: no build reports ``pass`` while shipping a
+    ``.py`` file that does not parse.
+
+    Runs after refinement (cloud: before decomposer; local: before END), so it
+    is the post-polish backstop the per-stage validator cannot be — the
+    validator runs before the refinement pass that can re-truncate files. On a
+    parse failure it forces the verdict to ``fail_fixable`` and floors the
+    score, so truncated output can never archive as a 1.00 exemplar.
+    """
+    from belief.validators.compile_gate import gate_validation_result
+
+    code_files = state.get("code_files") or {}
+    validation_result, broken = gate_validation_result(code_files, state.get("validation_result"))
+    if broken:
+        state["validation_result"] = validation_result
+        logger.warning(
+            "compile_gate: %d generated file(s) failed to parse — "
+            "verdict forced to fail_fixable: %s",
+            len(broken),
+            ", ".join(fname for fname, _ in broken),
+        )
+    else:
+        n_py = sum(1 for f in code_files if f.endswith(".py"))
+        logger.info("compile_gate: all %d Python file(s) parse cleanly", n_py)
+    return state
+
+
 def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     """Construct and compile the Belief Engine pipeline."""
     if router is None:
@@ -902,6 +930,7 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_node("decomposer", _traced(decomposer_node, "decomposer"))
     graph.add_node("recomposer", _traced(recomposer_node, "recomposer"))
     graph.add_node("refinement", _traced(_make_refinement_node(router), "refinement"))
+    graph.add_node("compile_gate", _traced(_compile_gate_node, "compile_gate"))
     graph.add_node("import_fix", _traced(_import_fix_node, "import_fix"))
     graph.add_node("covenant_enforce", _traced(_covenant_enforce_node, "covenant_enforce"))
 
@@ -991,20 +1020,24 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
         },
     )
 
-    # Refinement (Water Cycle) → decomposer → END
-    graph.add_edge("refinement", "decomposer")
+    # Refinement (Water Cycle) → compile_gate → decomposer → END
+    graph.add_edge("refinement", "compile_gate")
 
     # Polarity check — outer loop
-    # Terminal path: polarity_check → decomposer → END
+    # Terminal path: polarity_check → compile_gate → decomposer → END
     # Loop-back path: polarity_check → planner (decomposer skipped on intermediate iterations)
     graph.add_conditional_edges(
         "polarity_check",
         _route_after_polarity,
         {
             "planner": "planner",
-            END: "decomposer",
+            END: "compile_gate",
         },
     )
+
+    # Terminal compile gate → decomposer (every finalising path passes through
+    # the gate so a non-parsing build can never report pass / archive 1.00).
+    graph.add_edge("compile_gate", "decomposer")
 
     # Decomposer always terminates the pipeline
     graph.add_edge("decomposer", END)
