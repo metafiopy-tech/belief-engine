@@ -30,6 +30,7 @@ from belief import llm as llm_module
 from belief.llm import (
     ROLE_BUDGETS,
     AsyncOllamaClient,
+    LLMClient,
     _MODEL_BREAKERS,
     _classify_ollama_error,
 )
@@ -475,6 +476,66 @@ class TestRoleBudget:
         assert ROLE_BUDGETS["synthesizer"] == 180.0
         assert ROLE_BUDGETS["executor"] == 60.0
         assert ROLE_BUDGETS["default"] == 180.0
+
+
+# ---------------------------------------------------------------------------
+# 5b. Cloud path honors the per-role read budget
+# ---------------------------------------------------------------------------
+
+
+class TestCloudRoleBudgetTimeout:
+    """Regression for the ReadTimeout that crashed the architect on large
+    cloud goals: the cloud `_call` post must use a per-request httpx timeout
+    whose `read` equals ROLE_BUDGETS[role], not the old flat 120s.
+    """
+
+    @pytest.mark.asyncio
+    async def test_architect_gets_600s_read_timeout(self) -> None:
+        fake = _FakeClient(
+            post_handler=lambda url, kwargs: _FakeResponse(
+                status_code=200, text='{"content":[],"usage":{}}'
+            )
+        )
+        llm = LLMClient(router=None)  # router is unused by _call
+        llm._client = fake  # inject fake; _get_client returns it (is_closed=False)
+
+        await llm._call(
+            model="claude-sonnet-4-6",
+            system="x" * 3000,
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=100,
+            temperature=0.0,
+            role="architect",
+        )
+
+        assert fake.post_calls, "cloud _call never posted"
+        url, kwargs = fake.post_calls[0]
+        assert url == "https://api.anthropic.com/v1/messages"
+        timeout = kwargs.get("timeout")
+        assert timeout is not None, "per-request timeout was not passed"
+        assert timeout.read == ROLE_BUDGETS["architect"] == 600.0
+
+    @pytest.mark.asyncio
+    async def test_unknown_role_falls_back_to_default_budget(self) -> None:
+        fake = _FakeClient(
+            post_handler=lambda url, kwargs: _FakeResponse(
+                status_code=200, text='{"content":[],"usage":{}}'
+            )
+        )
+        llm = LLMClient(router=None)
+        llm._client = fake
+
+        await llm._call(
+            model="claude-haiku-4-5",
+            system="short",
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=50,
+            temperature=0.0,
+            role=None,
+        )
+
+        _, kwargs = fake.post_calls[0]
+        assert kwargs["timeout"].read == ROLE_BUDGETS["default"] == 180.0
 
 
 # ---------------------------------------------------------------------------

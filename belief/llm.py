@@ -852,7 +852,14 @@ class LLMClient:
             from belief.config.settings import settings
 
             self._client = httpx.AsyncClient(
-                timeout=120.0,
+                # Default read budget for any role. The per-call timeout in
+                # _call() overrides this with the role-specific ceiling from
+                # ROLE_BUDGETS (e.g. architect=600s). The old flat 120s here
+                # silently capped every cloud role at 120s — that is what
+                # ReadTimeout-crashed the architect on large goals.
+                timeout=httpx.Timeout(
+                    connect=10.0, read=ROLE_BUDGETS["default"], write=10.0, pool=10.0
+                ),
                 headers={
                     "x-api-key": settings.anthropic_api_key,
                     "anthropic-version": API_VERSION,
@@ -967,6 +974,7 @@ class LLMClient:
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
+            role=role_str,
         )
         return data, cloud_model, "cloud"
 
@@ -1001,6 +1009,7 @@ class LLMClient:
         messages: list[dict],
         max_tokens: int = 4096,
         temperature: float = 0.3,
+        role: str | None = None,
     ) -> dict:
         """Raw API call. Returns the full response dict.
 
@@ -1029,8 +1038,14 @@ class LLMClient:
             else:
                 payload["system"] = system
 
+        # Per-role wall-clock read budget. ROLE_BUDGETS encodes the intended
+        # ceiling per role (architect=600s, etc.); historically only the Ollama
+        # path consumed it. Applying it here gives a heavy role's long
+        # generation room to finish instead of dying at the client default.
+        budget = ROLE_BUDGETS.get(role or "default", ROLE_BUDGETS["default"])
+        request_timeout = httpx.Timeout(connect=10.0, read=budget, write=10.0, pool=10.0)
         try:
-            resp = await client.post(API_URL, json=payload)
+            resp = await client.post(API_URL, json=payload, timeout=request_timeout)
             resp.raise_for_status()
             data = resp.json()
 
