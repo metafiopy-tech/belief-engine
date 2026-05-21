@@ -198,6 +198,18 @@ class PhotosynthesisDaemon:
             replace_existing=True,
         )
 
+        # Mycorrhizal Stage 8 — weekly engine-offline probe. Best-effort
+        # callback; surfaces obligate-coupling via _job_health + a dated
+        # markdown report.
+        self.scheduler.add_job(
+            self._offline_probe,
+            trigger="interval",
+            seconds=self.config.cadences.offline_probe_s,
+            id="offline_probe",
+            name="offline_probe",
+            replace_existing=True,
+        )
+
         # control_table_init runs once on startup (fires ~5s after start)
         self._control_table_init()
 
@@ -435,6 +447,30 @@ class PhotosynthesisDaemon:
         except Exception as e:
             self._job_health["snapshot_take"] = f"error: {e}"
             logger.exception("snapshot_take failed")
+
+    def _offline_probe(self) -> None:
+        """Mycorrhizal Stage 8: weekly engine-offline obligate-coupling probe.
+
+        Best-effort — exceptions are logged and stored in the per-job
+        health map but never propagate to the scheduler.
+        """
+        try:
+            from belief.lifecycle.offline_probe import WeeklyOfflineProbe
+
+            report = WeeklyOfflineProbe().run(write_report=True)
+            obligate = len(report.obligate_operations)
+            self._job_health["offline_probe"] = (
+                f"ok: {len(report.results)} checks, {obligate} obligate"
+            )
+            logger.info(
+                "offline_probe: %d checks, %d obligate (report %s)",
+                len(report.results),
+                obligate,
+                report.report_path,
+            )
+        except Exception as e:
+            self._job_health["offline_probe"] = f"error: {e}"
+            logger.exception("offline_probe failed")
 
     def _set_stub(self, job_id: str, reason: str) -> None:
         """Mark a job as stubbed and log once on first discovery."""

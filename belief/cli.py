@@ -966,6 +966,13 @@ def _run_probe_cmd(args) -> None:
     )
 
     action = getattr(args, "probe_action", None) or "test"
+
+    if action == "offline":
+        from belief.lifecycle.offline_probe import cli_run as offline_cli_run
+
+        print(offline_cli_run(write_report=not getattr(args, "no_report", False)))
+        return
+
     traces_path = getattr(args, "traces", None)
     probe_path = Path(getattr(args, "probe", None) or DEFAULT_PROBE_PATH)
 
@@ -1822,6 +1829,16 @@ def app():
         "--probe",
         default=None,
         help="Path to a saved probe (default: ~/.belief-engine/probe.pkl)",
+    )
+    # Mycorrhizal Stage 8 — engine-offline obligate-coupling probe.
+    po = probe_sub.add_parser(
+        "offline",
+        help="Run the engine-offline probe and write a dated report (mycorrhizal Stage 8)",
+    )
+    po.add_argument(
+        "--no-report",
+        action="store_true",
+        help="Print results without writing the dated markdown report.",
     )
 
     # `belief grinder` — Session 8: autonomous build loop

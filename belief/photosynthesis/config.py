@@ -54,6 +54,8 @@ class Cadences:
     # 6h matches the GFS rotation defaults (~10 hourly buckets = 2.5d
     # retention at the recent tier).
     snapshot_take_s: int = 6 * 3600
+    # Mycorrhizal Stage 8 — weekly engine-offline obligate-coupling probe.
+    offline_probe_s: int = 7 * 24 * 3600
 
 
 @dataclass(frozen=True)
