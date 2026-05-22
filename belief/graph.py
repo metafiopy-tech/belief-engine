@@ -951,6 +951,33 @@ def _coverage_gate_node(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+def _structure_gate_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic terminal gate: a build can't report ``pass`` while shipping
+    two parallel implementations of the same thing (handoff Q1).
+
+    Runs after the coverage gate. Flags the architect-fallback failure mode
+    where a packaged implementation and a competing root-level monolith both
+    exist (duplicate core modules / competing entry points), forcing
+    ``fail_fixable`` so "which one is real?" can never archive as a pass.
+
+    Detection only — no judgement about which implementation is correct.
+    """
+    from belief.validators.structure_gate import gate_validation_result
+
+    code_files = state.get("code_files") or {}
+    validation_result, findings = gate_validation_result(code_files, state.get("validation_result"))
+    if findings:
+        state["validation_result"] = validation_result
+        logger.warning(
+            "structure_gate: %d coherence defect(s) — verdict forced to fail_fixable: %s",
+            len(findings),
+            "; ".join(findings),
+        )
+    else:
+        logger.info("structure_gate: single coherent structure")
+    return state
+
+
 def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     """Construct and compile the Belief Engine pipeline."""
     if router is None:
@@ -992,6 +1019,7 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_node("refinement", _traced(_make_refinement_node(router), "refinement"))
     graph.add_node("compile_gate", _traced(_compile_gate_node, "compile_gate"))
     graph.add_node("coverage_gate", _traced(_coverage_gate_node, "coverage_gate"))
+    graph.add_node("structure_gate", _traced(_structure_gate_node, "structure_gate"))
     graph.add_node("import_fix", _traced(_import_fix_node, "import_fix"))
     graph.add_node("covenant_enforce", _traced(_covenant_enforce_node, "covenant_enforce"))
 
@@ -1097,10 +1125,12 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     )
 
     # Terminal gates → decomposer. Every finalising path passes through the
-    # compile gate (non-parsing build can't report pass) and then the coverage
-    # gate (planned-vs-produced shortfall / hollow stubs can't report pass).
+    # compile gate (non-parsing build can't report pass), the coverage gate
+    # (planned-vs-produced shortfall / hollow stubs can't report pass), and the
+    # structure gate (two parallel implementations can't report pass).
     graph.add_edge("compile_gate", "coverage_gate")
-    graph.add_edge("coverage_gate", "decomposer")
+    graph.add_edge("coverage_gate", "structure_gate")
+    graph.add_edge("structure_gate", "decomposer")
 
     # Decomposer always terminates the pipeline
     graph.add_edge("decomposer", END)

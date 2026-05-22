@@ -203,6 +203,7 @@ class ArchitectAgent(BaseAgent):
 
         if not spec:
             state.file_manifest = _fallback_manifest(state.user_goal)
+            _force_single_structure(state)
             state.phase = Phase.BUILDING
             return state
 
@@ -287,17 +288,37 @@ class ArchitectAgent(BaseAgent):
             else:
                 logger.warning("Architect: skeleton parse failed → fallback")
                 state.file_manifest = _fallback_manifest(state.user_goal, spec.target_type)
+                _force_single_structure(state)
                 state.warnings.append("Architect: skeleton parse failed, used fallback")
 
         except (ConnectionError, ValueError) as e:
             logger.warning(f"Architect fallback: {e}")
             state.file_manifest = _fallback_manifest(state.user_goal, spec.target_type)
+            _force_single_structure(state)
             state.warnings.append(f"Architect fallback: {e}")
         finally:
             await llm.close()
 
         state.phase = Phase.BUILDING
         return state
+
+
+def _force_single_structure(state: UnifiedState) -> None:
+    """Session D (handoff Q1): when the architect falls back to the flat manifest,
+    drop any partial skeleton context so the builder converges on exactly ONE
+    structure.
+
+    Without this, a partially-populated package skeleton left by an earlier
+    attempt could compete with the flat fallback, and the builder would emit
+    both — the two-implementation mess (a clean ``pkg/`` package AND a competing
+    root-level ``main.py`` monolith with duplicate ``models``/``config``/
+    ``exceptions``) that the stress test exposed. The fallback manifest is
+    already a single canonical flat structure; this guarantees nothing else
+    survives alongside it.
+    """
+    state.skeleton_artifact = None
+    state.skeleton_files = {}
+    state.skeleton_registry_context = ""
 
 
 def _repair_truncated_json(text: str) -> str | None:
