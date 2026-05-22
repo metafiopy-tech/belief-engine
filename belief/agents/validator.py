@@ -85,6 +85,11 @@ class ValidatorAgent(BaseAgent):
         result = ValidationResult(tests=tests, issues=issues)
         _classify_and_score(result)
 
+        # Session B (handoff Q3): a build with testable logic but no discovered
+        # test files cannot score 1.00. Applied before the quality-score
+        # overrides below so correctness/completeness inherit the capped score.
+        _apply_untested_cap(result, state.code_files, state.test_files)
+
         # Override quality scores based on deterministic checks
         result.correctness_score = result.weighted_score
         result.code_quality_score = min(1.0, _lint_score(state.code_files))
@@ -628,6 +633,150 @@ def _security_score(code_files: dict[str, str]) -> float:
 
 
 # ── Weighted scoring (unchanged) ─────────────────────────────────────────────
+
+
+# ── Session B (handoff Q3): no-tests score cap ───────────────────────────────
+# The stress test showed a build with testable logic and zero discovered test
+# files still totalling 1.00 (only syntax + executor smoke checks ran). A
+# testable-but-untested build must not be able to score perfectly. This is a
+# SCORING HONESTY fix: detection of structural incompleteness only. It makes no
+# judgement about whether the produced code is *good* — that is the deferred
+# research question.
+DEFAULT_UNTESTED_SCORE_CAP = 0.6
+
+
+def _untested_score_cap() -> float:
+    """Ceiling applied to a testable-but-untested build's score.
+
+    Default :data:`DEFAULT_UNTESTED_SCORE_CAP`; override via
+    ``BELIEF_UNTESTED_SCORE_CAP`` (clamped to [0, 1]).
+    """
+    raw = os.environ.get("BELIEF_UNTESTED_SCORE_CAP", "").strip()
+    if raw:
+        try:
+            return max(0.0, min(1.0, float(raw)))
+        except ValueError:
+            logger.warning("Ignoring non-numeric BELIEF_UNTESTED_SCORE_CAP=%r", raw)
+    return DEFAULT_UNTESTED_SCORE_CAP
+
+
+def _is_test_path(fname: str) -> bool:
+    """A path the validator treats as a test file (mirrors _run_real_validation)."""
+    return fname.startswith("test") or "/test" in fname
+
+
+def _discover_test_files(
+    code_files: dict[str, str],
+    test_files: dict[str, str],
+) -> dict[str, str]:
+    """Test files the validator would actually run: explicit ``test_files``
+    plus builder-emitted files whose path marks them as tests. Mirrors the
+    discovery in :func:`_run_real_validation` so the cap keys off the same set.
+    """
+    discovered = dict(test_files)
+    for fname, content in code_files.items():
+        if _is_test_path(fname):
+            discovered[fname] = content
+    return discovered
+
+
+def _has_testable_logic(code_files: dict[str, str]) -> bool:
+    """True if any non-test Python file defines a function or class.
+
+    A file that is only constants / config / imports has no logic a test could
+    exercise, so it returns False — such builds are NOT penalised for lacking
+    tests (avoids a false positive on config-only outputs).
+    """
+    for fname, content in code_files.items():
+        if not fname.endswith(".py") or _is_test_path(fname):
+            continue
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                return True
+    return False
+
+
+def _modules_with_inline_tests(code_files: dict[str, str]) -> list[str]:
+    """Non-test files that carry in-module tests (a ``unittest``/``pytest``
+    import, a ``Test*`` class, or a ``test_*`` function).
+
+    The tester does not discover these, so a build can embed tests inside
+    modules (as the stress-test firmware did) and still look untested. This
+    surfaces the gap for visibility — it does NOT fix discovery (deferred).
+    """
+    found: list[str] = []
+    for fname, content in code_files.items():
+        if not fname.endswith(".py") or _is_test_path(fname):
+            continue
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                if "unittest" in mod or "pytest" in mod:
+                    found.append(fname)
+                    break
+            elif isinstance(node, ast.Import):
+                if any("unittest" in a.name or "pytest" in a.name for a in node.names):
+                    found.append(fname)
+                    break
+            elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+                found.append(fname)
+                break
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
+                "test_"
+            ):
+                found.append(fname)
+                break
+    return found
+
+
+def _apply_untested_cap(
+    result: ValidationResult,
+    code_files: dict[str, str],
+    test_files: dict[str, str],
+) -> None:
+    """Cap a testable-but-untested build's score and force ``fail_fixable``.
+
+    When no test files were discovered AND the build contains testable logic,
+    floor the achievable score at :func:`_untested_score_cap` and downgrade a
+    ``PASS`` verdict, with the issue ``"No test files generated for testable
+    logic"``. Also logs (does not fix) the in-module-test discovery gap.
+
+    Detection of *structural* incompleteness only — no judgement about whether
+    present code is correct.
+    """
+    discovered = _discover_test_files(code_files, test_files)
+    if not discovered and _has_testable_logic(code_files):
+        cap = _untested_score_cap()
+        if result.weighted_score > cap:
+            logger.info(
+                "Validator: testable logic with no test files — capping score "
+                "%.2f -> %.2f (handoff Q3)",
+                result.weighted_score,
+                cap,
+            )
+            result.weighted_score = cap
+        if result.verdict == ValidationVerdict.PASS:
+            result.verdict = ValidationVerdict.FAIL_FIXABLE
+        issue = "No test files generated for testable logic"
+        if issue not in result.issues:
+            result.issues.append(issue)
+
+    inline = _modules_with_inline_tests(code_files)
+    if inline:
+        logger.warning(
+            "Validator: %d module(s) carry in-file tests the tester does not "
+            "discover (discovery gap, not fixed this session): %s",
+            len(inline),
+            ", ".join(inline),
+        )
 
 
 def _classify_and_score(result: ValidationResult) -> None:
