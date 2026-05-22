@@ -345,6 +345,12 @@ async def run(
                 )
                 quality_scores[attr] = float(val)
 
+        # Session C: record produced-vs-planned coverage (set by coverage_gate)
+        # so the build record / dashboard show structural completeness.
+        coverage_fraction = final_state.get("coverage_fraction")
+        if coverage_fraction is not None:
+            quality_scores["coverage_fraction"] = float(coverage_fraction)
+
         build_record = BuildRecord(
             run_id=run_id,
             goal=goal,

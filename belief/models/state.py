@@ -160,6 +160,10 @@ class UnifiedState(BaseModel):
     # another LLM call. Distinguishes a budget abort from a normal terminal
     # verdict so the build record can record verdict="aborted_budget".
     aborted_budget: bool = False
+    # Session C: produced-vs-planned file coverage, set by the coverage_gate
+    # terminal node (1.0 = every planned file shipped). Recorded in the build
+    # record so the dashboard can show planned-vs-produced explicitly.
+    coverage_fraction: Optional[float] = None
 
     # ── Diagnostics ──────────────────────────────────────────
     errors: list[str] = Field(default_factory=list)

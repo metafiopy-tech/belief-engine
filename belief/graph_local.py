@@ -96,6 +96,7 @@ from belief.memory.recomposer import recomposer_node
 # automatically.
 from belief.graph import (
     _compile_gate_node,
+    _coverage_gate_node,
     _covenant_enforce_node,
     _exec_error_is_refinable,
     _import_fix_node,
@@ -283,6 +284,7 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_node("validator", _traced(validator, "validator"))
     graph.add_node("refinement", _traced(_make_refinement_node(router), "refinement"))
     graph.add_node("compile_gate", _traced(_compile_gate_node, "compile_gate"))
+    graph.add_node("coverage_gate", _traced(_coverage_gate_node, "coverage_gate"))
 
     # ── Edges ──────────────────────────────────────────────────────
     graph.set_entry_point("recomposer")
@@ -324,6 +326,7 @@ def build_local_pipeline(router: ModelRouter | None = None) -> StateGraph:
         {"refinement": "refinement", "__end__": "compile_gate"},
     )
     graph.add_edge("refinement", "compile_gate")
-    graph.add_edge("compile_gate", END)
+    graph.add_edge("compile_gate", "coverage_gate")
+    graph.add_edge("coverage_gate", END)
 
     return graph.compile()

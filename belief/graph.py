@@ -897,6 +897,60 @@ def _compile_gate_node(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+def _coverage_gate_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic terminal gate: a build can't report ``pass`` while
+    producing only a fraction of the planned files, or shipping hollow stubs.
+
+    Runs right after the compile gate (which catches files that don't parse).
+    This catches files that should exist and don't, and files that exist but
+    are empty stubs — handoff Q2. Records the produced-vs-planned coverage
+    fraction in state so the build record / dashboard can show it, and on a
+    shortfall forces ``fail_fixable`` and caps the score at what shipped.
+
+    Detection of structural incompleteness only — no judgement about whether
+    the produced files are *correct* (the deferred research question).
+    """
+    import os as _os
+
+    from belief.validators.coverage_gate import gate_validation_result
+
+    raw = _os.environ.get("BELIEF_COVERAGE_THRESHOLD", "").strip()
+    threshold = 1.0
+    if raw:
+        try:
+            threshold = max(0.0, min(1.0, float(raw)))
+        except ValueError:
+            logger.warning("Ignoring non-numeric BELIEF_COVERAGE_THRESHOLD=%r", raw)
+
+    # Produced universe = source + test files: the architect's manifest can
+    # list test files that land in state.test_files, so counting only
+    # code_files would falsely report them missing. The hollow check inside
+    # the gate already excludes test paths, so merging is safe.
+    code_files = state.get("code_files") or {}
+    produced = {**code_files, **(state.get("test_files") or {})}
+    validation_result, coverage_fraction, missing, hollow = gate_validation_result(
+        state.get("file_manifest"),
+        produced,
+        state.get("validation_result"),
+        threshold=threshold,
+    )
+    state["coverage_fraction"] = coverage_fraction
+    if missing or hollow:
+        state["validation_result"] = validation_result
+        logger.warning(
+            "coverage_gate: coverage=%.0f%% — %d missing, %d hollow; "
+            "verdict forced to fail_fixable%s%s",
+            coverage_fraction * 100,
+            len(missing),
+            len(hollow),
+            f" [missing: {', '.join(missing)}]" if missing else "",
+            f" [hollow: {', '.join(hollow)}]" if hollow else "",
+        )
+    else:
+        logger.info("coverage_gate: coverage=%.0f%%, no hollow files", coverage_fraction * 100)
+    return state
+
+
 def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     """Construct and compile the Belief Engine pipeline."""
     if router is None:
@@ -937,6 +991,7 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
     graph.add_node("recomposer", _traced(recomposer_node, "recomposer"))
     graph.add_node("refinement", _traced(_make_refinement_node(router), "refinement"))
     graph.add_node("compile_gate", _traced(_compile_gate_node, "compile_gate"))
+    graph.add_node("coverage_gate", _traced(_coverage_gate_node, "coverage_gate"))
     graph.add_node("import_fix", _traced(_import_fix_node, "import_fix"))
     graph.add_node("covenant_enforce", _traced(_covenant_enforce_node, "covenant_enforce"))
 
@@ -1041,9 +1096,11 @@ def build_pipeline(router: ModelRouter | None = None) -> StateGraph:
         },
     )
 
-    # Terminal compile gate → decomposer (every finalising path passes through
-    # the gate so a non-parsing build can never report pass / archive 1.00).
-    graph.add_edge("compile_gate", "decomposer")
+    # Terminal gates → decomposer. Every finalising path passes through the
+    # compile gate (non-parsing build can't report pass) and then the coverage
+    # gate (planned-vs-produced shortfall / hollow stubs can't report pass).
+    graph.add_edge("compile_gate", "coverage_gate")
+    graph.add_edge("coverage_gate", "decomposer")
 
     # Decomposer always terminates the pipeline
     graph.add_edge("decomposer", END)
