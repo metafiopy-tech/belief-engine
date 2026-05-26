@@ -31,16 +31,52 @@ from belief.validators.coverage_gate import (
         ("def f():\n    pass\n", True),
         ('"""just a docstring"""\n', True),
         ("def f():\n    raise NotImplementedError\n", True),
-        ("class C:\n    pass\n", True),
+        ("class C:\n    pass\n", True),  # bare stub class
         ("x = 1\n", False),  # an assignment is substantive
         ("def f():\n    return 1\n", False),
         ("class C:\n    x: int = 0\n", False),
         ("print('hi')\n", False),
         ("def (oops\n", False),  # parse error → not our concern (compile_gate)
+        # Research-brief follow-up: trivial / placeholder returns are stubs.
+        ("def f():\n    return None\n", True),
+        ("def f():\n    return\n", True),
+        ("def f():\n    return []\n", True),
+        ("def f():\n    return {}\n", True),
+        ("def f():\n    return 'TODO: implement'\n", True),
+        ("def f():\n    return 'hello'\n", False),  # a real string return
+        # Research-brief caveat: subclass-only modules are NOT hollow.
+        ("class NotFoundError(Exception):\n    pass\n", False),  # legit exception
+        (
+            "from abc import ABC, abstractmethod\n"
+            "class Repo(ABC):\n    @abstractmethod\n    def get(self): ...\n",
+            False,
+        ),  # ABC interface
+        (
+            "from typing import Protocol\nclass P(Protocol):\n    def m(self) -> int: ...\n",
+            False,
+        ),  # Protocol interface
+        ("import enum\nclass Color(enum.Enum):\n    RED = 1\n", False),  # enum w/ member
     ],
 )
 def test_is_hollow_file(content, expected):
     assert is_hollow_file(content) is expected
+
+
+def test_exception_module_not_flagged_hollow():
+    # A whole module of pure-`pass` exception classes is a complete deliverable
+    # (the architect fallback emits exactly this as exceptions.py).
+    code = {
+        "exceptions.py": (
+            "class NotFoundError(Exception):\n    pass\n"
+            "class DuplicateError(Exception):\n    pass\n"
+        )
+    }
+    assert find_hollow_files(code) == []
+
+
+def test_all_trivial_return_module_is_hollow():
+    code = {"app.py": "def get():\n    return None\n\ndef fetch():\n    return []\n"}
+    assert find_hollow_files(code) == ["app.py"]
 
 
 # ── planned_filenames ────────────────────────────────────────────────────────

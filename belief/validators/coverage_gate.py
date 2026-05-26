@@ -55,9 +55,44 @@ def _is_test_path(fname: str) -> bool:
     return fname.startswith("test") or "/test" in fname
 
 
+# Placeholder markers that signal an unfinished body (handoff Q2 / research
+# brief Stage 1: "TODO / placeholder string detection").
+_PLACEHOLDER_MARKERS = ("todo", "fixme", "placeholder", "not implemented", "to be implemented")
+
+
+def _is_trivial_return(node: ast.stmt) -> bool:
+    """True for a ``return`` of nothing or a trivial literal (None, '', 0,
+    False, empty list/dict/tuple/set) or a placeholder string ('TODO').
+
+    A function whose entire body is one such return is a stub: declared but
+    not implemented. Conservative — only bare/literal returns qualify, so a
+    real ``return compute(x)`` is never treated as filler.
+    """
+    if not isinstance(node, ast.Return):
+        return False
+    val = node.value
+    if val is None:
+        return True  # bare ``return``
+    if isinstance(val, ast.Constant):
+        if val.value is ... or val.value in (None, "", 0, 0.0, False):
+            return True
+        if isinstance(val.value, str) and any(m in val.value.lower() for m in _PLACEHOLDER_MARKERS):
+            return True
+        return False
+    if isinstance(val, ast.List) and not val.elts:
+        return True
+    if isinstance(val, ast.Tuple) and not val.elts:
+        return True
+    if isinstance(val, ast.Set) and not val.elts:
+        return True
+    if isinstance(val, ast.Dict) and not val.keys:
+        return True
+    return False
+
+
 def _is_stub_body(body: list[ast.stmt]) -> bool:
-    """True if a def/class body is only filler: docstring, ``pass``, ``...``,
-    or ``raise NotImplementedError``."""
+    """True if a def body is only filler: docstring, ``pass``, ``...``,
+    ``raise NotImplementedError``, or a single trivial/placeholder ``return``."""
     for node in body:
         if isinstance(node, ast.Pass):
             continue
@@ -72,6 +107,30 @@ def _is_stub_body(body: list[ast.stmt]) -> bool:
                 name = exc.id
             if name == "NotImplementedError":
                 continue
+        if _is_trivial_return(node):
+            continue
+        return False
+    return True
+
+
+def _class_is_filler(node: ast.ClassDef) -> bool:
+    """True only for a *bare* stub class: no meaningful base class AND a
+    pure-filler body (``pass`` / docstring).
+
+    A class that subclasses something real — ``Exception`` (an exception
+    module is a legitimate, complete deliverable), an ABC/Protocol, an Enum, a
+    domain base — is NOT filler: the subclass declaration itself is content.
+    This avoids false-positives on the very ``exceptions.py`` the architect's
+    fallback manifest emits, while still flagging an empty ``class C: pass``.
+    """
+    meaningful_bases = [b for b in node.bases if not (isinstance(b, ast.Name) and b.id == "object")]
+    if meaningful_bases or node.keywords:  # has a base or metaclass/keyword
+        return False
+    for sub in node.body:
+        if isinstance(sub, ast.Pass):
+            continue
+        if isinstance(sub, ast.Expr) and isinstance(sub.value, ast.Constant):
+            continue  # docstring
         return False
     return True
 
@@ -101,7 +160,12 @@ def is_hollow_file(content: str | None) -> bool:
             continue
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
             continue  # docstring / bare constant
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(node, ast.ClassDef):
+            if _class_is_filler(node):
+                continue  # bare stub class — not substantive
+            substantive += 1
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if _is_stub_body(node.body):
                 continue  # a stub def is not substantive
             substantive += 1
