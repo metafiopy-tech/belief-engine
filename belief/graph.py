@@ -511,11 +511,23 @@ async def _covenant_enforce_node(state: dict[str, Any]) -> dict[str, Any]:
     TypeScript: Fix .js extensions, replace jest→vi, fix ethers v5→v6, etc.
 
     Zero LLM calls. Deterministic. Fast.
+
+    Substrate-transfer experiment: short-circuits to a no-op when the
+    BELIEF_EXPERIMENT_CONDITION env var disables covenants (``soil_only`` or
+    ``raw_local``). In production / hard-gate runs the env var is unset and
+    this branch is never taken.
     """
     result = dict(state)
     code_files = state.get("code_files", {})
 
     if not code_files:
+        return result
+
+    # Substrate-transfer experiment short-circuit.
+    from belief.experiments.conditions import covenants_enabled
+
+    if not covenants_enabled():
+        logger.info("Covenant enforcer skipped: experiment condition disables covenants")
         return result
 
     # ── Session 2 (v3.2): LibCST Pydantic v2 + forbidden-imports pipeline ──

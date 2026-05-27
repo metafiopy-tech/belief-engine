@@ -39,7 +39,7 @@ class ExperimentResult:
     experiment_id: str
     challenge_id: str
     goal: str
-    condition: str  # "engine_cloud" | "engine_local" | "raw_local"
+    condition: str  # "engine_cloud" | "engine_local" | "raw_local" | "soil_only" | "full"
     model: str
     passed: bool
     tests_passed: int
@@ -52,6 +52,12 @@ class ExperimentResult:
     tool_count: int
     error: Optional[str] = None
     timestamp: str = ""
+    # Substrate-transfer experiment fields (defaults preserve backward compat
+    # with the existing A/B harness — old rows store experiment_type="ab",
+    # build_seq=0, measurement_point=True).
+    experiment_type: str = "ab"  # "ab" | "substrate_transfer"
+    build_seq: int = 0  # 0 = not applicable; 1/5/15 for substrate_transfer
+    measurement_point: bool = True  # True for rows we score in the report
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +98,23 @@ def init_db(db_path: Path = DEFAULT_DB_PATH) -> None:
                 status          TEXT DEFAULT 'running'
             );
         """)
+
+        # Idempotent column additions for the substrate-transfer experiment.
+        # SQLite has no native "ADD COLUMN IF NOT EXISTS"; we read the
+        # existing columns and add only what's missing. Existing rows get
+        # the default values (preserves backward compat with prior data).
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(results)").fetchall()}
+        if "experiment_type" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE results ADD COLUMN experiment_type TEXT NOT NULL DEFAULT 'ab'"
+            )
+        if "build_seq" not in existing_cols:
+            conn.execute("ALTER TABLE results ADD COLUMN build_seq INTEGER NOT NULL DEFAULT 0")
+        if "measurement_point" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE results ADD COLUMN measurement_point INTEGER NOT NULL DEFAULT 1"
+            )
+        conn.commit()
     finally:
         conn.close()
 
@@ -402,6 +425,258 @@ async def run_experiment(
                     ),
                     db_path,
                 )
+
+    _set_experiment_status(experiment_id, "complete", db_path)
+    return experiment_id
+
+
+# ---------------------------------------------------------------------------
+# Substrate-transfer experiment driver
+# ---------------------------------------------------------------------------
+
+
+# Public so callers can name conditions consistently.
+SUBSTRATE_TRANSFER_CONDITIONS: tuple[str, ...] = ("raw_local", "soil_only", "full")
+DEFAULT_BUILD_SEQ_POINTS: tuple[int, ...] = (1, 5, 15)
+
+
+async def run_substrate_transfer_experiment(
+    challenges: list[dict],
+    baseline_snapshots: dict[tuple[str, int], Path],
+    experiment_id: Optional[str] = None,
+    conditions: Optional[list[str]] = None,
+    build_seq_points: tuple[int, ...] = DEFAULT_BUILD_SEQ_POINTS,
+    model: str = "qwen2.5-coder:14b",
+    db_path: Path = DEFAULT_DB_PATH,
+    snapshot_taker=None,
+) -> str:
+    """Run the 3-condition substrate-transfer experiment.
+
+    For each (condition, build_seq, challenge) cell where the condition uses
+    soil, the baseline snapshot ``baseline_snapshots[(condition, build_seq)]``
+    is restored before the build runs. This prevents soil from one cell
+    leaking into another. ``raw_local`` skips snapshot restoration entirely
+    because it bypasses the engine.
+
+    Args:
+        challenges:
+            List of ``{"id": str, "goal": str}``.
+        baseline_snapshots:
+            Map from ``(condition, build_seq)`` → Path to a SoilSnapshot.
+            Must be present for every (condition, build_seq) cell where the
+            condition uses soil. Missing entries cause that cell to record
+            an error rather than crash the run.
+        experiment_id:
+            Auto-generated timestamp if omitted.
+        conditions:
+            Subset of ``SUBSTRATE_TRANSFER_CONDITIONS``.
+        build_seq_points:
+            Which build-seq numbers to measure at. Default (1, 5, 15) per
+            the reduced experiment design.
+        model:
+            Ollama model identifier (passed to ``run_raw`` / engine).
+        db_path:
+            Override for tests.
+        snapshot_taker:
+            Optional ``SoilSnapshot`` instance. Default-constructed on first
+            need. Tests inject a fake to avoid touching disk.
+
+    Returns:
+        ``experiment_id``.
+    """
+    if experiment_id is None:
+        experiment_id = "subxfer-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    if conditions is None:
+        conditions = list(SUBSTRATE_TRANSFER_CONDITIONS)
+
+    init_db(db_path)
+
+    # Record metadata
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO experiment_meta "
+            "(experiment_id, created_at, description, challenges_json, status) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                experiment_id,
+                datetime.now(timezone.utc).isoformat(),
+                (
+                    f"substrate_transfer: {len(challenges)} challenge(s), "
+                    f"conditions={','.join(conditions)}, "
+                    f"build_seq={','.join(str(b) for b in build_seq_points)}"
+                ),
+                json.dumps([c["id"] for c in challenges]),
+                "running",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Lazy snapshot taker — only constructed if we actually need to restore.
+    def _snap():
+        nonlocal snapshot_taker
+        if snapshot_taker is None:
+            from belief.memory.snapshot import SoilSnapshot
+
+            snapshot_taker = SoilSnapshot()
+        return snapshot_taker
+
+    def _cell_uses_soil(cond: str) -> bool:
+        return cond in ("soil_only", "full")
+
+    for condition in conditions:
+        # raw_local has no build_seq axis — score once per challenge with build_seq=0.
+        cond_build_points = build_seq_points if _cell_uses_soil(condition) else (0,)
+
+        for build_seq in cond_build_points:
+            for challenge in challenges:
+                cid = challenge["id"]
+                goal = challenge["goal"]
+                timestamp = datetime.now(timezone.utc).isoformat()
+                print(f"\n  ── {condition} | build_seq={build_seq} | {cid} ──")
+
+                # Restore baseline snapshot for soil-using cells.
+                restore_error: Optional[str] = None
+                if _cell_uses_soil(condition):
+                    key = (condition, build_seq)
+                    snap_path = baseline_snapshots.get(key)
+                    if snap_path is None:
+                        restore_error = (
+                            f"no baseline snapshot configured for "
+                            f"condition={condition} build_seq={build_seq}"
+                        )
+                    else:
+                        try:
+                            _snap().restore_snapshot(Path(snap_path))
+                        except Exception as exc:
+                            restore_error = f"snapshot restore failed: {exc}"
+
+                if restore_error is not None:
+                    store_result(
+                        ExperimentResult(
+                            experiment_id=experiment_id,
+                            challenge_id=cid,
+                            goal=goal,
+                            condition=condition,
+                            model=model,
+                            passed=False,
+                            tests_passed=0,
+                            tests_total=0,
+                            weighted_score=0.0,
+                            cost_usd=0.0,
+                            time_seconds=0.0,
+                            soil_size=0,
+                            covenant_count=0,
+                            tool_count=0,
+                            error=restore_error,
+                            timestamp=timestamp,
+                            experiment_type="substrate_transfer",
+                            build_seq=build_seq,
+                            measurement_point=True,
+                        ),
+                        db_path,
+                    )
+                    print(f"    ERROR: {restore_error}")
+                    continue
+
+                # Snapshot engine state AFTER restore so we record the
+                # actual soil_size etc. observed by the build.
+                soil_size, covenant_count, tool_count = get_engine_state()
+
+                try:
+                    if condition == "raw_local":
+                        raw: RawRunResult = await run_raw(goal, model=model)
+                        result = ExperimentResult(
+                            experiment_id=experiment_id,
+                            challenge_id=cid,
+                            goal=goal,
+                            condition=condition,
+                            model=model,
+                            passed=raw.weighted_score >= 0.5,
+                            tests_passed=raw.tests_passed,
+                            tests_total=raw.tests_total,
+                            weighted_score=raw.weighted_score,
+                            cost_usd=0.0,
+                            time_seconds=raw.time_seconds,
+                            soil_size=0,
+                            covenant_count=0,
+                            tool_count=0,
+                            error=raw.error,
+                            timestamp=timestamp,
+                            experiment_type="substrate_transfer",
+                            build_seq=build_seq,
+                            measurement_point=True,
+                        )
+                    else:
+                        # Set BELIEF_EXPERIMENT_CONDITION for the subprocess —
+                        # this is what activates the soil_only toggle wired
+                        # in task #3 (see belief/experiments/conditions.py).
+                        prior_cond = os.environ.get("BELIEF_EXPERIMENT_CONDITION")
+                        os.environ["BELIEF_EXPERIMENT_CONDITION"] = condition
+                        try:
+                            data = await run_engine_build(goal, mode="local")
+                        finally:
+                            if prior_cond is None:
+                                os.environ.pop("BELIEF_EXPERIMENT_CONDITION", None)
+                            else:
+                                os.environ["BELIEF_EXPERIMENT_CONDITION"] = prior_cond
+
+                        result = ExperimentResult(
+                            experiment_id=experiment_id,
+                            challenge_id=cid,
+                            goal=goal,
+                            condition=condition,
+                            model=model,
+                            passed=data["passed"],
+                            tests_passed=data["tests_passed"],
+                            tests_total=data["tests_total"],
+                            weighted_score=data["weighted_score"],
+                            cost_usd=data["cost"],
+                            time_seconds=data["time_seconds"],
+                            soil_size=soil_size,
+                            covenant_count=covenant_count,
+                            tool_count=tool_count,
+                            error=data.get("error"),
+                            timestamp=timestamp,
+                            experiment_type="substrate_transfer",
+                            build_seq=build_seq,
+                            measurement_point=True,
+                        )
+                    store_result(result, db_path)
+                    status = "PASS" if result.passed else "FAIL"
+                    print(
+                        f"    {status} | score={result.weighted_score:.2f} | "
+                        f"time={result.time_seconds:.0f}s | cost=${result.cost_usd:.4f}"
+                    )
+
+                except Exception as exc:
+                    print(f"    ERROR: {exc}")
+                    store_result(
+                        ExperimentResult(
+                            experiment_id=experiment_id,
+                            challenge_id=cid,
+                            goal=goal,
+                            condition=condition,
+                            model=model,
+                            passed=False,
+                            tests_passed=0,
+                            tests_total=0,
+                            weighted_score=0.0,
+                            cost_usd=0.0,
+                            time_seconds=0.0,
+                            soil_size=soil_size,
+                            covenant_count=covenant_count,
+                            tool_count=tool_count,
+                            error=str(exc),
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                            experiment_type="substrate_transfer",
+                            build_seq=build_seq,
+                            measurement_point=True,
+                        ),
+                        db_path,
+                    )
 
     _set_experiment_status(experiment_id, "complete", db_path)
     return experiment_id

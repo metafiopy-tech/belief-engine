@@ -296,8 +296,27 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
         # Detect complexity for token budget
         complexity = state.get("complexity_score", 3)
 
+        # Substrate-transfer experiment: when the active condition disables
+        # FSRS decay, pass the bypass flag so retrieval ignores retention
+        # filtering and scores all nutrients as r=1.0. When it disables
+        # covenants, we strip them from the profile after retrieval so the
+        # downstream agents never see them. Both default off in production.
+        from belief.experiments.conditions import (
+            covenants_enabled,
+            fsrs_decay_enabled,
+        )
+
+        bypass_fsrs = not fsrs_decay_enabled()
+
         # Retrieve nutrient profile (queries principles + tools + covenants + failures)
-        profile = soil.retrieve_profile(goal, complexity=complexity)
+        profile = soil.retrieve_profile(
+            goal,
+            complexity=complexity,
+            bypass_fsrs_decay=bypass_fsrs,
+        )
+
+        if not covenants_enabled():
+            profile.covenants = []
 
         if profile.is_empty:
             logger.info("Recomposer: soil is empty — fresh build, no institutional memory")
@@ -305,12 +324,15 @@ async def recomposer_node(state: dict[str, Any]) -> dict[str, Any]:
             result["nutrient_profile"] = None
             return result
 
-        # Apply FSRS-based filtering: exclude lapsed nutrients unless due for review
+        # Apply FSRS-based filtering: exclude lapsed nutrients unless due for review.
+        # When FSRS decay is bypassed by the experiment, skip this second filter too;
+        # otherwise retrievals that survived the bypass would get dropped here.
         now_ts = datetime.now(timezone.utc).timestamp()
-        profile.covenants = _fsrs_filter(profile.covenants, now_ts)
-        profile.antipatterns = _fsrs_filter(profile.antipatterns, now_ts)
-        profile.patterns = _fsrs_filter(profile.patterns, now_ts)
-        profile.skeletons = _fsrs_filter(profile.skeletons, now_ts)
+        if not bypass_fsrs:
+            profile.covenants = _fsrs_filter(profile.covenants, now_ts)
+            profile.antipatterns = _fsrs_filter(profile.antipatterns, now_ts)
+            profile.patterns = _fsrs_filter(profile.patterns, now_ts)
+            profile.skeletons = _fsrs_filter(profile.skeletons, now_ts)
 
         # Session 7: domain-aware re-ranking. Detect the current build's
         # domain from the goal, then reorder each nutrient list so

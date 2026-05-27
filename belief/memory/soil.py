@@ -432,6 +432,7 @@ class Soil:
         nutrient_type: Optional[NutrientType] = None,
         min_retrievability: float = 0.3,
         as_of: Optional[float] = None,
+        bypass_fsrs_decay: bool = False,
     ) -> list[Nutrient]:
         """Semantic search with metadata filtering and composite re-ranking.
 
@@ -446,6 +447,13 @@ class Soil:
         doesn't cover *as_of* (defaults to "now" — live retrieval).
         Passing a past timestamp reconstructs the soil as it was then,
         including nutrients that have since been invalidated.
+
+        Substrate-transfer experiment: when ``bypass_fsrs_decay`` is True,
+        the retrievability filter is skipped and the composite score uses
+        ``r = 1.0`` (full retention assumed). This isolates "soil with no
+        temporal decay" from "soil with FSRS decay" without changing any
+        other retrieval semantics. Default False preserves existing
+        behavior for the hard gate.
         """
         if nutrient_type is not None:
             collections_to_query = [self._route_collection(nutrient_type)]
@@ -506,10 +514,13 @@ class Soil:
                 if not nutrient.is_valid_at(as_of if as_of is not None else now):
                     continue
 
-                # Filter by retrievability
-                r = nutrient.retrievability()
-                if r < min_retrievability:
-                    continue
+                # Filter by retrievability (skipped when FSRS decay is bypassed)
+                if bypass_fsrs_decay:
+                    r = 1.0
+                else:
+                    r = nutrient.retrievability()
+                    if r < min_retrievability:
+                        continue
 
                 # Recency bonus: 1.0 for today, decays to 0 over ~30 days
                 days_old = (now - nutrient.last_reinforced) / 86400.0
@@ -528,11 +539,16 @@ class Soil:
         goal: str,
         complexity: int = 3,
         max_tokens: Optional[int] = None,
+        bypass_fsrs_decay: bool = False,
     ) -> NutrientProfile:
         """Retrieve a complete nutrient profile for a build goal.
 
         Priority: covenants (all) > antipatterns (top 3) > patterns (top 5) > skeletons (top 1)
         Returns empty NutrientProfile if soil is empty.
+
+        ``bypass_fsrs_decay`` propagates to ``retrieve`` for each category
+        (see ``retrieve`` docstring). Default False preserves existing
+        behavior for the hard gate.
         """
         total = sum(c.count() for c in self._collections.values())
         if total == 0:
@@ -546,6 +562,7 @@ class Soil:
                 n=limit,
                 nutrient_type=ntype,
                 min_retrievability=0.1 if ntype == NutrientType.COVENANT else 0.3,
+                bypass_fsrs_decay=bypass_fsrs_decay,
             )
             if ntype == NutrientType.COVENANT:
                 profile.covenants = nutrients

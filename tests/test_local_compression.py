@@ -209,7 +209,7 @@ def test_recomposer_node_compresses_in_local_mode(monkeypatch):
         def decay_all(self):
             return {"archived": 0, "active": 1}
 
-        def retrieve_profile(self, goal, complexity=3):
+        def retrieve_profile(self, goal, complexity=3, bypass_fsrs_decay=False):
             return _build_profile()
 
     monkeypatch.setattr(rec, "_get_soil", lambda: _FakeSoil())
@@ -271,7 +271,7 @@ def test_recomposer_node_uses_full_formatter_in_cloud_mode(monkeypatch):
         def decay_all(self):
             return {"archived": 0, "active": 1}
 
-        def retrieve_profile(self, goal, complexity=3):
+        def retrieve_profile(self, goal, complexity=3, bypass_fsrs_decay=False):
             return _FakeProfile()
 
     monkeypatch.setattr(rec, "_get_soil", lambda: _FakeSoil())
