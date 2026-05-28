@@ -602,25 +602,52 @@ async def run_substrate_transfer_experiment(
                 # actual soil_size etc. observed by the build.
                 soil_size, covenant_count, tool_count = get_engine_state()
 
+                # Novel-artifact challenges (challenge_id starts with "novel-")
+                # override the build's pytest-based weighted_score with a
+                # mechanical validator over the produced artifact files.
+                # See belief/experiments/novel_artifact_challenges.py.
+                from belief.experiments.novel_artifact_challenges import (
+                    apply_novel_artifact_validation,
+                    is_novel_artifact_id,
+                )
+
+                is_novel = is_novel_artifact_id(cid)
+
                 try:
+                    build_start = time.time()
                     if condition == "raw_local":
                         raw: RawRunResult = await run_raw(goal, model=model)
+                        # For novel-artifact challenges, override the score
+                        # using the validator over raw_runner's in-memory
+                        # code_files dict.
+                        if is_novel:
+                            na_passed, na_msg, na_score = apply_novel_artifact_validation(
+                                challenge_id=cid,
+                                code_files=raw.code_files,
+                            )
+                            raw_passed = na_passed
+                            raw_score = na_score
+                            raw_error = f"novel-artifact: {na_msg}" if not na_passed else None
+                        else:
+                            raw_passed = raw.weighted_score >= 0.5
+                            raw_score = raw.weighted_score
+                            raw_error = raw.error
                         result = ExperimentResult(
                             experiment_id=experiment_id,
                             challenge_id=cid,
                             goal=goal,
                             condition=condition,
                             model=model,
-                            passed=raw.weighted_score >= 0.5,
+                            passed=raw_passed,
                             tests_passed=raw.tests_passed,
                             tests_total=raw.tests_total,
-                            weighted_score=raw.weighted_score,
+                            weighted_score=raw_score,
                             cost_usd=0.0,
                             time_seconds=raw.time_seconds,
                             soil_size=0,
                             covenant_count=0,
                             tool_count=0,
-                            error=raw.error,
+                            error=raw_error,
                             timestamp=timestamp,
                             experiment_type="substrate_transfer",
                             build_seq=build_seq,
@@ -640,22 +667,38 @@ async def run_substrate_transfer_experiment(
                             else:
                                 os.environ["BELIEF_EXPERIMENT_CONDITION"] = prior_cond
 
+                        # For novel-artifact challenges, override the score
+                        # using the validator over the engine's output dir.
+                        if is_novel:
+                            na_passed, na_msg, na_score = apply_novel_artifact_validation(
+                                challenge_id=cid,
+                                build_start_time=build_start,
+                            )
+                            data_passed = na_passed
+                            data_score = na_score
+                            data_error = (
+                                f"novel-artifact: {na_msg}" if not na_passed else data.get("error")
+                            )
+                        else:
+                            data_passed = data["passed"]
+                            data_score = data["weighted_score"]
+                            data_error = data.get("error")
                         result = ExperimentResult(
                             experiment_id=experiment_id,
                             challenge_id=cid,
                             goal=goal,
                             condition=condition,
                             model=model,
-                            passed=data["passed"],
+                            passed=data_passed,
                             tests_passed=data["tests_passed"],
                             tests_total=data["tests_total"],
-                            weighted_score=data["weighted_score"],
+                            weighted_score=data_score,
                             cost_usd=data["cost"],
                             time_seconds=data["time_seconds"],
                             soil_size=soil_size,
                             covenant_count=covenant_count,
                             tool_count=tool_count,
-                            error=data.get("error"),
+                            error=data_error,
                             timestamp=timestamp,
                             experiment_type="substrate_transfer",
                             build_seq=build_seq,
