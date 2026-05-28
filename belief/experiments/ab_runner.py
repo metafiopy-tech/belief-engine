@@ -177,13 +177,30 @@ async def run_engine_build(
     env = os.environ.copy()
     env["BELIEF_MODEL_MODE"] = mode
 
+    # Belt + suspenders: the env var alone doesn't fully prevent the engine
+    # from hitting cloud roles. The shakedown run on 2026-05-28 (subxfer-
+    # 20260528-034212) showed ~$0.01-0.02 spend per soil_only/full cell
+    # despite BELIEF_MODEL_MODE=local. Pass explicit --mode and
+    # --local-model CLI flags so the cost surface is fully closed.
+    cmd: list[str] = ["belief"]
+    if mode == "local":
+        cmd.extend(
+            [
+                "--mode",
+                "local",
+                "--local-model",
+                os.environ.get("BELIEF_LOCAL_MODEL", "qwen2.5-coder:14b"),
+            ]
+        )
+    cmd.extend(["--goal", goal, "--json-output"])
+
     start = time.time()
 
     loop = asyncio.get_event_loop()
     proc_result = await loop.run_in_executor(
         None,
         lambda: subprocess.run(
-            ["belief", "--goal", goal, "--json-output"],
+            cmd,
             capture_output=True,
             text=True,
             env=env,
