@@ -176,7 +176,18 @@ def main() -> int:
         )
         return 1
 
-    _log(f"BEGIN baseline run: condition={condition} offset={args.offset} count={args.count}")
+    local_model = os.environ.get("BELIEF_LOCAL_MODEL", "qwen2.5-coder:14b")
+    _log(
+        f"BEGIN baseline run: condition={condition} offset={args.offset} "
+        f"count={args.count} mode=local model={local_model}"
+    )
+
+    # Force local-mode routing in the child process. Without these, the
+    # 'belief build' CLI inherits the default routing — which can send the
+    # heavy roles to Anthropic cloud. Belt + suspenders: --mode flag AND
+    # the env var the engine consults internally.
+    child_env = os.environ.copy()
+    child_env["BELIEF_MODEL_MODE"] = "local"
 
     passed = 0
     failed = 0
@@ -184,19 +195,40 @@ def main() -> int:
         _log(f"build {i}/{args.offset + args.count}: {cid}")
         start = time.time()
         try:
+            # NOTE: --mode and --local-model are TOP-LEVEL belief flags
+            # (per `belief --help`), so they must appear BEFORE any subcommand.
+            # The 'build' subcommand is the default action when --goal is given,
+            # so we omit it to keep the invocation minimal.
             result = subprocess.run(
-                ["belief", "build", "--goal", goal],
+                [
+                    "belief",
+                    "--mode",
+                    "local",
+                    "--local-model",
+                    local_model,
+                    "--goal",
+                    goal,
+                ],
                 capture_output=True,
                 text=True,
                 timeout=args.timeout,
+                env=child_env,
             )
             elapsed = time.time() - start
-            if result.returncode == 0:
+            # `belief build` exits 1 even on PASS verdicts when score < 1.0,
+            # so we detect success from stdout markers rather than exit code.
+            stdout = result.stdout or ""
+            looks_passed = (
+                "verdict=ValidationVerdict.PASS" in stdout
+                or "Verdict: pass" in stdout
+                or '"verdict": "pass"' in stdout
+            )
+            if looks_passed:
                 passed += 1
-                _log(f"  PASS {cid} in {elapsed:.0f}s")
+                _log(f"  PASS {cid} in {elapsed:.0f}s (exit {result.returncode})")
             else:
                 failed += 1
-                tail = (result.stderr or result.stdout or "")[-300:].replace("\n", " | ")
+                tail = (result.stderr or stdout or "")[-300:].replace("\n", " | ")
                 _log(f"  FAIL {cid} in {elapsed:.0f}s (exit {result.returncode}): {tail}")
         except subprocess.TimeoutExpired:
             failed += 1
