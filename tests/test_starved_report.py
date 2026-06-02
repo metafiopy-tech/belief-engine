@@ -139,6 +139,13 @@ def test_report_includes_fiction_count(tmp_path):
     assert "fictions admitted (failed external test): 1" in report
 
 
+def test_report_marks_probe_deferred_when_absent(tmp_path):
+    run_dir = _make_run(tmp_path, n_gens=2)  # no probe.db written
+    report = format_report(run_dir)
+    # Deferred must be explicit, not a silent blank or a zero.
+    assert "not measured (probe deferred)" in report
+
+
 # ---------------------------------------------------------------------------
 # FED-only calibration
 # ---------------------------------------------------------------------------

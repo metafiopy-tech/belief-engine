@@ -213,14 +213,18 @@ def format_report(run_dir: Path, *, experiment_id: str | None = None) -> str:
             )
     lines.append("")
     lines.append(f"STARVED fictions admitted (failed external test): {rm.fictions}")
+    lines.append("")
     if rm.probe:
-        lines.append("")
         lines.append("Held-out probe (SWE-bench Verified):")
         for row in rm.probe:
             lines.append(
                 f"  gen {row['gen']} {row['arm']}: "
                 f"{row['n_resolved']}/{row['n_instances']} ({row['resolve_rate']:.2%})"
             )
+    else:
+        # A deferred metric and a failed metric must NOT look alike in the
+        # artifact: say so explicitly rather than emitting a blank/zero.
+        lines.append("Held-out probe (SWE-bench Verified): not measured (probe deferred)")
     lines.append("")
     lines.append(
         "NOTE: adjudicate PR as a DIFFERENTIAL (STARVED vs FED) trend, jointly with Hill. "

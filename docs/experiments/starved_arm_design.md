@@ -175,22 +175,27 @@ not modified — tasks are consumed, scoring is not touched.
 
 ---
 
-## 7. Pre-registration block — FROZEN AFTER PILOT, BEFORE FULL RUN
+## 7. Pre-registration block
 
-> Fill these in once, from the pilot's FED arm only. Do not edit after the full
-> run begins.
+> Items marked COMMITTED were fixed **cold, before the pilot/model pull** — they
+> bind future decisions and must not change. The band σ is the ONLY value filled
+> post-pilot (from the FED arm only). Do not edit after the full run begins.
 
 - **Co-headline metric for adjudication:** differential PR (centered-Gram) and
   Hill q=1, **joint-direction** — thesis supported only if both trends move the
-  same direction across the FED/STARVED contrast. **SIGNED OFF.**
-- **Frozen k-means k:** `k = ____` (pin before pilot), asserted at compute time
-  and recorded per snapshot.
-- **Noise band:** FED-arm **±2σ** of per-generation PR, σ taken from the pilot.
-  `σ = ____` (filled post-pilot). Band = `____ ± ____`.
-- **Full-run N:** **25**.
+  same direction across the FED/STARVED contrast. **COMMITTED (2026-06-02).**
+- **Frozen k-means k:** `k = 8`, asserted at compute time and recorded per
+  snapshot. **COMMITTED (2026-06-02).**
+- **Full-run N:** **25**. **COMMITTED (2026-06-02).**
 - **Kill criterion (thesis FAILS):** STARVED stays inside the FED ±2σ band for
-  **≥ `____` of N=25 generations** *and* held-out success holds. Name the
-  fraction before the full run.
+  **≥ 0.50 (half) of N=25 generations** *and* held-out success holds.
+  **COMMITTED cold (2026-06-02)** — set before any data was seen, by τ-reasoning
+  not observed wobble: tolerates ≤~12 gens of decay-onset latency while still
+  being a genuine kill (>0.5 would make the test unfalsifiable). Vetoed: any
+  fraction > 0.5.
+- **Noise band:** FED-arm **±2σ** of per-generation PR, σ taken from the pilot
+  FED arm only via `belief experiment starved-calibrate`. `σ = ____` (filled
+  post-pilot). Band = `____ ± ____`. **(σ is the only post-pilot value.)**
 - **Thesis HOLDS:** STARVED PR decays toward a small fixed point (fit τ as
   generations-to-run-down), held-out build success degrades, AR(1) rises before
   the floor; FED stays inside its band or climbs.
