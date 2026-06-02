@@ -249,6 +249,27 @@ _TYPE_TO_COLLECTION = {
 _DEFAULT_COLLECTION = "belief_episodes"
 
 
+# Environment override for the default soil directory.  Exists for the
+# STARVED-arm experiment (docs/experiments/starved_arm_design.md), where each
+# arm needs its own evolving soil dir that carries forward across generations.
+# Unset or empty resolves to the historical path, so production and the hard
+# gate (which never set the var) are completely unaffected.
+ENV_SOIL_PATH = "BELIEF_SOIL_PATH"
+
+
+def default_soil_dir() -> Path:
+    """Resolve the default soil directory, honoring ``BELIEF_SOIL_PATH``.
+
+    The env var is read fresh on each call.  In the experiment, builds run as
+    subprocesses (one per arm/generation), so each subprocess picks up its arm's
+    soil dir at startup; there is no cross-arm leak through a long-lived process.
+    """
+    raw = os.environ.get(ENV_SOIL_PATH, "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path("~/.belief-engine/soil").expanduser()
+
+
 class Soil:
     """ChromaDB-backed nutrient store.
 
@@ -266,7 +287,7 @@ class Soil:
         collections: Optional[dict[str, chromadb.Collection]] = None,
     ) -> None:
         if persist_dir is None:
-            persist_dir = Path("~/.belief-engine/soil")
+            persist_dir = default_soil_dir()
         self._persist_dir = Path(persist_dir).expanduser()
         self._persist_dir.mkdir(parents=True, exist_ok=True)
 

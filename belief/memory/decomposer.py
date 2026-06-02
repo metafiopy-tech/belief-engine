@@ -25,7 +25,6 @@ Source: METABOLIZATION_BUILD_PLAN.md Phase 3
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -43,10 +42,11 @@ def _get_soil():
     """Lazy-load the global Soil instance."""
     global _soil_instance
     if _soil_instance is None:
-        from belief.memory.soil import Soil
+        from belief.memory.soil import Soil, default_soil_dir
 
-        soil_dir = Path("~/.belief-engine/soil").expanduser()
-        _soil_instance = Soil(soil_dir)
+        # Honor BELIEF_SOIL_PATH so the STARVED-arm experiment can isolate
+        # each arm's evolving soil dir; unset -> ~/.belief-engine/soil.
+        _soil_instance = Soil(default_soil_dir())
     return _soil_instance
 
 
