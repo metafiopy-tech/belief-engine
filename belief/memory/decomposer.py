@@ -25,6 +25,7 @@ Source: METABOLIZATION_BUILD_PLAN.md Phase 3
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -36,6 +37,22 @@ logger = logging.getLogger("belief.memory.decomposer")
 # ── Soil accessor ────────────────────────────────────────────────────────────
 
 _soil_instance = None
+
+
+def _decompose_suppressed() -> bool:
+    """True when the decomposer should skip all soil deposition.
+
+    Set by the STARVED-arm experiment (BELIEF_SUPPRESS_DECOMPOSE=1) so candidate
+    builds READ their arm's soil for retrieval but never write to it — the
+    experiment driver performs controlled, K-matched deposition of only the
+    admitted builds. Unset/empty -> normal behavior, so production and the hard
+    gate are unaffected. See docs/experiments/starved_arm_design.md.
+    """
+    return os.environ.get("BELIEF_SUPPRESS_DECOMPOSE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _get_soil():
@@ -216,6 +233,15 @@ async def decomposer_node(state: dict[str, Any]) -> dict[str, Any]:
         # polarity_check → decomposer → END
     """
     result = dict(state)
+
+    # STARVED-arm experiment: candidate builds must not auto-deposit into the
+    # arm soil — the driver does controlled, K-matched deposition of only the
+    # admitted builds. Skip every soil side-effect (extraction, episode,
+    # recombination, reciprocity, three-tier) when suppressed.
+    if _decompose_suppressed():
+        result["extracted_nutrients"] = []
+        logger.info("Decomposer: suppressed (BELIEF_SUPPRESS_DECOMPOSE) — no soil deposit")
+        return result
 
     try:
         # Session A: extraction makes an LLM call — gate it against the build

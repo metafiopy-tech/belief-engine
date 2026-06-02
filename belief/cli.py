@@ -1236,8 +1236,45 @@ def _run_experiment_cmd(args) -> None:
         _sp.run(cmd, check=False)
         return
 
+    if action == "starved":
+        from pathlib import Path as _Path
+
+        from belief.experiments.starved_runner import (
+            RunDirNotEmptyError,
+            FingerprintDriftError,
+            StarvedConfig,
+            make_default_runner,
+        )
+
+        config = StarvedConfig(
+            experiment_id=args.experiment_id,
+            base_dir=_Path(args.base_dir),
+            n_generations=args.generations,
+            n_tasks=args.tasks,
+            k=args.k,
+            kmeans_k=args.kmeans_k,
+            seed=args.seed,
+            local_model=args.model,
+            minilm_revision=args.minilm_revision,
+            probe_at=tuple(args.probe_at or ()),
+            resume=args.resume,
+        )
+        print(
+            f"\n  STARVED experiment {config.experiment_id}: "
+            f"{config.n_generations} gens x {config.n_tasks} tasks x 2 arms, K={config.k}"
+        )
+        print(f"  Model: {config.local_model}  |  run dir: {config.run_dir}\n")
+        try:
+            runner = make_default_runner(config)
+            summary = runner.run()
+        except (RunDirNotEmptyError, FingerprintDriftError) as e:
+            print(f"  Refused to start: {e}")
+            return
+        print(f"\n  Done. {summary}")
+        return
+
     print(f"Unknown experiment action: {action!r}")
-    print("Try: belief experiment run | quick | report | longitudinal | ablation-synth")
+    print("Try: belief experiment run | quick | report | longitudinal | ablation-synth | starved")
 
 
 def _run_validator_cmd(args) -> None:
@@ -1717,6 +1754,35 @@ def app():
         action="store_true",
         help="Print summary of existing runs and exit (no new builds)",
     )
+
+    # STARVED-arm experiment (docs/experiments/starved_arm_design.md)
+    exp_starved = exp_sub.add_parser(
+        "starved",
+        help="Run the FED-vs-STARVED soil-decay experiment",
+    )
+    exp_starved.add_argument(
+        "--id", dest="experiment_id", required=True, help="Run id (isolates the run dir)"
+    )
+    exp_starved.add_argument("--generations", type=int, default=10, help="N generations (pilot=10)")
+    exp_starved.add_argument("--tasks", type=int, default=8, help="Tasks per generation")
+    exp_starved.add_argument(
+        "--k", type=int, default=4, help="Top-K admitted per arm per generation"
+    )
+    exp_starved.add_argument("--kmeans-k", type=int, default=8, help="Frozen k for Hill q=1")
+    exp_starved.add_argument("--seed", type=int, default=42, help="Deterministic seed")
+    exp_starved.add_argument("--model", default="qwen2.5-coder:14b", help="Local build+judge model")
+    exp_starved.add_argument(
+        "--base-dir",
+        default="~/.belief-engine/starved",
+        help="Base directory for run dirs (default: ~/.belief-engine/starved)",
+    )
+    exp_starved.add_argument(
+        "--minilm-revision", default="main", help="Pinned MiniLM HF revision (pin before pilot)"
+    )
+    exp_starved.add_argument(
+        "--probe-at", type=int, nargs="*", default=[], help="Generations to run the SWE-bench probe"
+    )
+    exp_starved.add_argument("--resume", action="store_true", help="Continue an existing run dir")
 
     # Session 3 (v3.2) follow-up: validator CLI
     validator_parser = subparsers.add_parser(

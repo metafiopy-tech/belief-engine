@@ -137,6 +137,40 @@ def log_generation(
     return rows
 
 
+def log_arm_generation(
+    experiment_id: str,
+    gen: int,
+    arm: str,
+    candidates: list[Candidate],
+    admitted_ids: list[str],
+    db_path: Path = DEFAULT_DB_PATH,
+) -> int:
+    """Log one arm's candidates for a generation (per-arm-builds variant).
+
+    Unlike :func:`log_generation` (which logs every candidate under BOTH arms
+    for a shared candidate set), the STARVED driver runs separate builds per
+    arm, so each arm's candidate list is logged only under that arm. Returns the
+    number of rows written.
+    """
+    db_path = Path(db_path).expanduser()
+    init_db(db_path)
+    admitted = set(admitted_ids)
+    for c in candidates:
+        log_admission_event(
+            experiment_id=experiment_id,
+            gen=gen,
+            build_id=c.build_id,
+            arm=arm,
+            fed_gate_pass=c.external_pass,
+            starved_self_score=c.self_score,
+            self_confidence=c.self_confidence,
+            admitted=c.build_id in admitted,
+            external_pass=c.external_pass,
+            db_path=db_path,
+        )
+    return len(candidates)
+
+
 def count_fictions(experiment_id: str, db_path: Path = DEFAULT_DB_PATH) -> int:
     """STARVED-admitted artifacts that failed the external test ("fictions").
 
