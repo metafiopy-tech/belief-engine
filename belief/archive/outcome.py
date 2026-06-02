@@ -49,6 +49,15 @@ class BuildOutcome:
     n_llm_calls: int = 0
     tokens_by_role: dict[str, int] = field(default_factory=dict)
 
+    # STARVED-arm experiment (docs/experiments/starved_arm_design.md): two
+    # independent admission signals carried on the same record so both arms read
+    # from one outcome. ``external_pass`` is the FED gate (real test/covenant
+    # execution); ``self_score`` is the STARVED gate (the build model's own
+    # LLM-as-judge score, no external test). Defaults make this backward
+    # compatible — pre-experiment rows simply carry the sentinel/False.
+    self_score: float = -1.0  # -1.0 = not judged
+    external_pass: bool = False
+
     # ------------------------------------------------------------------
     # Serialization
     # ------------------------------------------------------------------
