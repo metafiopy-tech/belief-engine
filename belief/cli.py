@@ -1273,8 +1273,33 @@ def _run_experiment_cmd(args) -> None:
         print(f"\n  Done. {summary}")
         return
 
+    if action == "starved-report":
+        from pathlib import Path as _Path
+
+        from belief.experiments.starved_report import format_report
+
+        run_dir = _Path(args.base_dir).expanduser() / args.experiment_id
+        print(format_report(run_dir, experiment_id=args.experiment_id))
+        return
+
+    if action == "starved-calibrate":
+        from pathlib import Path as _Path
+
+        from belief.experiments.starved_report import format_preregistration_block
+
+        run_dir = _Path(args.base_dir).expanduser() / args.experiment_id
+        print(
+            format_preregistration_block(
+                run_dir, kill_fraction=args.kill_fraction, n_full=args.n_full
+            )
+        )
+        return
+
     print(f"Unknown experiment action: {action!r}")
-    print("Try: belief experiment run | quick | report | longitudinal | ablation-synth | starved")
+    print(
+        "Try: belief experiment run | quick | report | longitudinal | ablation-synth | "
+        "starved | starved-report | starved-calibrate"
+    )
 
 
 def _run_validator_cmd(args) -> None:
@@ -1783,6 +1808,31 @@ def app():
         "--probe-at", type=int, nargs="*", default=[], help="Generations to run the SWE-bench probe"
     )
     exp_starved.add_argument("--resume", action="store_true", help="Continue an existing run dir")
+
+    # experiment starved-report / starved-calibrate (offline, Session 5)
+    exp_sreport = exp_sub.add_parser(
+        "starved-report", help="Report metrics for a STARVED run (both arms)"
+    )
+    exp_sreport.add_argument("--id", dest="experiment_id", required=True, help="Run id")
+    exp_sreport.add_argument(
+        "--base-dir", default="~/.belief-engine/starved", help="Base directory for run dirs"
+    )
+
+    exp_scal = exp_sub.add_parser(
+        "starved-calibrate",
+        help="Freeze the pre-registration band from the pilot FED arm ONLY",
+    )
+    exp_scal.add_argument("--id", dest="experiment_id", required=True, help="Pilot run id")
+    exp_scal.add_argument(
+        "--base-dir", default="~/.belief-engine/starved", help="Base directory for run dirs"
+    )
+    exp_scal.add_argument(
+        "--kill-fraction",
+        type=float,
+        required=True,
+        help="Fraction of N=full gens STARVED may stay in-band before thesis fails",
+    )
+    exp_scal.add_argument("--n-full", type=int, default=25, help="Full-run N (default: 25)")
 
     # Session 3 (v3.2) follow-up: validator CLI
     validator_parser = subparsers.add_parser(
