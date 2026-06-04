@@ -189,10 +189,25 @@ not modified — tasks are consumed, scoring is not touched.
 - **Full-run N:** **25**. **COMMITTED (2026-06-02).**
 - **Kill criterion (thesis FAILS):** the **differential PR (STARVED − FED)**
   stays inside the noise band for **≥ 0.50 (half) of N=25 generations** *and*
-  held-out success holds. Kill-fraction **COMMITTED cold (2026-06-02)** — set
-  before any data was seen, by τ-reasoning not observed wobble: tolerates ≤~12
-  gens of decay-onset latency while still being a genuine kill (>0.5 would make
-  the test unfalsifiable). Vetoed: any fraction > 0.5.
+  in-distribution build success holds (see scope narrowing below). Kill-fraction
+  **COMMITTED cold (2026-06-02)** — set before any data was seen, by τ-reasoning
+  not observed wobble: tolerates ≤~12 gens of decay-onset latency while still
+  being a genuine kill (>0.5 would make the test unfalsifiable). Vetoed: any
+  fraction > 0.5.
+- **Held-out (SWE-bench Verified) probe — SCOPE NARROWED to UNMEASURED
+  (2026-06-04, pre-registered fallback).** §7 originally referenced "held-out
+  success." The probe was wired (commit 36f250c) and gated on a one-instance
+  feasibility smoke (`sympy__sympy-20590` vs pilot STARVED soil). Result: the
+  engine's brownfield fix with the local 14B produced **no valid patch at all**
+  (`PatchSampler: no valid patches generated` every iteration; role budgets
+  exhausted on a repo-scale codebase), so resolution floors at 0 for *both* arms
+  and the probe cannot discriminate FED from STARVED. Per the pre-registered
+  gate (floors → narrow), the thesis is adjudicated on the **soil-collapse legs
+  (differential PR + Hill q=1) and the in-distribution build-success leg**;
+  held-out generalization is **unmeasured**, not failed. The probe code remains
+  and is reusable with a stronger/cloud fixer model; this run does not use it.
+  This narrowing was made before the full run, by the cold-committed fallback —
+  not after seeing any N=25 result.
 - **Noise band (FROZEN from pilot, 2026-06-04):** band is on the **differential
   PR (STARVED − FED)**, mean ± 2σ over the pilot's 10 matched generations.
   `mean = 0.6283`, `σ = 0.3987` → **band = [−0.1692, 1.4258]**.
@@ -212,8 +227,9 @@ not modified — tasks are consumed, scoring is not touched.
     before the full run and before any divergence exists.
 - **Thesis HOLDS:** the differential PR (STARVED − FED) trends **below band_low**
   (STARVED running down relative to FED) for more than half of N=25, jointly with
-  Hill moving the same direction; held-out / in-distribution build success
-  degrades; AR(1) of the differential rises before the floor.
+  Hill moving the same direction; **in-distribution** build success degrades
+  (held-out unmeasured, see scope narrowing); AR(1) of the differential rises
+  before the floor.
 
 **Pilot-scale cautions (pre-recorded so they can't be argued after the fact):**
 
