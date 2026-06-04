@@ -25,13 +25,25 @@ See the manual-verification checklist in the session handoff.
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 import sqlite3
+import subprocess
+import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:  # avoid import cycle at runtime
     from belief.experiments.starved_runner import ProbeResult, StarvedConfig
+
+logger = logging.getLogger("belief.experiments.swebench_probe")
+
+# Official SWE-bench Verified dataset + the model label written into predictions.
+SWEBENCH_DATASET = "princeton-nlp/SWE-bench_Verified"
+PREDICTION_MODEL_LABEL = "belief-engine"
 
 
 # ---------------------------------------------------------------------------
@@ -119,40 +131,208 @@ SWEBENCH_VERIFIED_PROBE_INSTANCES: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
-# Real harness seam (must be wired on the Mac)
+# Real harness seams — three injectable stages (loader / predictor / evaluator)
 # ---------------------------------------------------------------------------
+#
+# The full resolution path only runs on a machine with HuggingFace `datasets`,
+# git, and a Docker daemon (the official `swebench` harness). Each stage is
+# injectable so the orchestration is unit-testable with fakes; the defaults below
+# are the real Mac path, verified by the one-instance smoke before the full run.
 
 
-def run_instances(instance_ids: tuple[str, ...], soil_dir: Path) -> int:
-    """Attempt SWE-bench Verified instances against ``soil_dir``; return #resolved.
+def load_verified_instances(
+    instance_ids: tuple[str, ...],
+    *,
+    dataset_name: str = SWEBENCH_DATASET,
+) -> list[dict]:
+    """Pull full SWE-bench Verified records for ``instance_ids`` via HF datasets.
 
-    NOT yet wired: the real path loads the SWE-bench Verified dataset, runs each
-    instance through the engine (brownfield fix) with ``BELIEF_SOIL_PATH`` set to
-    ``soil_dir`` and the external test executed only to score resolution, then
-    counts resolved instances via the official harness. This needs the dataset +
-    Docker runtime and is verified on the Mac per the manual checklist.
-
-    Raising (rather than returning a fake count) is deliberate: an unimplemented
-    probe must fail loudly so a run never records a fabricated resolve rate.
+    The lean mirror (swebench_mirror) lacks base_commit / FAIL_TO_PASS / test_patch,
+    so resolution needs the full dataset rows. Returns the records in the order of
+    ``instance_ids``.
     """
-    raise NotImplementedError(
-        "SWE-bench Verified harness not wired. Pin SWEBENCH_VERIFIED_PROBE_INSTANCES "
-        "and implement run_instances against the dataset+Docker harness on the Mac "
-        "before enabling --probe-at. See starved_arm_design.md and the session checklist."
-    )
+    from datasets import load_dataset  # heavy, Mac-only
+
+    ds = load_dataset(dataset_name, split="test")
+    wanted = set(instance_ids)
+    by_id = {row["instance_id"]: dict(row) for row in ds if row["instance_id"] in wanted}
+    missing = wanted - set(by_id)
+    if missing:
+        raise ValueError(f"instance_ids not found in {dataset_name}: {sorted(missing)}")
+    return [by_id[i] for i in instance_ids]
+
+
+def generate_prediction(instance: dict, soil_dir: Path, *, model: str) -> dict:
+    """Produce one SWE-bench prediction by running the engine's brownfield fix.
+
+    Clones the repo at ``base_commit`` into a temp dir, runs ``brownfield.fix_issue``
+    on the problem statement with ``BELIEF_SOIL_PATH`` set to the arm soil (so the
+    arm's accumulated soil informs the fix), then captures ``git diff`` as the
+    ``model_patch``. Returns the official prediction dict. A failed fix yields an
+    empty patch (which the harness scores as unresolved) rather than raising.
+    """
+    import asyncio
+
+    instance_id = instance["instance_id"]
+    repo = instance["repo"]  # e.g. "django/django"
+    base_commit = instance["base_commit"]
+    problem = instance["problem_statement"]
+
+    prev_soil = os.environ.get("BELIEF_SOIL_PATH")
+    prev_mode = os.environ.get("BELIEF_MODEL_MODE")
+    prev_local = os.environ.get("BELIEF_LOCAL_MODEL")
+    os.environ["BELIEF_SOIL_PATH"] = str(soil_dir)
+    os.environ["BELIEF_MODEL_MODE"] = "local"
+    os.environ["BELIEF_LOCAL_MODEL"] = model
+    patch = ""
+    try:
+        with tempfile.TemporaryDirectory(prefix=f"swebench-{instance_id}-") as tmp:
+            repo_dir = Path(tmp) / "repo"
+            url = f"https://github.com/{repo}.git"
+            subprocess.run(["git", "clone", "--quiet", url, str(repo_dir)], check=True, timeout=900)
+            subprocess.run(
+                ["git", "-C", str(repo_dir), "checkout", "--quiet", base_commit],
+                check=True,
+                timeout=120,
+            )
+            from belief.agents.brownfield_agent import fix_issue
+
+            asyncio.run(fix_issue(repo_dir, problem))
+            diff = subprocess.run(
+                ["git", "-C", str(repo_dir), "diff"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            patch = diff.stdout or ""
+    except Exception as e:  # pragma: no cover - real-path failure, logged not raised
+        logger.warning("prediction failed for %s: %s", instance_id, e)
+        patch = ""
+    finally:
+        _restore_env("BELIEF_SOIL_PATH", prev_soil)
+        _restore_env("BELIEF_MODEL_MODE", prev_mode)
+        _restore_env("BELIEF_LOCAL_MODEL", prev_local)
+
+    return {
+        "instance_id": instance_id,
+        "model_name_or_path": PREDICTION_MODEL_LABEL,
+        "model_patch": patch,
+    }
+
+
+def _restore_env(key: str, prev: Optional[str]) -> None:
+    if prev is None:
+        os.environ.pop(key, None)
+    else:
+        os.environ[key] = prev
+
+
+def evaluate_predictions(
+    predictions: list[dict],
+    instance_ids: tuple[str, ...],
+    *,
+    run_id: str,
+    dataset_name: str = SWEBENCH_DATASET,
+    work_dir: Optional[Path] = None,
+) -> set[str]:
+    """Run the official SWE-bench harness (Docker) and return resolved instance ids.
+
+    Writes predictions to JSONL, invokes ``python -m swebench.harness.run_evaluation``,
+    and parses ``resolved_ids`` from the emitted report JSON. Empty patches are
+    skipped (counted as unresolved) so the harness isn't asked to evaluate no-ops.
+    """
+    work_dir = Path(work_dir or tempfile.mkdtemp(prefix=f"swebench-eval-{run_id}-"))
+    work_dir.mkdir(parents=True, exist_ok=True)
+    preds_path = work_dir / "predictions.jsonl"
+    nonempty = [p for p in predictions if p.get("model_patch", "").strip()]
+    preds_path.write_text("\n".join(json.dumps(p) for p in nonempty))
+    if not nonempty:
+        return set()  # nothing applied -> nothing resolved; skip Docker entirely
+
+    cmd = [
+        "python",
+        "-m",
+        "swebench.harness.run_evaluation",
+        "--dataset_name",
+        dataset_name,
+        "--predictions_path",
+        str(preds_path),
+        "--run_id",
+        run_id,
+        "--instance_ids",
+        *instance_ids,
+        "--max_workers",
+        "1",
+        "--cache_level",
+        "env",
+    ]
+    subprocess.run(cmd, cwd=str(work_dir), check=False, timeout=7200)
+
+    # The harness writes <model>.<run_id>.json with a "resolved_ids" list.
+    report = work_dir / f"{PREDICTION_MODEL_LABEL}.{run_id}.json"
+    if not report.exists():
+        # Fall back to a recursive search; harness output location varies by version.
+        candidates = list(work_dir.rglob(f"*{run_id}*.json"))
+        report = candidates[0] if candidates else report
+    if not report.exists():
+        logger.warning("no SWE-bench report found under %s", work_dir)
+        return set()
+    data = json.loads(report.read_text())
+    return set(data.get("resolved_ids", []))
+
+
+def run_instances(
+    instance_ids: tuple[str, ...],
+    soil_dir: Path,
+    *,
+    model: str = "qwen2.5-coder:14b",
+    run_id: Optional[str] = None,
+    loader: Callable[..., list[dict]] = load_verified_instances,
+    predictor: Callable[..., dict] = generate_prediction,
+    evaluator: Callable[..., set[str]] = evaluate_predictions,
+) -> int:
+    """Attempt SWE-bench Verified ``instance_ids`` against ``soil_dir``; return #resolved.
+
+    Composes the three seams: load full instances → generate a brownfield-fix
+    prediction per instance (soil-informed) → evaluate via the official harness.
+    The three stages are injectable so this orchestration is unit-tested without
+    Docker; the defaults are the real Mac path.
+    """
+    rid = run_id or f"probe-{int(time.time())}"
+    instances = loader(instance_ids)
+    predictions = [predictor(inst, soil_dir, model=model) for inst in instances]
+    resolved = evaluator(predictions, instance_ids, run_id=rid)
+    return len(resolved)
+
+
+def smoke_one(instance_id: str, soil_dir: Path, *, model: str = "qwen2.5-coder:14b") -> dict:
+    """One-instance feasibility smoke: resolve a single instance + time it.
+
+    The decision gate before committing the full run to the probe — returns
+    ``{instance_id, resolved, wall_clock_s}`` so a 14B's actual resolve outcome
+    and per-instance cost are visible before wiring the checkpoint harness.
+    """
+    t0 = time.time()
+    n_resolved = run_instances((instance_id,), Path(soil_dir), model=model)
+    return {
+        "instance_id": instance_id,
+        "resolved": bool(n_resolved),
+        "wall_clock_s": round(time.time() - t0, 1),
+    }
 
 
 def make_probe_fn(
     config: "StarvedConfig",
     instance_ids: Optional[tuple[str, ...]] = None,
-    runner: Callable[[tuple[str, ...], Path], int] = run_instances,
+    runner: Optional[Callable[[tuple[str, ...], Path], int]] = None,
 ) -> Callable[[int, str, Path], "ProbeResult"]:
     """Build the ``(gen, arm, soil_dir) -> ProbeResult`` probe callable.
 
-    ``runner`` is injectable so tests can supply a deterministic resolver; the
-    default is the real (currently unimplemented) harness seam. Refuses to build
-    a probe with an empty instance set, so ``--probe-at`` cannot silently run a
-    zero-instance probe.
+    ``runner`` is injectable so tests can supply a deterministic resolver; when
+    omitted the real :func:`run_instances` path is used, bound to the config's
+    local model and a stable per-(gen, arm) run_id. Refuses to build a probe with
+    an empty instance set, so ``--probe-at`` cannot silently run a zero-instance
+    probe.
     """
     ids = instance_ids if instance_ids is not None else SWEBENCH_VERIFIED_PROBE_INSTANCES
     if not ids:
@@ -164,7 +344,15 @@ def make_probe_fn(
     def _probe(gen: int, arm: str, soil_dir: Path) -> "ProbeResult":
         from belief.experiments.starved_runner import ProbeResult
 
-        n_resolved = runner(ids, soil_dir)
+        if runner is not None:
+            n_resolved = runner(ids, soil_dir)
+        else:
+            n_resolved = run_instances(
+                ids,
+                soil_dir,
+                model=config.local_model,
+                run_id=f"{config.experiment_id}-g{gen}-{arm}",
+            )
         return ProbeResult(gen=gen, arm=arm, n_instances=len(ids), n_resolved=n_resolved)
 
     return _probe

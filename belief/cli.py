@@ -1295,6 +1295,20 @@ def _run_experiment_cmd(args) -> None:
         )
         return
 
+    if action == "starved-probe-smoke":
+        from pathlib import Path as _Path
+
+        from belief.experiments.swebench_probe import smoke_one
+
+        result = smoke_one(args.instance, _Path(args.soil).expanduser(), model=args.model)
+        print(f"\n  SWE-bench smoke: {result}")
+        print(
+            "\n  Decision gate: if resolved=True (or non-floor across a few instances), "
+            "wire the probe into the full run via --probe-at. If it floors at unresolved, "
+            "narrow §7 to the in-distribution-success leg instead."
+        )
+        return
+
     print(f"Unknown experiment action: {action!r}")
     print(
         "Try: belief experiment run | quick | report | longitudinal | ablation-synth | "
@@ -1833,6 +1847,17 @@ def app():
         help="Fraction of N=full gens STARVED may stay in-band before thesis fails",
     )
     exp_scal.add_argument("--n-full", type=int, default=25, help="Full-run N (default: 25)")
+
+    # experiment starved-probe-smoke (SWE-bench feasibility gate, Session 6)
+    exp_smoke = exp_sub.add_parser(
+        "starved-probe-smoke",
+        help="One-instance SWE-bench Verified resolve smoke (needs Docker + swebench)",
+    )
+    exp_smoke.add_argument("--instance", required=True, help="SWE-bench Verified instance_id")
+    exp_smoke.add_argument(
+        "--soil", required=True, help="Soil dir to inform the fix (e.g. a pilot arm soil)"
+    )
+    exp_smoke.add_argument("--model", default="qwen2.5-coder:14b", help="Local model")
 
     # Session 3 (v3.2) follow-up: validator CLI
     validator_parser = subparsers.add_parser(

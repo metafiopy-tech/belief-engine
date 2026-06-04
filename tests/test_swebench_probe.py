@@ -66,6 +66,61 @@ def test_make_probe_fn_refuses_empty_instances(tmp_path):
         swebench_probe.make_probe_fn(_config(tmp_path), instance_ids=())
 
 
-def test_run_instances_not_implemented(tmp_path):
-    with pytest.raises(NotImplementedError):
-        swebench_probe.run_instances(("a",), tmp_path / "soil")
+def test_run_instances_composes_seams(tmp_path):
+    # Injected loader/predictor/evaluator -> orchestration without Docker/datasets.
+    seen = {}
+
+    def fake_loader(ids, **kw):
+        seen["ids"] = ids
+        return [{"instance_id": i} for i in ids]
+
+    def fake_predictor(inst, soil_dir, *, model):
+        return {"instance_id": inst["instance_id"], "model_patch": "diff"}
+
+    def fake_evaluator(preds, ids, *, run_id, **kw):
+        # Resolve the first instance only.
+        return {ids[0]}
+
+    n = swebench_probe.run_instances(
+        ("a", "b", "c"),
+        tmp_path / "soil",
+        loader=fake_loader,
+        predictor=fake_predictor,
+        evaluator=fake_evaluator,
+    )
+    assert n == 1
+    assert seen["ids"] == ("a", "b", "c")
+
+
+def test_run_instances_zero_resolved(tmp_path):
+    def empty_patch(inst, soil, *, model):
+        return {"instance_id": inst["instance_id"], "model_patch": ""}
+
+    n = swebench_probe.run_instances(
+        ("a",),
+        tmp_path / "soil",
+        loader=lambda ids, **kw: [{"instance_id": i} for i in ids],
+        predictor=empty_patch,
+        evaluator=lambda preds, ids, *, run_id, **kw: set(),
+    )
+    assert n == 0
+
+
+def test_evaluate_predictions_skips_empty_patches(tmp_path):
+    # All-empty patches -> harness never invoked, returns empty set.
+    resolved = swebench_probe.evaluate_predictions(
+        [{"instance_id": "a", "model_patch": "  "}],
+        ("a",),
+        run_id="t",
+        work_dir=tmp_path,
+    )
+    assert resolved == set()
+
+
+def test_make_probe_fn_uses_injected_runner_over_real(tmp_path):
+    # When a runner is injected, the real run_instances path is not used.
+    probe = swebench_probe.make_probe_fn(
+        _config(tmp_path), instance_ids=("a", "b"), runner=lambda ids, soil: 2
+    )
+    res = probe(0, "FED", tmp_path / "soil")
+    assert res.n_instances == 2 and res.n_resolved == 2
