@@ -178,8 +178,8 @@ not modified — tasks are consumed, scoring is not touched.
 ## 7. Pre-registration block
 
 > Items marked COMMITTED were fixed **cold, before the pilot/model pull** — they
-> bind future decisions and must not change. The band σ is the ONLY value filled
-> post-pilot (from the FED arm only). Do not edit after the full run begins.
+> bind future decisions and must not change. The noise band is the ONLY value
+> filled post-pilot. Do not edit after the full run begins.
 
 - **Co-headline metric for adjudication:** differential PR (centered-Gram) and
   Hill q=1, **joint-direction** — thesis supported only if both trends move the
@@ -187,18 +187,33 @@ not modified — tasks are consumed, scoring is not touched.
 - **Frozen k-means k:** `k = 8`, asserted at compute time and recorded per
   snapshot. **COMMITTED (2026-06-02).**
 - **Full-run N:** **25**. **COMMITTED (2026-06-02).**
-- **Kill criterion (thesis FAILS):** STARVED stays inside the FED ±2σ band for
-  **≥ 0.50 (half) of N=25 generations** *and* held-out success holds.
-  **COMMITTED cold (2026-06-02)** — set before any data was seen, by τ-reasoning
-  not observed wobble: tolerates ≤~12 gens of decay-onset latency while still
-  being a genuine kill (>0.5 would make the test unfalsifiable). Vetoed: any
-  fraction > 0.5.
-- **Noise band:** FED-arm **±2σ** of per-generation PR, σ taken from the pilot
-  FED arm only via `belief experiment starved-calibrate`. `σ = ____` (filled
-  post-pilot). Band = `____ ± ____`. **(σ is the only post-pilot value.)**
-- **Thesis HOLDS:** STARVED PR decays toward a small fixed point (fit τ as
-  generations-to-run-down), held-out build success degrades, AR(1) rises before
-  the floor; FED stays inside its band or climbs.
+- **Kill criterion (thesis FAILS):** the **differential PR (STARVED − FED)**
+  stays inside the noise band for **≥ 0.50 (half) of N=25 generations** *and*
+  held-out success holds. Kill-fraction **COMMITTED cold (2026-06-02)** — set
+  before any data was seen, by τ-reasoning not observed wobble: tolerates ≤~12
+  gens of decay-onset latency while still being a genuine kill (>0.5 would make
+  the test unfalsifiable). Vetoed: any fraction > 0.5.
+- **Noise band (FROZEN from pilot, 2026-06-04):** band is on the **differential
+  PR (STARVED − FED)**, mean ± 2σ over the pilot's 10 matched generations.
+  `mean = 0.6283`, `σ = 0.3987` → **band = [−0.1692, 1.4258]**.
+  - **Band-definition correction (transparent, pre-full-run):** §7 originally
+    specified the band on *absolute FED PR*. The pilot showed the FED arm is
+    **non-stationary** — PR ramps 2.51 → 13.93 as the soil fills (PR is rank-
+    ceilinged at n−1 in the n<dims regime), so an absolute-FED σ is dominated by
+    that accumulation *trend*, not by noise, and the resulting band [2.46, 17.48]
+    is degenerate (FED's own gen-0 sits on the floor) and biased toward
+    non-detection (STARVED could only exit by catastrophic absolute collapse).
+    The band was therefore moved to the **differential**, which (a) cancels the
+    shared accumulation ramp, (b) is a two-sided instrument that can be broken in
+    either direction, and (c) matches the §2.1 committed headline (PR adjudicated
+    *as a differential*). The pilot's STARVED snapshots are used **only for the
+    gen-to-gen noise of the differential**, not its shape — and the pilot shows
+    no divergence, so there is no collapse signal to tune to. Correction made
+    before the full run and before any divergence exists.
+- **Thesis HOLDS:** the differential PR (STARVED − FED) trends **below band_low**
+  (STARVED running down relative to FED) for more than half of N=25, jointly with
+  Hill moving the same direction; held-out / in-distribution build success
+  degrades; AR(1) of the differential rises before the floor.
 
 **Pilot-scale cautions (pre-recorded so they can't be argued after the fact):**
 
