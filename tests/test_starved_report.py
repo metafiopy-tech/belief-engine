@@ -14,6 +14,8 @@ from belief.experiments import admission_log
 from belief.experiments.admission import Candidate, select_admissions
 from belief.experiments.soil_snapshot import GenerationSnapshot, save_snapshot
 from belief.experiments.starved_report import (
+    build_success_by_gen,
+    calibrate_differential_band,
     calibrate_fed_band,
     compute_run_metrics,
     format_preregistration_block,
@@ -52,7 +54,7 @@ def _make_run(tmp_path, *, n_gens=8, collapse_starved=True):
         # STARVED: variance along non-dominant axes shrinks with generation.
         starved_X = rng.normal(size=(n_pts, dim))
         if collapse_starved:
-            shrink = max(0.02, 1.0 - gen / (n_gens - 1))
+            shrink = max(0.02, 1.0 - gen / max(1, n_gens - 1))
             starved_X[:, 1:] *= shrink  # collapse all but the first axis
             starved_X[:, 0] *= 5.0  # dominant direction grows
         _write_snap(snap_dir, "STARVED", gen, starved_X)
@@ -183,3 +185,94 @@ def test_prereg_block_contains_band_and_kill_fraction(tmp_path):
     assert "N=25" in block
     assert "50%" in block
     assert "joint-direction" in block
+    # Now uses the differential band, not the absolute FED band.
+    assert "STARVED-FED" in block
+
+
+# ---------------------------------------------------------------------------
+# Differential band (the neutral instrument)
+# ---------------------------------------------------------------------------
+
+
+def test_differential_band_cancels_shared_ramp(tmp_path):
+    # Both arms ride the SAME isotropic cloud per gen -> differential ~ 0,
+    # with a small noise band, even though absolute PR ramps with n.
+    run_dir = tmp_path / "twin"
+    snap_dir = run_dir / "snapshots"
+    snap_dir.mkdir(parents=True)
+    rng = np.random.default_rng(0)
+    for gen in range(8):
+        n_pts = 4 * (gen + 1)  # accumulation ramp
+        _write_snap(snap_dir, "FED", gen, rng.normal(size=(n_pts, 16)))
+        _write_snap(snap_dir, "STARVED", gen, rng.normal(size=(n_pts, 16)))
+    band = calibrate_differential_band(run_dir, sigma_mult=2.0)
+    assert band["n_gens"] == 8
+    # The differential band straddles zero (no systematic divergence).
+    assert band["band_low"] < 0 < band["band_high"]
+    # And it's far tighter than the absolute FED band over the same ramp.
+    fed_band = calibrate_fed_band(run_dir)
+    assert (band["band_high"] - band["band_low"]) < (fed_band["band_high"] - fed_band["band_low"])
+
+
+def test_differential_band_detects_collapse(tmp_path):
+    # STARVED collapses each gen -> differential goes negative.
+    run_dir = _make_run(tmp_path, n_gens=8, collapse_starved=True)
+    band = calibrate_differential_band(run_dir)
+    assert band["n_gens"] == 8
+    assert "diff_mean" in band and "band_low" in band
+
+
+def test_differential_band_raises_without_both_arms(tmp_path):
+    run_dir = tmp_path / "fedonly"
+    snap_dir = run_dir / "snapshots"
+    snap_dir.mkdir(parents=True)
+    _write_snap(snap_dir, "FED", 0, np.random.default_rng(0).normal(size=(8, 16)))
+    with pytest.raises(ValueError):
+        calibrate_differential_band(run_dir)
+
+
+def test_report_shows_differential_section(tmp_path):
+    run_dir = _make_run(tmp_path, n_gens=6)
+    report = format_report(run_dir)
+    assert "DIFFERENTIAL  STARVED − FED" in report or "DIFFERENTIAL" in report
+    assert "PR diff:" in report
+
+
+# ---------------------------------------------------------------------------
+# Build-success-rate (3rd prediction leg)
+# ---------------------------------------------------------------------------
+
+
+def test_build_success_by_gen_from_log(tmp_path):
+    run_dir = _make_run(tmp_path, n_gens=1)
+    db = run_dir / "admissions.db"
+    # gen 0 FED: one pass + one fail -> 0.5; STARVED: one fail -> 0.0
+    cands = [
+        Candidate("a", external_score=0.9, external_pass=True, self_score=0.5),
+        Candidate("b", external_score=0.1, external_pass=False, self_score=0.5),
+    ]
+    res = select_admissions(cands, k=1)
+    admission_log.log_arm_generation("pilot", 0, "FED", cands, res.admitted_for("FED"), db_path=db)
+    starved_cands = [Candidate("c", external_score=0.1, external_pass=False, self_score=0.9)]
+    sres = select_admissions(starved_cands, k=1)
+    admission_log.log_arm_generation(
+        "pilot", 0, "STARVED", starved_cands, sres.admitted_for("STARVED"), db_path=db
+    )
+    success = build_success_by_gen("pilot", db)
+    assert success["FED"][0] == pytest.approx(0.5)
+    assert success["STARVED"][0] == pytest.approx(0.0)
+
+
+def test_build_success_empty_when_no_db(tmp_path):
+    assert build_success_by_gen("pilot", tmp_path / "nope.db") == {}
+
+
+def test_report_shows_build_success(tmp_path):
+    run_dir = _make_run(tmp_path, n_gens=1)
+    cands = [Candidate("a", external_score=0.9, external_pass=True, self_score=0.5)]
+    res = select_admissions(cands, k=1)
+    admission_log.log_arm_generation(
+        "pilot", 0, "FED", cands, res.admitted_for("FED"), db_path=run_dir / "admissions.db"
+    )
+    report = format_report(run_dir, experiment_id="pilot")
+    assert "Build success rate on authored stream" in report

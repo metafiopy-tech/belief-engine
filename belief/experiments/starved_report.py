@@ -171,6 +171,86 @@ def calibrate_fed_band(run_dir: Path, *, sigma_mult: float = 2.0) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Differential band (the neutral, unbiased adjudication instrument)
+# ---------------------------------------------------------------------------
+
+
+def _aligned_differential(run_dir: Path, metric: str) -> tuple[list[int], list[float]]:
+    """Return (gens, STARVED−FED) for ``metric`` ('pr' or 'hill'), matched by gen.
+
+    The shared accumulation ramp (PR rises with nutrient count in the n<dims
+    regime) cancels in the difference, so this is the trend-free signal the
+    thesis is actually about (design doc §2.1). Only generations present in BOTH
+    arms are used.
+    """
+    fed = {s.gen: s for s in load_arm_snapshots(run_dir, "FED")}
+    starved = {s.gen: s for s in load_arm_snapshots(run_dir, "STARVED")}
+    gens = sorted(set(fed) & set(starved))
+
+    def _val(snap) -> float:
+        return participation_ratio(snap.X) if metric == "pr" else hill_q1(snap.X, snap.kmeans_k)
+
+    diff = [_val(starved[g]) - _val(fed[g]) for g in gens]
+    return gens, diff
+
+
+def calibrate_differential_band(run_dir: Path, *, sigma_mult: float = 2.0) -> dict:
+    """Noise band on the per-generation differential PR (STARVED − FED).
+
+    This is the *neutral* instrument: the differential can move in either
+    direction, so the band can be broken by a real relative collapse rather than
+    only by catastrophic absolute implosion. The band is the gen-to-gen wobble of
+    the differential under no divergence (the pilot regime), NOT its shape.
+
+    Returns ``{n_gens, diff_mean, diff_std, sigma_mult, band_low, band_high}``.
+    """
+    import numpy as np
+
+    gens, diff = _aligned_differential(run_dir, "pr")
+    if not diff:
+        raise ValueError(f"no matched FED+STARVED snapshots under {run_dir}")
+    arr = np.asarray(diff, dtype=np.float64)
+    mean = float(arr.mean())
+    std = float(arr.std(ddof=1)) if arr.size >= 2 else 0.0
+    return {
+        "n_gens": len(diff),
+        "diff_mean": mean,
+        "diff_std": std,
+        "sigma_mult": sigma_mult,
+        "band_low": mean - sigma_mult * std,
+        "band_high": mean + sigma_mult * std,
+    }
+
+
+# ---------------------------------------------------------------------------
+# In-distribution build success (the 3rd pre-registered leg)
+# ---------------------------------------------------------------------------
+
+
+def build_success_by_gen(experiment_id: str, db_path: Path) -> dict[str, dict[int, float]]:
+    """Per-arm, per-generation build-success rate on the authored task stream.
+
+    ``rate = mean(external_pass)`` over *all* of that arm's candidates in a
+    generation (admitted or not). The raw data already lives in the admission
+    log; this surfaces it so the "held-out/in-distribution build success
+    degrades" leg of the prediction lands in the artifact instead of requiring a
+    manual SQL query. Returns ``{}`` if the log is absent.
+    """
+    db_path = Path(db_path).expanduser()
+    if not db_path.exists():
+        return {}
+    from belief.experiments.admission_log import fetch_events
+
+    agg: dict[str, dict[int, list[int]]] = {}
+    for ev in fetch_events(experiment_id, db_path=db_path):
+        agg.setdefault(ev["arm"], {}).setdefault(ev["gen"], []).append(int(ev["external_pass"]))
+    return {
+        arm: {gen: (sum(v) / len(v) if v else 0.0) for gen, v in sorted(by_gen.items())}
+        for arm, by_gen in agg.items()
+    }
+
+
+# ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
 
@@ -211,6 +291,28 @@ def format_report(run_dir: Path, *, experiment_id: str | None = None) -> str:
                 f"  decay  Hill: tau={s.hill_decay.tau:.2f} a={s.hill_decay.a:.3f} "
                 f"c={s.hill_decay.c:.3f} r2={s.hill_decay.r_squared:.3f}"
             )
+    # Differential (STARVED − FED) — the neutral, ramp-cancelled signal.
+    pr_gens, pr_diff = _aligned_differential(run_dir, "pr")
+    _, hill_diff = _aligned_differential(run_dir, "hill")
+    if pr_diff:
+        lines.append("")
+        lines.append("[DIFFERENTIAL  STARVED − FED]  (adjudication signal; ramp cancels)")
+        lines.append(f"  generations: {pr_gens}")
+        lines.append(f"  PR diff:   {_fmt_floats(pr_diff)}")
+        lines.append(f"  Hill diff: {_fmt_floats(hill_diff)}")
+        lines.append(f"  AR(1) PR-diff={ar1(pr_diff):.3f}  Hill-diff={ar1(hill_diff):.3f}")
+
+    # In-distribution build success per arm per generation (3rd prediction leg).
+    success = build_success_by_gen(rm.experiment_id, run_dir / "admissions.db")
+    if success:
+        lines.append("")
+        lines.append("Build success rate on authored stream (external_pass):")
+        for arm in ARMS:
+            by_gen = success.get(arm)
+            if by_gen:
+                rates = [by_gen[g] for g in sorted(by_gen)]
+                lines.append(f"  {arm}: {_fmt_floats(rates)}")
+
     lines.append("")
     lines.append(f"STARVED fictions admitted (failed external test): {rm.fictions}")
     lines.append("")
@@ -240,24 +342,29 @@ def format_preregistration_block(
     n_full: int = 25,
     sigma_mult: float = 2.0,
 ) -> str:
-    """Emit the frozen §7 pre-registration block from the FED-only band.
+    """Emit the frozen §7 pre-registration block from the DIFFERENTIAL band.
 
-    Intended to be pasted into ``docs/experiments/starved_arm_design.md`` §7 as a
-    deliberate human act — calibration computes the numbers, the human commits
-    them. ``kill_fraction`` must be named explicitly (no default) up front.
+    Uses the per-generation differential PR (STARVED − FED), which cancels the
+    shared accumulation ramp and is the neutral instrument the thesis is about
+    (design doc §2.1) — not the absolute FED band, which the pilot showed is
+    trend-contaminated and biased toward non-detection. Intended to be pasted
+    into ``docs/experiments/starved_arm_design.md`` §7 as a deliberate human act.
+    ``kill_fraction`` must be named explicitly up front.
     """
-    band = calibrate_fed_band(run_dir, sigma_mult=sigma_mult)
+    band = calibrate_differential_band(run_dir, sigma_mult=sigma_mult)
     return "\n".join(
         [
-            "PRE-REGISTRATION (frozen from pilot FED arm; do not edit after full run begins)",
+            "PRE-REGISTRATION (frozen from pilot; do not edit after full run begins)",
             "- Co-headline: differential PR (centered-Gram) + Hill q=1, joint-direction.",
-            f"- FED-arm PR over pilot: mean={band['pr_mean']:.4f}, "
-            f"sigma={band['pr_std']:.4f} (n={band['n_gens']} gens).",
-            f"- Noise band: FED mean +/- {sigma_mult:g}sigma = "
+            f"- Differential PR (STARVED-FED) over pilot: mean={band['diff_mean']:.4f}, "
+            f"sigma={band['diff_std']:.4f} (n={band['n_gens']} matched gens).",
+            f"- Noise band: diff mean +/- {sigma_mult:g}sigma = "
             f"[{band['band_low']:.4f}, {band['band_high']:.4f}].",
             f"- Full-run N: {n_full}.",
-            f"- Kill criterion (thesis FAILS): STARVED PR stays inside the band for "
-            f">= {kill_fraction:.0%} of N={n_full} generations AND held-out success holds.",
+            f"- Kill criterion (thesis FAILS): differential PR (STARVED-FED) stays inside "
+            f"the band for >= {kill_fraction:.0%} of N={n_full} generations AND held-out "
+            "success holds. Thesis HOLDS if the differential trends below band_low (STARVED "
+            "running down relative to FED), jointly with Hill.",
             "- Caveat: a flat pilot is uninformative about slow decay (tau > ~6-7); "
             "only the full run adjudicates.",
         ]
