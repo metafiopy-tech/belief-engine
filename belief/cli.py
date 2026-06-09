@@ -1309,6 +1309,15 @@ def _run_experiment_cmd(args) -> None:
         )
         return
 
+    if action == "starved-explore":
+        from pathlib import Path as _Path
+
+        from belief.experiments.starved_explore import format_exploration
+
+        run_dir = _Path(args.base_dir).expanduser() / args.experiment_id
+        print(format_exploration(run_dir, experiment_id=args.experiment_id))
+        return
+
     print(f"Unknown experiment action: {action!r}")
     print(
         "Try: belief experiment run | quick | report | longitudinal | ablation-synth | "
@@ -1858,6 +1867,16 @@ def app():
         "--soil", required=True, help="Soil dir to inform the fix (e.g. a pilot arm soil)"
     )
     exp_smoke.add_argument("--model", default="qwen2.5-coder:14b", help="Local model")
+
+    # experiment starved-explore (offline post-hoc exploration, read-only)
+    exp_explore = exp_sub.add_parser(
+        "starved-explore",
+        help="Offline post-hoc probes on a finished STARVED run (Hill paradox, slopes, etc.)",
+    )
+    exp_explore.add_argument("--id", dest="experiment_id", required=True, help="Run id")
+    exp_explore.add_argument(
+        "--base-dir", default="~/.belief-engine/starved", help="Base directory for run dirs"
+    )
 
     # Session 3 (v3.2) follow-up: validator CLI
     validator_parser = subparsers.add_parser(
