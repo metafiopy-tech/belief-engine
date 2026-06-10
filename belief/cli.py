@@ -1318,6 +1318,44 @@ def _run_experiment_cmd(args) -> None:
         print(format_exploration(run_dir, experiment_id=args.experiment_id))
         return
 
+    if action == "ablate":
+        import random as _random
+        from pathlib import Path as _Path
+
+        from belief.benchmark import CHALLENGES
+        from belief.experiments.ablation import (
+            AblationConfig,
+            ManifestDriftError,
+            RunDirNotEmptyError,
+            format_report,
+            make_default_runner,
+            soundness_arms,
+        )
+
+        seed_soil = _Path(args.seed_soil).expanduser() if args.seed_soil else None
+        pool = sorted(((c.id, c.goal) for c in CHALLENGES), key=lambda t: t[0])
+        _random.Random(args.seed).shuffle(pool)
+        tasks = pool[: args.tasks]
+
+        config = AblationConfig(
+            experiment_id=args.experiment_id,
+            base_dir=_Path(args.base_dir),
+            arms=soundness_arms(seed_soil=seed_soil),
+            tasks=tasks,
+            baseline="baseline",
+            seed=args.seed,
+            resume=args.resume,
+        )
+        print(f"\n  Ablation {config.experiment_id}: {len(config.arms)} arms x {len(tasks)} tasks")
+        print(f"  Model: {args.model}  |  run dir: {config.run_dir}\n")
+        try:
+            report = make_default_runner(config, model=args.model).run()
+        except (RunDirNotEmptyError, ManifestDriftError, FileNotFoundError) as e:
+            print(f"  Refused to start: {e}")
+            return
+        print(format_report(report, noise_band=args.noise_band))
+        return
+
     print(f"Unknown experiment action: {action!r}")
     print(
         "Try: belief experiment run | quick | report | longitudinal | ablation-synth | "
@@ -1877,6 +1915,26 @@ def app():
     exp_explore.add_argument(
         "--base-dir", default="~/.belief-engine/starved", help="Base directory for run dirs"
     )
+
+    # experiment ablate (self-ablation instrument, agent-harness program)
+    exp_ablate2 = exp_sub.add_parser(
+        "ablate",
+        help="Run a mechanism-ablation (soundness preset: baseline vs no_soil vs no_decompose)",
+    )
+    exp_ablate2.add_argument("--id", dest="experiment_id", required=True, help="Run id")
+    exp_ablate2.add_argument("--tasks", type=int, default=8, help="Tasks (sampled from benchmark)")
+    exp_ablate2.add_argument("--model", default="qwen2.5-coder:14b", help="Local model")
+    exp_ablate2.add_argument("--seed", type=int, default=42, help="Deterministic seed")
+    exp_ablate2.add_argument(
+        "--seed-soil", default=None, help="Soil dir to seed every arm with (e.g. a full-n25 arm)"
+    )
+    exp_ablate2.add_argument(
+        "--noise-band", type=float, default=0.05, help="|delta| above this = load-bearing"
+    )
+    exp_ablate2.add_argument(
+        "--base-dir", default="~/.belief-engine/ablation", help="Base directory for run dirs"
+    )
+    exp_ablate2.add_argument("--resume", action="store_true", help="Continue an existing run dir")
 
     # Session 3 (v3.2) follow-up: validator CLI
     validator_parser = subparsers.add_parser(

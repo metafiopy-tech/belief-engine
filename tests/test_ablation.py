@@ -16,7 +16,9 @@ from belief.experiments.ablation import (
     AblationRunner,
     ManifestDriftError,
     RunDirNotEmptyError,
+    default_metric_fn,
     format_report,
+    soundness_arms,
 )
 
 _TASKS = [("t0", "task-0"), ("t1", "task-1"), ("t2", "task-2"), ("t3", "task-3")]
@@ -167,3 +169,68 @@ def test_format_report_marks_load_bearing(tmp_path):
     assert "baseline" in text
     assert "LOAD-BEARING" in text
     assert "delta=-0.300" in text
+
+
+# ---------------------------------------------------------------------------
+# seed_soil + preset + metric (Session 2)
+# ---------------------------------------------------------------------------
+
+
+def test_seed_soil_copied_into_arm(tmp_path):
+    src = tmp_path / "seed"
+    src.mkdir()
+    (src / "marker.txt").write_text("seeded")
+    cfg = AblationConfig(
+        experiment_id="s",
+        base_dir=tmp_path / "runs",
+        arms=[AblationArm("baseline", seed_soil=src), AblationArm("no_soil", env={"X": "1"})],
+        tasks=_TASKS,
+        baseline="baseline",
+    )
+    AblationRunner(cfg, build_fn=_build_fn, metric_fn=_metric).prepare()
+    assert (cfg.arm_soil("baseline") / "marker.txt").read_text() == "seeded"
+    assert not (cfg.arm_soil("no_soil") / "marker.txt").exists()
+
+
+def test_seed_soil_missing_raises(tmp_path):
+    cfg = AblationConfig(
+        experiment_id="s",
+        base_dir=tmp_path / "runs",
+        arms=[AblationArm("baseline", seed_soil=tmp_path / "nope")],
+        tasks=_TASKS,
+        baseline="baseline",
+    )
+    with pytest.raises(FileNotFoundError):
+        AblationRunner(cfg, build_fn=_build_fn, metric_fn=_metric).prepare()
+
+
+def test_seed_soil_drift_detected(tmp_path):
+    src = tmp_path / "seed"
+    src.mkdir()
+    base = dict(experiment_id="s", base_dir=tmp_path / "runs", tasks=_TASKS, baseline="baseline")
+    AblationRunner(
+        AblationConfig(arms=[AblationArm("baseline", seed_soil=src)], **base),
+        build_fn=_build_fn,
+        metric_fn=_metric,
+    ).prepare()
+    drifted = AblationConfig(arms=[AblationArm("baseline", seed_soil=None)], resume=True, **base)
+    with pytest.raises(ManifestDriftError):
+        AblationRunner(drifted, build_fn=_build_fn, metric_fn=_metric).prepare()
+
+
+def test_soundness_preset_shape():
+    arms = soundness_arms()
+    names = [a.name for a in arms]
+    assert names == ["baseline", "no_soil", "no_decompose"]
+    assert arms[1].env == {"BELIEF_EXPERIMENT_CONDITION": "raw_local"}
+    assert arms[2].env == {"BELIEF_SUPPRESS_DECOMPOSE": "1"}
+
+
+def test_soundness_preset_threads_seed_soil(tmp_path):
+    arms = soundness_arms(seed_soil=tmp_path / "seed")
+    assert all(a.seed_soil == tmp_path / "seed" for a in arms)
+
+
+def test_default_metric_reads_weighted_score():
+    assert default_metric_fn({"weighted_score": 0.73}) == pytest.approx(0.73)
+    assert default_metric_fn({}) == 0.0

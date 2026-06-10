@@ -31,6 +31,9 @@ This module only *orchestrates and attributes*. It runs no builds itself.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,6 +58,10 @@ class AblationArm:
 
     name: str
     env: dict[str, str] = field(default_factory=dict)
+    # Optional: copy an existing soil dir into this arm's soil at prepare time, so
+    # a soil-ON arm can be tested against real accumulated nutrients (e.g. seed
+    # both arms from full-n25's FED soil, then toggle whether retrieval uses it).
+    seed_soil: "Path | None" = None
 
 
 @dataclass
@@ -157,6 +164,7 @@ class AblationRunner:
             "seed": cfg.seed,
             "baseline": cfg.baseline,
             "arms": {a.name: a.env for a in cfg.arms},
+            "seed_soil": {a.name: (str(a.seed_soil) if a.seed_soil else None) for a in cfg.arms},
             "n_tasks": len(cfg.tasks),
         }
 
@@ -171,7 +179,13 @@ class AblationRunner:
             self._assert_manifest_matches(manifest)
         else:
             for arm in cfg.arms:
-                cfg.arm_soil(arm.name).mkdir(parents=True, exist_ok=True)
+                dest = cfg.arm_soil(arm.name)
+                dest.mkdir(parents=True, exist_ok=True)
+                if arm.seed_soil is not None:
+                    src = Path(arm.seed_soil).expanduser()
+                    if not src.exists():
+                        raise FileNotFoundError(f"seed_soil for arm {arm.name!r} not found: {src}")
+                    shutil.copytree(src, dest, dirs_exist_ok=True)
             cfg.manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
 
     def _assert_manifest_matches(self, manifest: dict) -> None:
@@ -179,7 +193,7 @@ class AblationRunner:
             existing = json.loads(self.config.manifest_path.read_text())
         except (OSError, json.JSONDecodeError) as e:
             raise ManifestDriftError(f"cannot read manifest to resume: {e}") from e
-        for key in ("seed", "baseline", "arms"):
+        for key in ("seed", "baseline", "arms", "seed_soil"):
             if existing.get(key) != manifest.get(key):
                 raise ManifestDriftError(
                     f"{key} drifted: manifest={existing.get(key)!r} now={manifest.get(key)!r}"
@@ -234,3 +248,82 @@ def format_report(report: AblationReport, *, noise_band: float = 0.0) -> str:
             f"\n  noise band: +/-{noise_band:.4f} (mechanism load-bearing if |delta| exceeds)"
         )
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Default real seams (lazy; used by the CLI, not unit tests)
+# ---------------------------------------------------------------------------
+
+
+def default_build_fn(model: str) -> BuildFn:
+    """Real build seam: run ``belief build`` with the arm's env toggles applied.
+
+    The arm's ``env`` (e.g. raw_local, suppress-decompose) is layered on top of
+    the process env along with ``BELIEF_SOIL_PATH`` (already injected by the
+    runner). Returns a dict the metric reads: ``{weighted_score, verdict, run_id}``.
+    """
+
+    def _run(goal: str, arm_name: str, soil_dir: Path, env: dict) -> dict:
+        full_env = os.environ.copy()
+        full_env.update(env)
+        full_env["BELIEF_MODEL_MODE"] = full_env.get("BELIEF_MODEL_MODE", "local")
+        cmd = [
+            "belief",
+            "--mode",
+            "local",
+            "--local-model",
+            model,
+            "build",
+            "--goal",
+            goal,
+            "--json-output",
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=full_env, timeout=3600)
+        for line in (proc.stdout or "").splitlines():
+            line = line.strip()
+            if line.startswith("{") and "verdict" in line:
+                try:
+                    data = json.loads(line)
+                    return {
+                        "weighted_score": float(data.get("weighted_score", 0.0)),
+                        "verdict": data.get("verdict", ""),
+                        "run_id": data.get("run_id", ""),
+                    }
+                except json.JSONDecodeError:
+                    pass
+        return {"weighted_score": 0.0, "verdict": "error", "run_id": ""}
+
+    return _run
+
+
+def default_metric_fn(outcome: dict) -> float:
+    """Metric = weighted score (the external grader's quality signal)."""
+    return float(outcome.get("weighted_score", 0.0))
+
+
+def soundness_arms(seed_soil: "Path | None" = None) -> list[AblationArm]:
+    """The instrument's trust test: re-derive STARVED's soil + decompose effects.
+
+    - ``baseline``: engine defaults (soil retrieval ON), optionally seeded with
+      real accumulated soil so retrieval has something to pull.
+    - ``no_soil``: ``raw_local`` condition — soil retrieval OFF. Delta vs baseline
+      is the *measured* soil->build coupling strength (quantifies the firewall).
+    - ``no_decompose``: deposition suppressed — isolates the decomposer's effect.
+    A sound instrument shows soil/decompose as load-bearing in the known direction.
+    """
+    return [
+        AblationArm("baseline", env={}, seed_soil=seed_soil),
+        AblationArm(
+            "no_soil",
+            env={"BELIEF_EXPERIMENT_CONDITION": "raw_local"},
+            seed_soil=seed_soil,
+        ),
+        AblationArm("no_decompose", env={"BELIEF_SUPPRESS_DECOMPOSE": "1"}, seed_soil=seed_soil),
+    ]
+
+
+def make_default_runner(
+    config: AblationConfig, *, model: str = "qwen2.5-coder:14b"
+) -> AblationRunner:
+    """Wire a runner with the real (subprocess belief build) seams."""
+    return AblationRunner(config, build_fn=default_build_fn(model), metric_fn=default_metric_fn)
