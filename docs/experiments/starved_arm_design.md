@@ -256,3 +256,55 @@ not modified — tasks are consumed, scoring is not touched.
 - **Embedding model frozen** — §2.3, asserted at snapshot time.
 - **Self-judge stability** — the STARVED gate is itself a model call; fix its
   prompt and seed so we measure soil decay, not judge drift.
+
+---
+
+## 9. Findings — full-n25 (2026-06-09)
+
+**Verdict: the pre-registered collapse signature was NOT observed. The thesis is
+not supported by this run.** Adjudicated mechanically against the §7 frozen band
+[−0.1692, 1.4258]; no reinterpretation.
+
+Run validity: encoder fingerprint consistent (no drift banner; same pinned SHA
+`1110a243…` as the pilot); soil accumulated cleanly (FED n 4→62, STARVED 4→68
+over 25 generations). 28 STARVED fictions admitted.
+
+**Differential PR (STARVED − FED), per-generation classification vs band:**
+- Below band_low (−0.1692), the collapse direction: **3 of 25** (gens 21, 23, 24).
+- Above band_high (+1.4258), i.e. STARVED *more* spread than FED: 3 of 25 (gens 5–7).
+- Inside the band: **19 of 25 (76%)**.
+
+§7 "thesis HOLDS" required the differential below band_low for >half (≥13) of
+generations, jointly with Hill. We got 3, and **Hill moved the opposite way** —
+Hill-diff is predominantly *positive* in the back half (STARVED's k-means
+evenness ran *higher* than FED's; Hill-diff AR(1) +0.229). The two co-headline
+metrics disagree, so the joint-direction criterion fails decisively.
+
+**Secondary (directional, NOT the pre-registered metric — do not promote to confirmation):**
+- Fictions compounded: pilot 0.8/gen → full 1.12/gen.
+- In-distribution build success: STARVED below FED in 16/25 generations; means
+  0.69 (STARVED) vs 0.77 (FED); last-5 means 0.575 vs 0.650.
+- STARVED PR plateau slightly below FED (decay-fit c 15.45 vs 15.66) and saturates
+  faster (τ 2.94 vs 4.51); PR-diff dips below band only in the final ~5 gens.
+
+**Interpretation:** not "thesis false" — *not demonstrated at this power/horizon*.
+The secondary signals are the fingerprint of a possible **slow decay whose onset
+appears at the edge of the 25-gen window** — the τ-too-long case §7's caveats
+flagged. But coherentism did not cleanly win either (STARVED did eat fictions and
+lose a little in-distribution success), so the honest read is the **muddy middle**,
+needle pointing faintly toward slow decay.
+
+**Open puzzle (the Hill paradox):** STARVED's Hill ran *higher* than FED's, not
+lower. Worth investigating whether incoherent fictions inflate apparent
+cluster-evenness — i.e. whether the right collapse signature is a *decoupling* of
+Hill from quality rather than a Hill decline. Flagged for cheap offline
+exploration on the existing snapshots before any larger run.
+
+**Decision:** no new large run drawn up yet (N=50 ≈ ~2 weeks local compute).
+Explore the existing full-n25 + pilot data offline first to see where it's headed;
+any longer run gets a fresh pre-registration, not a re-read of this one.
+
+**Method note:** the pre-registration held under a result that didn't go the
+hypothesis's way — fictions + a success dip were *not* allowed to be spun into a
+"holds." A clean, unspinnable non-confirmation on a falsifiable test is the
+result; the apparatus and the discipline both passed.
