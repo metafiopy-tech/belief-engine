@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Autocatalytic multi-agent build system (~233 Python files in `belief/`, ~69,600 lines as of v3.3 + Synthesis Engine). Takes a natural language goal, produces working deployed software, and improves itself after every build. Uses LangGraph for agent orchestration, Anthropic Claude for LLM calls, ChromaDB for persistent learning memory with FSRS decay.
+Autocatalytic multi-agent build system (~275 Python files in `belief/`, ~82,300 lines as of v3.3 + Synthesis Engine + agent-harness sessions; tests: 139 files, ~2,268 test functions). Takes a natural language goal, produces working deployed software, and improves itself after every build. Uses LangGraph for agent orchestration, Anthropic Claude for LLM calls, ChromaDB for persistent learning memory with FSRS decay.
 
 **Current ring:** v3.3.0 shipped with the Synthesis Engine layered on top. Tier 1 of the ecology layer (Economist, Predator, Sleep, GC) is live; first Tier 2 organ (Curiosity, suggest-only) is live. Speciator / Storyteller / Red-team / Body remain unscheduled. The Synthesis Engine (8 sessions + post-plan hotfixes) is end-to-end-demonstrated: `belief synth words "mantis_shrimp,camera" → sidecar → belief build --sidecar ...` produced 13 files of working Python at 0.82 weighted score for $0.94 on 2026-05-13.
 
@@ -169,7 +169,11 @@ belief/
   utils/           -- Cross-cutting small utilities
   cache/           -- On-disk cache scaffolding
   bittensor/       -- Top-level Bittensor integration (distinct from photosynthesis/bittensor/)
-  experiments/     -- One-off experimental modules (not part of default pipeline)
+  routing/         -- Model/agent routing layer
+  signal/          -- Signal types shared across daemons
+  lifecycle/       -- Build lifecycle hooks
+  protocol/        -- Protocol skeletons (see docs/PROTOCOL_v1.md)
+  experiments/     -- A/B harness (engine-vs-raw), self-ablation + starved-arm instruments with injectable build_fn/oracle seams
   hardening.py     -- Budget, rate limiter, security scanner, audit log  [IMMUTABLE]
   benchmark.py     -- Scoring logic                                       [IMMUTABLE]
   graph.py         -- LangGraph pipeline (all nodes + edges)
@@ -212,6 +216,22 @@ belief synth words "..." --no-novelty-gate         # Bypass novelty filter (demo
 belief synth words "..." --critic-tolerance 3      # Allow N of 6 LLM critic checks to fail
 belief synth words "..." --novelty-threshold 0.30  # Bio-store similarity threshold
 belief build --goal "..." --sidecar PATH           # Build with hydrated structural_mechanism
+
+# Experiments (A/B harness, ablation, starved arm)
+belief experiment run                 # Engine-vs-raw A/B run
+belief experiment quick               # Quick A/B variant
+belief experiment report              # Show results from an experiment
+belief experiment ablate              # Self-ablation instrument (injectable seams)
+belief experiment starved             # Starved-arm run
+belief experiment starved-report      # Starved-arm reporting
+belief experiment explore             # Offline starved-explore probes
+belief experiment smoke               # Harness smoke test
+
+# Soil / network / misc
+belief manifold [--json]              # Knowledge topology: clusters, cross-links, gaps
+belief recombine                      # Cross-pollinate soil nutrients
+belief mine                           # Run as Bittensor subnet miner
+belief validator add ...              # Register a validator
 
 # Observability
 belief dashboard                      # Metrics dashboard
